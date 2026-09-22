@@ -2,6 +2,30 @@
 // "Watch it for me", which has a video model watch the whole thing on request.
 // Never plays, likes, comments or subscribes.
 (() => {
+  // After the extension is reloaded or updated, scripts already running in open tabs lose their
+  // connection to it. Stop quietly and ask for a page reload instead of throwing errors.
+  let retired = false;
+  const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
+  function retire() {
+    if (retired) return;
+    retired = true;
+    const n = document.createElement("div");
+    n.className = "jev-layout-note";
+    n.textContent = "Sieve was updated. Reload this page to keep using it.";
+    n.onclick = () => n.remove();
+    document.body.append(n);
+  }
+  function send(msg, cb) {
+    if (retired) return;
+    if (!alive()) return retire();
+    try {
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        cb?.(r);
+      });
+    } catch { retire(); }
+  }
+
   const TILE = "ytd-video-renderer, ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model";
   const DWELL_MS = 600;
   const USD_PER_MINUTE = 0.0022; // keep in sync with watch-prompt.js
@@ -167,7 +191,7 @@
 
   function watch(v, again) {
     show(v, null);
-    chrome.runtime.sendMessage({ type: "watch", id: v.id, url: v.url, title: v.title, channel: v.channel, seconds: v.seconds, again }, (r) => show(v, r || { error: "No answer from the extension." }));
+    send({ type: "watch", id: v.id, url: v.url, title: v.title, channel: v.channel, seconds: v.seconds, again }, (r) => show(v, r || { error: "No answer from the extension." }));
   }
 
   // ---- watch page button ----
@@ -191,6 +215,7 @@
 
   // ---- scoring ----
   function check(tile) {
+    if (retired) return;
     if (!enabled) return;
     const v = read(tile);
     if (!v) return;
@@ -199,7 +224,7 @@
     if (pending.has(v.id)) return;
     pending.add(v.id);
     const state = { title: v.title, channel: v.channel, length: v.seconds ? `${Math.round(v.seconds / 60)} min` : "unknown", snippet: v.snippet };
-    chrome.runtime.sendMessage({ type: "classify", platform: "youtube", state }, (r) => {
+    send({ type: "classify", platform: "youtube", state }, (r) => {
       pending.delete(v.id);
       if (!r) return;
       if (r.error === "rate_limited" || r.error === "network") return;
@@ -217,6 +242,7 @@
   }, { threshold: 0.5 });
 
   function scan() {
+    if (retired || !alive()) { if (!retired) retire(); return; }
     for (const t of tiles()) {
       if (!t.dataset.jevWatched) { t.dataset.jevWatched = "1"; seen.observe(t); }
       const key = t.dataset.jevKey;

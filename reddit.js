@@ -1,6 +1,30 @@
 // Reddit triage. Reads only posts that stay on screen, never votes, comments or posts.
 // New Reddit: <shreddit-post> elements with attributes. Old Reddit: .thing.link with data-* attributes.
 (() => {
+  // After the extension is reloaded or updated, scripts already running in open tabs lose their
+  // connection to it. Stop quietly and ask for a page reload instead of throwing errors.
+  let retired = false;
+  const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
+  function retire() {
+    if (retired) return;
+    retired = true;
+    const n = document.createElement("div");
+    n.className = "jev-layout-note";
+    n.textContent = "Sieve was updated. Reload this page to keep using it.";
+    n.onclick = () => n.remove();
+    document.body.append(n);
+  }
+  function send(msg, cb) {
+    if (retired) return;
+    if (!alive()) return retire();
+    try {
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        cb?.(r);
+      });
+    } catch { retire(); }
+  }
+
   const DWELL_MS = 600;
   let prefs = { redditOn: true, subreddits: [], freshHours: 12, freshComments: 40 };
 
@@ -124,7 +148,7 @@
     const msg = panel.querySelector(".jev-draft-msg");
     list.innerHTML = '<li class="jev-thinking">Thinking of angles…</li>';
     msg.textContent = "";
-    chrome.runtime.sendMessage({ type: "draft", platform: "reddit", author: `u/${info.author} in ${info.subreddit}`, post: `${info.title}\n\n${info.body}`, angle: r.angle, again }, (d) => {
+    send({ type: "draft", platform: "reddit", author: `u/${info.author} in ${info.subreddit}`, post: `${info.title}\n\n${info.body}`, angle: r.angle, again }, (d) => {
       list.innerHTML = "";
       if (!d || d.error) { msg.textContent = d?.error || "No answer from the extension."; return; }
       for (const a of d.angles) {
@@ -139,6 +163,7 @@
   }
 
   function check(el) {
+    if (retired) return;
     const info = read(el);
     if (!info || !inScope(info)) return;
     el.dataset.jevKey = info.key;
@@ -147,12 +172,12 @@
     if (pending.has(info.key)) return;
     pending.add(info.key);
     const state = { subreddit: info.subreddit, title: info.title, body: info.body.slice(0, 4000) };
-    chrome.runtime.sendMessage({ type: "classify", platform: "reddit", state }, (r) => {
+    send({ type: "classify", platform: "reddit", state }, (r) => {
       pending.delete(info.key);
       if (!r) return;
       results.set(info.key, r);
       if (!r.error && r.tier === "strong") {
-        chrome.runtime.sendMessage({ type: "save", post: {
+        send({ type: "save", post: {
           key: info.key, platform: "reddit", authorName: `u/${info.author} (${info.subreddit})`, authorUrl: info.permalink,
           title: info.title, text: `${info.title}\n\n${info.body}`, topic: r.topic, kind: r.kind, worth: r.worth,
           fresh: info.fresh, createdAt: info.created || null, comments: info.comments,
@@ -171,6 +196,7 @@
   }, { threshold: 0.5 });
 
   function scan() {
+    if (retired || !alive()) { if (!retired) retire(); return; }
     for (const el of posts()) {
       if (!el.dataset.jevWatched) { el.dataset.jevWatched = "1"; seen.observe(el); }
       const r = el.dataset.jevKey && results.get(el.dataset.jevKey);

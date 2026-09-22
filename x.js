@@ -1,6 +1,30 @@
 // X (Twitter): same scoring and comment angles as LinkedIn. Reads only posts that stay on
 // screen, never likes, reposts, replies or follows. Hooks: X's long-standing data-testid labels.
 (() => {
+  // After the extension is reloaded or updated, scripts already running in open tabs lose their
+  // connection to it. Stop quietly and ask for a page reload instead of throwing errors.
+  let retired = false;
+  const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
+  function retire() {
+    if (retired) return;
+    retired = true;
+    const n = document.createElement("div");
+    n.className = "jev-layout-note";
+    n.textContent = "Sieve was updated. Reload this page to keep using it.";
+    n.onclick = () => n.remove();
+    document.body.append(n);
+  }
+  function send(msg, cb) {
+    if (retired) return;
+    if (!alive()) return retire();
+    try {
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        cb?.(r);
+      });
+    } catch { retire(); }
+  }
+
   const POST = 'article[data-testid="tweet"]';
   const TEXT = '[data-testid="tweetText"]';
   const DWELL_MS = 600;
@@ -83,7 +107,7 @@
     const msg = panel.querySelector(".jev-draft-msg");
     list.innerHTML = '<li class="jev-thinking">Thinking of angles…</li>';
     msg.textContent = "";
-    chrome.runtime.sendMessage({ type: "draft", ...states.get(post.dataset.jevKey), angle: r.angle, again }, (d) => {
+    send({ type: "draft", ...states.get(post.dataset.jevKey), angle: r.angle, again }, (d) => {
       list.innerHTML = "";
       if (!d || d.error) { msg.textContent = d?.error || "No answer from the extension."; return; }
       for (const a of d.angles) {
@@ -98,6 +122,7 @@
   }
 
   function check(post) {
+    if (retired) return;
     if (!enabled) return;
     const p = extract(post);
     if (!p) return;
@@ -106,12 +131,12 @@
     if (results.has(p.key)) return render(post, results.get(p.key));
     if (pending.has(p.key)) return;
     pending.add(p.key);
-    chrome.runtime.sendMessage({ type: "classify", platform: "x", state: p.state }, (r) => {
+    send({ type: "classify", platform: "x", state: p.state }, (r) => {
       pending.delete(p.key);
       if (!r || r.error === "rate_limited" || r.error === "network") return;
       results.set(p.key, r);
       if (!r.error && r.tier === "strong") {
-        chrome.runtime.sendMessage({ type: "save", post: {
+        send({ type: "save", post: {
           key: p.key, platform: "x", authorName: p.state.author.split(" @")[0], authorUrl: p.url,
           text: p.state.post, topic: r.topic, kind: r.kind, worth: r.worth,
         } });
@@ -129,6 +154,7 @@
   }, { threshold: 0.5 });
 
   function scan() {
+    if (retired || !alive()) { if (!retired) retire(); return; }
     document.querySelectorAll(POST).forEach((post) => {
       if (!post.dataset.jevWatched) { post.dataset.jevWatched = "1"; seen.observe(post); }
       const r = post.dataset.jevKey && results.get(post.dataset.jevKey);

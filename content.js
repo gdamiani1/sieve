@@ -1,6 +1,30 @@
 // Reads only posts that stay on screen long enough for you to see them.
 // Never clicks, types, scrolls or posts anything on LinkedIn.
 (() => {
+  // After the extension is reloaded or updated, scripts already running in open tabs lose their
+  // connection to it. Stop quietly and ask for a page reload instead of throwing errors.
+  let retired = false;
+  const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
+  function retire() {
+    if (retired) return;
+    retired = true;
+    const n = document.createElement("div");
+    n.className = "jev-layout-note";
+    n.textContent = "Sieve was updated. Reload this page to keep using it.";
+    n.onclick = () => n.remove();
+    document.body.append(n);
+  }
+  function send(msg, cb) {
+    if (retired) return;
+    if (!alive()) return retire();
+    try {
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        cb?.(r);
+      });
+    } catch { retire(); }
+  }
+
   const CARD = '[role="listitem"][componentkey^="update-card-"]';
   const BODY = '[data-testid="expandable-text-box"]';
   const DWELL_MS = 600;
@@ -114,7 +138,7 @@
     const msg = panel.querySelector(".jev-draft-msg");
     list.innerHTML = '<li class="jev-thinking">Thinking of angles…</li>';
     msg.textContent = "";
-    chrome.runtime.sendMessage({ type: "draft", ...states.get(key), angle: r.angle, again }, (d) => {
+    send({ type: "draft", ...states.get(key), angle: r.angle, again }, (d) => {
       list.innerHTML = "";
       if (!d || d.error) { msg.textContent = d?.error || "No answer from the extension."; return; }
       for (const a of d.angles) {
@@ -134,6 +158,7 @@
   }
 
   function check(card) {
+    if (retired) return;
     if (!enabled) return;
     const post = extract(card);
     if (!post) return;
@@ -142,14 +167,14 @@
     if (results.has(post.key)) return render(card, results.get(post.key));
     if (pending.has(post.key)) return;
     pending.add(post.key);
-    chrome.runtime.sendMessage({ type: "classify", state: post.state }, (r) => {
+    send({ type: "classify", state: post.state }, (r) => {
       pending.delete(post.key);
       if (!r) return;
       results.set(post.key, r);
       if (!r.error && r.tier === "strong") {
         const profile = card.querySelector('a[href*="/in/"], a[href*="/company/"]');
         const name = [...card.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')].map((a) => a.innerText.trim().split("\n")[0].replace(/\s*•.*$/, "").trim()).find(Boolean);
-        chrome.runtime.sendMessage({ type: "save", post: {
+        send({ type: "save", post: {
           key: post.key, author: post.state.author, authorName: name || "", authorUrl: profile ? profile.href.split("?")[0] : "",
           text: post.state.post, topic: r.topic, kind: r.kind, worth: r.worth,
         } });
@@ -167,6 +192,7 @@
   }, { threshold: 0.5 });
 
   function scan() {
+    if (retired || !alive()) { if (!retired) retire(); return; }
     document.querySelectorAll(CARD).forEach((card) => {
       if (!card.dataset.jevWatched) { card.dataset.jevWatched = "1"; seen.observe(card); }
       const r = card.dataset.jevKey && results.get(card.dataset.jevKey);
