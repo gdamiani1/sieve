@@ -56,19 +56,31 @@ export function looseJson(text) {
       try { return JSON.parse(candidate); } catch {}
     }
   }
-  // Cut off mid-answer: drop the unfinished tail, then close whatever is still open.
-  let cut = t.replace(/,?\s*"[^"]*$/, "").replace(/,?\s*\{[^{}]*$/, "").replace(/,\s*$/, "");
+  // Cut off mid-answer: note every point where a value or key just ended, then
+  // walk back from the last one, closing whatever is still open, until one parses.
+  const cuts = [];
   const stack = [];
   let inStr = false;
-  for (let i = 0; i < cut.length; i++) {
-    const c = cut[i];
-    if (inStr) { if (c === "\\") i++; else if (c === '"') inStr = false; continue; }
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') { inStr = false; cuts.push([i + 1, stack.slice()]); }
+      continue;
+    }
     if (c === '"') inStr = true;
     else if (c === "{") stack.push("}");
     else if (c === "[") stack.push("]");
-    else if (c === "}" || c === "]") stack.pop();
+    else if (c === "}" || c === "]") { stack.pop(); cuts.push([i + 1, stack.slice()]); }
   }
-  return JSON.parse(cut + stack.reverse().join(""));
+  for (const [end, open] of cuts.slice(-200).reverse()) {
+    const prefix = t.slice(0, end).trim().replace(/,$/, "");
+    try {
+      const r = JSON.parse(prefix + open.reverse().join(""));
+      if (r && typeof r === "object" && !Array.isArray(r)) return r;
+    } catch {}
+  }
+  throw new Error("No JSON object in the answer");
 }
 
 export function parseWatch(text) {

@@ -12,4 +12,14 @@ const r = parseWatch(cut);
 assert.equal(r.verdict, "watch", "cut off: keeps what arrived");
 assert.equal(r.points.length, 1);
 assert.throws(() => parseWatch("sorry, I can't watch this video"), "no JSON at all still fails");
-console.log("watch parser: all 7 checks passed");
+// Cut at a token boundary: keep every field that arrived whole.
+const t1 = parseWatch('{"why": "w", "summary": "s", "points": [{"text": "p"}], "learnings": ["a"], "claims_to_check": [');
+assert.equal(t1.summary, "s", "cut after an open array");
+assert.equal(t1.points.length, 1);
+assert.equal(t1.learnings[0], "a");
+assert.equal(parseWatch('{"why": "w", "summary":').why, "w", "cut after a key");
+assert.equal(parseWatch('{"why": "w", "learnings": ["a"], "extra": 4.').learnings[0], "a", "cut mid-number");
+assert.equal(parseWatch('{"why": "w", "learnings": ["a"], "ok": tru').learnings[0], "a", "cut mid-literal");
+assert.equal(parseWatch('{"why": "they said \\"fast\\"", "summary": "cut here').why, 'they said "fast"', "escaped quotes");
+assert.equal(parseWatch('{"points": [{"t": "1:00", "text": "one"}, {"t": "2:0').points.length, 1, "cut inside the second point");
+console.log("watch parser: all 13 checks passed");
