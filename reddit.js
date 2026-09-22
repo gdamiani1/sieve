@@ -185,7 +185,7 @@
     if (posts().length || !/\/(r\/[^/]+\/?($|(hot|new|top|rising)\/?)|$)/.test(location.pathname)) return;
     const n = document.createElement("div");
     n.className = "jev-layout-note";
-    n.textContent = "Jev Feed Triage couldn't find posts on this Reddit layout. Reddit may have changed its markup.";
+    n.textContent = "Sieve couldn't find posts on this Reddit layout. Reddit may have changed its markup.";
     n.onclick = () => n.remove();
     document.body.append(n);
   }, 6000);

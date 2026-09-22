@@ -15,7 +15,7 @@
 .jev-badge { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .jev-suggest {
   margin-left: auto; font: 600 12px/1 -apple-system, system-ui, sans-serif;
-  padding: 5px 10px; border-radius: 999px; border: 0; cursor: pointer;
+  padding: 5px 10px; border-radius: 999px; border: 0; cursor: pointer; white-space: nowrap; flex: none;
   background: #fff; color: #2433f5;
 }
 .jev-maybe .jev-suggest { background: #2433f5; color: #fff; }
@@ -42,3 +42,6 @@ shreddit-post.jev-strong, .thing.jev-strong { outline: 2px solid #2433f5; outlin
 shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-offset: 2px; border-radius: 8px; }
 .jev-layout-note { position: fixed; bottom: 16px; right: 16px; z-index: 99999; max-width: 320px; padding: 10px 14px; border-radius: 8px;
   background: #fff0ea; color: #9a2a00; font: 600 12px/1.4 -apple-system, system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.15); cursor: pointer; }
+/* keep the left bar visible through the angles panel */
+.jev-strong > .jev-draft { box-shadow: inset 4px 0 0 #2433f5; }
+.jev-maybe > .jev-draft { box-shadow: inset 4px 0 0 #9aa2ff; }

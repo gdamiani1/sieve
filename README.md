@@ -1,9 +1,9 @@
-# Jev Feed Triage
+# Sieve
 
 A Chrome extension that tells you which LinkedIn and Reddit posts are worth your attention, and suggests
 angles for a reply. It never writes or posts anything for you.
 
-It is built on [Jev](https://typesafe.ai), TypeSafe's decision model: a model that doesn't generate text,
+It is built on [Jev](https://typesafe.ai), TypeSafe's decision model (Sieve is an independent project, not made by TypeSafe): a model that doesn't generate text,
 it picks from answers you define and returns a probability. Jev makes the narrow calls (is this worth
 reading? could I answer this?), plain code handles the rules, and you do the part that needs judgement.
 

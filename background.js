@@ -67,7 +67,7 @@ async function draft(req) {
     try {
       res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Jev Feed Triage" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
         body: JSON.stringify({ model, messages: build(req, about), max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: req.again ? 0.9 : 0.5 }),
       });
     } catch {
@@ -106,7 +106,7 @@ async function openrouter(messages, maxTokens) {
   try {
     res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Jev Feed Triage" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: 0.3 }),
     });
   } catch {

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Jev Feed Triage",
+  "name": "Sieve: posts worth your time",
   "version": "1.0.0",
-  "description": "Highlights LinkedIn and Reddit posts worth your attention. Reads only posts you scroll past. Never clicks, comments or posts.",
+  "description": "Sieve scores the LinkedIn and Reddit posts you scroll past and suggests reply angles. Never clicks, comments or posts.",
   "permissions": [
     "storage",
     "alarms",
@@ -45,7 +45,7 @@
   ],
   "options_page": "options.html",
   "action": {
-    "default_title": "Jev Feed Triage",
+    "default_title": "Sieve",
     "default_popup": "options.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -56,5 +56,6 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "short_name": "Sieve"
 }
