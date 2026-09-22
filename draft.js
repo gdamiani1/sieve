@@ -1,0 +1,120 @@
+// Comment angles. Suggest only: three one-line ideas for what you could say. You pick one,
+// write the comment yourself and paste it into LinkedIn. Nothing here touches the LinkedIn page.
+
+export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
+
+// Facts the draft may use about you. Everything here must be true and first-hand.
+// Edit in the extension options. The model is told never to claim anything not on this list.
+export const DEFAULT_ABOUT = `- Replace these with true, first-hand facts about you. The angles may only point to facts listed here.
+- Example: I tested a classifier on 200 of our support emails and it matched our labels on 180.
+- Example: I run a two-person agency that builds internal tools for accountants.`;
+
+// Reddit is pseudonymous: no business name, no site, nothing that reads as promotion.
+export const DEFAULT_REDDIT_ABOUT = `- Replace these with true, first-hand facts about you, written for Reddit (no business names or links).
+- Example: I've done my own bookkeeping as a sole trader for three years.
+- Example: I built a script that validates customer tax IDs before invoices go out.`;
+
+const ANGLES = {
+  ask_failures: "Ask about error rates, failure cases or limits they didn't mention.",
+  ask_how: "Ask one specific question about how it works.",
+  share_result: "Add one related first-hand result from the facts list, briefly, then ask a question.",
+  answer_question: "Answer the question they asked, using the facts list if relevant.",
+  disagree: "Offer one respectful, specific counterpoint.",
+  none: "Ask one specific, genuine question about the post.",
+  answer_from_experience: "Answer directly from one relevant fact.",
+  clarifying_question: "Ask for the missing detail that changes the answer.",
+  approach: "Say how you would approach the problem.",
+  share_mistake: "Warn about a pitfall, ideally one you hit yourself.",
+};
+
+export function facts(about) {
+  return about.split("\n").map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean);
+}
+
+export function buildMessages({ author, post, angle }, about) {
+  const list = facts(about).map((f, i) => `F${i + 1}: ${f}`).join("\n");
+  const system = `You suggest angles for a LinkedIn comment. You do NOT write the comment. The commenter ("me") writes it himself.
+
+Two sources, never mix them up:
+1. THE POST: written by the post author. The angles are about it.
+2. MY FACTS: numbered facts about me, the commenter. The post author did not write these.
+
+Give exactly 3 angles, each a different move, one per line:
+- Ask: <a concrete question about a specific detail in the post>
+- <Label>: <angle>
+- <Label>: <angle>
+
+Labels: Ask, Push back, Build on it, Your angle.
+Rules:
+- Every line names a specific detail from THE POST and is under 25 words.
+- Only a line labelled "Your angle" may relate to me. Write it as "Your angle (F<n>): <how that one fact connects to this post>". Do not restate the fact's numbers or details; the reader sees the fact itself. Use it only if one fact is truly relevant; otherwise give three lines without it.
+- The other lines say nothing about me: no "I", "my" or "me".
+- Do not make all three about failures or error rates. Vary the move.
+- English only. No praise, no selling, no emojis, no em dashes.
+- Output only the 3 lines.`;
+  const user = `THE POST
+Author: ${author}
+
+${post}
+
+MY FACTS (mine, not the author's)
+${list}
+
+Jev's suggested move, as one of the three if it fits: ${ANGLES[angle] || ANGLES.none}`;
+  return [{ role: "system", content: system }, { role: "user", content: user }];
+}
+
+// Returns [{label, text, fact}] where fact is the verbatim fact text for "Your angle" lines.
+export function buildRedditMessages({ author, post, angle }, about) {
+  const list = facts(about).map((f, i) => `F${i + 1}: ${f}`).join("\n");
+  const system = `You suggest angles for a Reddit reply. You do NOT write the reply. The replier ("me") writes it himself.
+
+Two sources, never mix them up:
+1. THE POST: written by the poster, usually asking for help.
+2. MY FACTS: numbered facts about me. The poster did not write these.
+
+Give exactly 3 angles, each a different move, one per line:
+- <Label>: <angle>
+Labels: Answer, Ask, Your experience, Watch out.
+Rules:
+- Every line addresses a specific detail from THE POST and is under 25 words.
+- Only a line labelled "Your experience" may relate to me: "Your experience (F<n>): <how that fact helps this poster>". Do not restate the fact's numbers or details. Skip it if no fact truly applies.
+- Other lines say nothing about me: no "I", "my" or "me".
+- The goal is to actually help the poster. No links, no product or service mentions, nothing that reads as promotion.
+- Reddit voice: plain, practical, specific. No praise, no emojis, no em dashes.
+- Output only the 3 lines.`;
+  const user = `THE POST
+${author}
+
+${post}
+
+MY FACTS (mine, not the poster's)
+${list}
+
+Jev's suggested move, as one of the three if it fits: ${ANGLES[angle] || ANGLES.none}`;
+  return [{ role: "system", content: system }, { role: "user", content: user }];
+}
+
+export function parseAngles(text, about) {
+  const known = facts(about);
+  const out = [];
+  for (const raw of text.split("\n")) {
+    const line = clean(raw.replace(/^\s*[-*•\d.)]+\s*/, ""));
+    const m = line.match(/^(Ask|Push back|Build on it|Your angle|Answer|Your experience|Watch out)\s*(?:\((F\d+)\))?\s*:\s*(.+)$/i);
+    if (!m) continue;
+    const label = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+    const n = m[2] ? Number(m[2].slice(1)) - 1 : -1;
+    if (/^your (angle|experience)$/i.test(m[1])) {
+      if (!known[n]) continue; // no valid fact reference, drop it
+      out.push({ label, text: m[3], fact: known[n] });
+    } else {
+      if (/\b(I|I'm|I've|my|me)\b/.test(m[3])) continue; // talks about me outside "Your angle"
+      out.push({ label, text: m[3] });
+    }
+  }
+  return out.slice(0, 3);
+}
+
+export function clean(text) {
+  return text.trim().replace(/^["']|["']$/g, "").replace(/\s*—\s*/g, ", ").replace(/\s*–\s*/g, ", ");
+}

@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Jev Feed Triage</title>
+<style>
+body{font:14px/1.45 -apple-system,system-ui,sans-serif;background:#ece7de;color:#14120e;margin:0;padding:18px;min-width:320px;max-width:460px}
+h1{font-size:16px;margin:0 0 4px}
+p{margin:4px 0 12px;color:#4a463f}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input[type=password]{width:100%;box-sizing:border-box;padding:8px;border:1px solid #bdb6a9;border-radius:6px;background:#fff}
+button{margin-top:8px;padding:7px 14px;border:0;border-radius:6px;background:#2433f5;color:#fff;font-weight:600;cursor:pointer}
+.row{display:flex;gap:8px;align-items:center;margin-top:12px}
+table{margin-top:14px;border-collapse:collapse;width:100%}
+td{padding:3px 0}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+#msg{font-size:12px;color:#2433f5;min-height:16px}
+</style></head><body>
+<h1>Jev Feed Triage</h1>
+<button id="openDigest" style="float:right;margin-top:-26px">Daily learnings</button>
+<p>Highlights LinkedIn posts worth reading closely. It only reads posts you scroll past, and never clicks, comments or posts.</p>
+<label for="key">TypeSafe API key</label>
+<input id="key" type="password" placeholder="Stored only in this browser profile" autocomplete="off">
+<button id="save">Save key</button>
+<div id="msg"></div>
+<label for="orkey">OpenRouter API key (for comment drafts)</label>
+<input id="orkey" type="password" placeholder="Stored only in this browser profile" autocomplete="off">
+<label for="model">Draft model</label>
+<input id="model" type="text" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #bdb6a9;border-radius:6px">
+<label for="about">LinkedIn facts (true, first-hand only)</label>
+<textarea id="about" rows="9" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #bdb6a9;border-radius:6px;font:12px/1.4 -apple-system,system-ui,sans-serif"></textarea>
+<label for="redditAbout">Reddit facts (pseudonymous: no business name or site)</label>
+<textarea id="redditAbout" rows="8" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #bdb6a9;border-radius:6px;font:12px/1.4 -apple-system,system-ui,sans-serif"></textarea>
+<button id="saveDraft">Save draft settings</button>
+<div id="msg2" style="font-size:12px;color:#2433f5;min-height:16px"></div>
+<div class="row"><input id="remind" type="checkbox"><label for="remind" style="margin:0;font-weight:400">Daily reminder at</label><input id="rtime" type="time" style="padding:3px 6px;border:1px solid #bdb6a9;border-radius:6px"></div>
+<div class="row" style="margin-top:6px"><input id="dim" type="checkbox"><label for="dim" style="margin:0;font-weight:400">Fade posts Jev scores below 0.4</label></div>
+<table>
+<tr><td>Posts read</td><td id="posts">0</td></tr>
+<tr><td>Worth a close read (≥ 0.7)</td><td id="strong">0</td></tr>
+<tr><td>Maybe (0.4 to 0.7)</td><td id="maybe">0</td></tr>
+<tr><td>Comment drafts</td><td id="drafts">0</td></tr>
+<tr><td>Draft cost (OpenRouter)</td><td id="dcost">$0.0000</td></tr>
+<tr><td>Jev input tokens</td><td id="tokens">0</td></tr>
+<tr><td>Jev cost</td><td id="cost">$0.0000</td></tr>
+</table>
+<button id="reset" style="background:#14120e">Reset counters</button>
+<script type="module" src="options.js"></script>
+</body></html>

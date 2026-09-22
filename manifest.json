@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "Jev Feed Triage",
+  "version": "0.6.0",
+  "description": "Highlights LinkedIn and Reddit posts worth your attention. Reads only posts you scroll past. Never clicks, comments or posts.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://api.typesafe.ai/*",
+    "https://openrouter.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/feed/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.reddit.com/*",
+        "https://old.reddit.com/*"
+      ],
+      "js": [
+        "reddit.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Jev Feed Triage",
+    "default_popup": "options.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
