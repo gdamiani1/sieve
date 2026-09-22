@@ -2,17 +2,15 @@
 // New Reddit: <shreddit-post> elements with attributes. Old Reddit: .thing.link with data-* attributes.
 (() => {
   const DWELL_MS = 600;
-  const FRESH_HOURS = 12;
-  const FRESH_COMMENTS = 40;
+  let prefs = { redditOn: true, subreddits: [], freshHours: 12, freshComments: 40 };
 
   const LABEL = {
     asking_help: "asks for help", discussion: "discussion", showcase: "showcase", rant: "rant", news: "news", promo: "promo",
-    automation: "automation", ai_tools: "AI tools", small_business: "small business", croatia: "Croatia", dev: "dev", off_topic: "off topic",
     answer_from_experience: "answer from experience", clarifying_question: "ask for details", approach: "explain your approach",
     share_mistake: "warn about a pitfall", none: "",
   };
   const ERRORS = {
-    no_key: "Jev: add your TypeSafe key in the extension options",
+    no_key: "Sieve: add your TypeSafe key in the extension settings",
     key_rejected: "Jev: key rejected",
     no_credit: "Jev: out of credit, check TypeSafe billing",
     rate_limited: "Jev: rate limited, will retry on next view",
@@ -22,8 +20,10 @@
   const results = new Map();
   const infos = new Map();
   const pending = new Set();
-  let dimLow = true;
-  chrome.storage.local.get("dimLow").then((v) => { dimLow = v.dimLow !== false; });
+  const applyPrefs = (p = {}) => { prefs = { ...prefs, ...p }; };
+  chrome.storage.local.get("prefs").then((v) => applyPrefs(v.prefs));
+  const inScope = (info) => prefs.redditOn !== false && (!prefs.subreddits?.length ||
+    prefs.subreddits.some((s) => s.replace(/^r\//i, "").toLowerCase() === info.subreddit.replace(/^r\//i, "").toLowerCase()));
 
   const hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return String(h); };
 
@@ -57,7 +57,7 @@
     if (!info.title) return null;
     if (info.permalink && !info.permalink.startsWith("http")) info.permalink = "https://www.reddit.com" + info.permalink;
     info.ageHours = info.created ? (Date.now() - info.created) / 36e5 : null;
-    info.fresh = info.ageHours !== null && info.ageHours <= FRESH_HOURS && info.comments <= FRESH_COMMENTS;
+    info.fresh = info.ageHours !== null && info.ageHours <= prefs.freshHours && info.comments <= prefs.freshComments;
     info.key = hash(info.id + info.title);
     return info;
   }
@@ -76,7 +76,7 @@
   function render(el, info, r) {
     const wrap = slot(el);
     wrap.replaceChildren();
-    el.classList.remove("jev-strong", "jev-maybe", "jev-low");
+    el.classList.remove("jev-strong", "jev-maybe", "jev-low", "jev-hidden");
     const badge = document.createElement("div");
     badge.className = "jev-badge";
     if (r.error) {
@@ -86,17 +86,19 @@
       wrap.append(badge);
       return;
     }
-    const tier = r.worth >= 0.7 ? "strong" : r.worth >= 0.4 ? "maybe" : "low";
-    if (tier !== "low" || dimLow) el.classList.add(`jev-${tier}`);
+    const tier = r.tier;
+    if (tier !== "low") el.classList.add(`jev-${tier}`);
+    else if (r.lowMode === "fade") el.classList.add("jev-low");
+    else if (r.lowMode === "hide") { el.classList.add("jev-hidden"); wrap.replaceChildren(); return; }
     wrap.classList.toggle("jev-strong", tier === "strong");
     wrap.classList.toggle("jev-maybe", tier === "maybe");
     const age = info.ageHours === null ? "" : info.ageHours < 1 ? "under 1h old" : `${Math.round(info.ageHours)}h old`;
     const fresh = info.fresh ? "still fresh" : info.ageHours !== null ? "probably too late" : "";
-    const bits = [LABEL[r.kind], LABEL[r.topic], age && `${age}, ${info.comments} comments`, tier !== "low" && fresh].filter(Boolean).join(" · ");
+    const bits = [LABEL[r.kind], r.topic, age && `${age}, ${info.comments} comments`, tier !== "low" && fresh, r.reason].filter(Boolean).join(" · ");
     const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
     badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
     badge.title = "Jev's read: could you answer this from your own experience? It writes nothing. Replying is up to you.";
-    if (tier === "low") { if (dimLow) badge.classList.add("jev-quiet"); wrap.append(badge); return; }
+    if (tier === "low") { if (r.lowMode === "fade") badge.classList.add("jev-quiet"); wrap.append(badge); return; }
     const btn = document.createElement("button");
     btn.className = "jev-suggest";
     btn.textContent = "Reply angles";
@@ -138,7 +140,7 @@
 
   function check(el) {
     const info = read(el);
-    if (!info) return;
+    if (!info || !inScope(info)) return;
     el.dataset.jevKey = info.key;
     infos.set(info.key, info);
     if (results.has(info.key)) return render(el, info, results.get(info.key));
@@ -149,7 +151,7 @@
       pending.delete(info.key);
       if (!r) return;
       results.set(info.key, r);
-      if (!r.error && r.worth >= 0.7) {
+      if (!r.error && r.tier === "strong") {
         chrome.runtime.sendMessage({ type: "save", post: {
           key: info.key, platform: "reddit", authorName: `u/${info.author} (${info.subreddit})`, authorUrl: info.permalink,
           title: info.title, text: `${info.title}\n\n${info.body}`, topic: r.topic, kind: r.kind, worth: r.worth,
@@ -176,6 +178,21 @@
       if (r && !(prev && prev.classList.contains("jev-r-wrap") && prev.childElementCount)) render(el, infos.get(el.dataset.jevKey), r);
     }
   }
+
+  // Settings changed: forget old scores and re-score what's on screen.
+  chrome.storage.onChanged.addListener((changes) => {
+    if (!changes.prefs) return;
+    applyPrefs(changes.prefs.newValue);
+    results.clear();
+    for (const el of posts()) {
+      el.classList.remove("jev-strong", "jev-maybe", "jev-low", "jev-hidden");
+      const prev = el.previousElementSibling;
+      if (prev && prev.classList.contains("jev-r-wrap")) prev.remove();
+      delete el.dataset.jevKey;
+      const b = el.getBoundingClientRect();
+      if (b.bottom > 0 && b.top < innerHeight) check(el);
+    }
+  });
 
   new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
   scan();

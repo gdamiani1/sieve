@@ -45,3 +45,4 @@ shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-
 /* keep the left bar visible through the angles panel */
 .jev-strong > .jev-draft { box-shadow: inset 4px 0 0 #2433f5; }
 .jev-maybe > .jev-draft { box-shadow: inset 4px 0 0 #9aa2ff; }
+.jev-hidden { display: none !important; }

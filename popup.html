@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sieve</title>
+<style>
+body{font:13.5px/1.45 -apple-system,system-ui,sans-serif;background:#ece7de;color:#14120e;margin:0;padding:16px;width:300px}
+h1{font-size:17px;margin:0 0 10px;display:flex;align-items:center;gap:8px}h1 img{width:22px;height:22px}
+label{display:flex;gap:8px;align-items:center;margin:4px 0}
+table{margin:12px 0;border-collapse:collapse;width:100%}td{padding:2px 0}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.btns{display:flex;gap:8px}button{flex:1;padding:8px;border:0;border-radius:7px;background:#2433f5;color:#fff;font-weight:600;cursor:pointer}
+button.alt{background:#fff;color:#14120e;border:1px solid #c9c1b3}
+.small{margin-top:8px;font-size:12px;color:#6b655b;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+</style></head><body>
+<h1><img src="icons/icon48.png" alt="">Sieve</h1>
+<label><input id="linkedinOn" type="checkbox"> LinkedIn</label>
+<label><input id="redditOn" type="checkbox"> Reddit</label>
+<table>
+<tr><td>Posts scored</td><td id="posts">0</td></tr>
+<tr><td>Highlighted</td><td id="strong">0</td></tr>
+<tr><td>Maybe</td><td id="maybe">0</td></tr>
+<tr><td>Angle requests</td><td id="drafts">0</td></tr>
+<tr><td>Cost (Jev + angles)</td><td id="cost">$0.0000</td></tr>
+</table>
+<div class="btns"><button id="settings" class="alt">Settings</button><button id="digest">Daily learnings</button></div>
+<button class="small" id="reset">Reset counters</button>
+<script type="module" src="popup.js"></script>
+</body></html>

@@ -1,6 +1,5 @@
-import { QUESTIONS } from "./questions.js";
+import { loadPrefs, linkedinQuestions, redditQuestions, verdict } from "./prefs.js";
 import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles } from "./draft.js";
-import { REDDIT_QUESTIONS } from "./reddit-questions.js";
 import { digestMessages } from "./digest-prompt.js";
 
 const API = "https://api.typesafe.ai/v1/systemone";
@@ -14,15 +13,20 @@ async function stats(update) {
 }
 
 async function classify(state, platform) {
-  const { apiKey } = await chrome.storage.local.get("apiKey");
+  const { apiKey, redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get(["apiKey", "redditAbout"]);
   if (!apiKey) return { error: "no_key" };
+  const prefs = await loadPrefs();
+  const reddit = platform === "reddit";
+  const questions = reddit ? redditQuestions(prefs) : linkedinQuestions(prefs);
+  const jevState = reddit ? { ...state, reader_experience: redditAbout } : state;
+  const text = [state.author, state.subreddit, state.title, state.body, state.post].filter(Boolean).join("\n");
   for (let attempt = 0; attempt < 2; attempt++) {
     let res;
     try {
       res = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: "jev-latest", state: platform === "reddit" ? { ...state, reader_experience: (await chrome.storage.local.get("redditAbout")).redditAbout || DEFAULT_REDDIT_ABOUT } : state, questions: platform === "reddit" ? REDDIT_QUESTIONS : QUESTIONS }),
+        body: JSON.stringify({ model: "jev-latest", state: jevState, questions }),
       });
     } catch {
       return { error: "network" };
@@ -36,19 +40,12 @@ async function classify(state, platform) {
     if (res.status === 402 || res.status === 403) return { error: "no_credit" };
     if (!res.ok) return { error: `http_${res.status}` };
     const body = await res.json();
-    const a = body.answers;
-    const out = {
-      worth: (a.worth || a.answerable).noul,
-      topic: a.topic.choice,
-      kind: a.kind.choice,
-      angle: a.angle.choice,
-      angleConfidence: a.angle.confidence,
-    };
+    const out = verdict(body.answers, prefs, platform, text);
     await stats((s) => {
       s.posts += 1;
       s.tokens += body.usage?.input_tokens || 0;
-      if (out.worth >= 0.7) s.strong += 1;
-      else if (out.worth >= 0.4) s.maybe += 1;
+      if (out.tier === "strong") s.strong += 1;
+      else if (out.tier === "maybe") s.maybe += 1;
     });
     return out;
   }

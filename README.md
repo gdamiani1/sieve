@@ -28,6 +28,19 @@ reading? could I answer this?), plain code handles the rules, and you do the par
   attributed to its author. Reddit threads you could still answer are listed on top.
 - Optional daily reminder notification (18:00 by default), only when something new was saved.
 
+## Make it yours
+
+Settings (right-click the icon → Options, or **Settings** in the popup):
+- **What you care about:** one line about who you are and up to 8 topics. Jev scores every post against these,
+  and the badge shows which of your topics a post is about.
+- **Kinds of posts** to show on LinkedIn (built something, opinions, questions, news, promotion, personal) and on
+  Reddit (asking for help, discussions, showcases, rants, news, promotion).
+- **Rules** that always win over Jev: words that always show a post (a person, your company) and words that
+  never do (crypto, webinar, "we're hiring").
+- **Scores:** where highlighting starts, what counts as low, and whether low posts fade, hide or stay.
+- **Reddit:** only in the subreddits you list, and your own definition of "still fresh".
+- LinkedIn and Reddit can each be switched off from the popup. Saving settings re-scores what's on screen.
+
 ## Why angles and not ready-made comments
 
 The first version drafted whole comments. Two things went wrong:
@@ -59,7 +72,8 @@ when you ask for angles or a digest, to OpenRouter.
 The tests use invented posts (`test/sample.json`, `test/reddit_test.mjs`). Keys come from
 `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY`, or on macOS from Keychain items `typesafe-api-key` / `openrouter-api-key`.
 
-    node test/run_triage.mjs        # LinkedIn scoring
+    node test/rules_test.mjs        # the rules on top of Jev (offline, no keys)
+    node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring + reply angles
     node test/angles_test.mjs       # comment angles never borrow your facts for the author
     node test/compare_drafts.mjs    # the same angles from several models, with cost
@@ -83,10 +97,10 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 
 ## Files
 
-- `questions.js`, `reddit-questions.js`: what Jev is asked. Edit these to retune.
+- `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
 - `draft.js`: the angle prompts and parser. `digest-prompt.js`: the digest prompt.
 - `content.js` (LinkedIn), `reddit.js` (Reddit), `background.js` (API calls, saving, reminder).
-- `options.*`: settings popup. `digest.*`: daily learnings page.
+- `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
 
 ## License
 

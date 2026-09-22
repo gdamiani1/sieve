@@ -7,8 +7,6 @@
   const MAX_CHARS = 4000;
 
   const LABEL = {
-    decision_models: "decision models", automation: "automation", production: "production",
-    small_business: "small business", ai_other: "AI", off_topic: "off topic",
     built_something: "built something", opinion: "opinion", question: "asks a question",
     news: "news", promo: "promo", personal: "personal",
     ask_failures: "ask about failures and limits", ask_how: "ask how it works",
@@ -16,7 +14,7 @@
     disagree: "respectful counterpoint", none: "",
   };
   const ERRORS = {
-    no_key: "Jev: add your TypeSafe key in the extension options",
+    no_key: "Sieve: add your TypeSafe key in the extension settings",
     key_rejected: "Jev: key rejected",
     no_credit: "Jev: out of credit, check TypeSafe billing",
     rate_limited: "Jev: rate limited, will retry on next view",
@@ -26,8 +24,8 @@
   const results = new Map(); // text hash -> result
   const states = new Map(); // text hash -> what Jev saw, reused for drafting
   const pending = new Set();
-  let dimLow = true;
-  chrome.storage.local.get("dimLow").then((v) => { dimLow = v.dimLow !== false; });
+  let enabled = true;
+  chrome.storage.local.get("prefs").then((v) => { enabled = v.prefs?.linkedinOn !== false; if (!enabled) clearAll(); });
 
   function hash(s) {
     let h = 5381;
@@ -47,9 +45,31 @@
     return { key: hash(text), state: { author: header.slice(0, 400), post: text.slice(0, MAX_CHARS) } };
   }
 
+  function clearAll() {
+    document.querySelectorAll(CARD).forEach((c) => {
+      c.querySelector(":scope > .jev-badge")?.remove();
+      c.querySelector(":scope > .jev-draft")?.remove();
+      c.classList.remove("jev-strong", "jev-maybe", "jev-low", "jev-hidden");
+      delete c.dataset.jevKey;
+    });
+  }
+
+  // Settings changed: forget old scores and re-score what's on screen.
+  chrome.storage.onChanged.addListener((changes) => {
+    if (!changes.prefs) return;
+    enabled = changes.prefs.newValue?.linkedinOn !== false;
+    results.clear();
+    clearAll();
+    if (!enabled) return;
+    document.querySelectorAll(CARD).forEach((c) => {
+      const b = c.getBoundingClientRect();
+      if (b.bottom > 0 && b.top < innerHeight) check(c);
+    });
+  });
+
   function render(card, r) {
     card.querySelector(":scope > .jev-badge")?.remove();
-    card.classList.remove("jev-strong", "jev-maybe", "jev-low");
+    card.classList.remove("jev-strong", "jev-maybe", "jev-low", "jev-hidden");
     const badge = document.createElement("div");
     badge.className = "jev-badge";
     if (r.error) {
@@ -57,10 +77,11 @@
       badge.textContent = ERRORS[r.error] || `Jev: ${r.error}`;
       if (r.error === "rate_limited" || r.error === "network") results.delete(card.dataset.jevKey);
     } else {
-      const tier = r.worth >= 0.7 ? "strong" : r.worth >= 0.4 ? "maybe" : "low";
-      card.classList.add(`jev-${tier}`);
-      if (tier === "low" && !dimLow) card.classList.remove("jev-low");
-      const bits = [LABEL[r.kind], LABEL[r.topic]].filter(Boolean).join(" · ");
+      const tier = r.tier;
+      if (tier !== "low") card.classList.add(`jev-${tier}`);
+      else if (r.lowMode === "fade") card.classList.add("jev-low");
+      else if (r.lowMode === "hide") card.classList.add("jev-hidden");
+      const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
       const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
       badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
       badge.title = "Jev's read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.";
@@ -113,6 +134,7 @@
   }
 
   function check(card) {
+    if (!enabled) return;
     const post = extract(card);
     if (!post) return;
     card.dataset.jevKey = post.key;
@@ -124,7 +146,7 @@
       pending.delete(post.key);
       if (!r) return;
       results.set(post.key, r);
-      if (!r.error && r.worth >= 0.7) {
+      if (!r.error && r.tier === "strong") {
         const profile = card.querySelector('a[href*="/in/"], a[href*="/company/"]');
         const name = [...card.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')].map((a) => a.innerText.trim().split("\n")[0].replace(/\s*•.*$/, "").trim()).find(Boolean);
         chrome.runtime.sendMessage({ type: "save", post: {

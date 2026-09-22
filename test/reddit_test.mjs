@@ -1,5 +1,6 @@
 // Synthetic Reddit-style posts (written for testing, not real). Runs Jev with REDDIT_QUESTIONS, then angles for the top one.
-import { REDDIT_QUESTIONS } from "../reddit-questions.js";
+import { DEFAULT_PREFS, redditQuestions } from "../prefs.js";
+const REDDIT_QUESTIONS = redditQuestions(DEFAULT_PREFS);
 import { DEFAULT_REDDIT_ABOUT, DEFAULT_MODEL, buildRedditMessages, parseAngles } from "../draft.js";
 import { typesafeKey, openrouterKey } from "./keys.mjs";
 const ts = typesafeKey();
