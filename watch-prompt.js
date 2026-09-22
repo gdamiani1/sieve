@@ -45,9 +45,34 @@ Rules:
   ];
 }
 
+// Models occasionally wrap JSON in code fences, leave trailing commas, or get cut off.
+// Try the text as is, then repaired, then closed off where it stopped. Throws if nothing works.
+export function looseJson(text) {
+  let t = String(text || "").replace(/```(?:json)?/gi, "").trim();
+  t = t.slice(t.indexOf("{"));
+  const attempts = [t.slice(0, t.lastIndexOf("}") + 1), t];
+  for (const a of attempts) {
+    for (const candidate of [a, a.replace(/,\s*([}\]])/g, "$1")]) {
+      try { return JSON.parse(candidate); } catch {}
+    }
+  }
+  // Cut off mid-answer: drop the unfinished tail, then close whatever is still open.
+  let cut = t.replace(/,?\s*"[^"]*$/, "").replace(/,?\s*\{[^{}]*$/, "").replace(/,\s*$/, "");
+  const stack = [];
+  let inStr = false;
+  for (let i = 0; i < cut.length; i++) {
+    const c = cut[i];
+    if (inStr) { if (c === "\\") i++; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "{") stack.push("}");
+    else if (c === "[") stack.push("]");
+    else if (c === "}" || c === "]") stack.pop();
+  }
+  return JSON.parse(cut + stack.reverse().join(""));
+}
+
 export function parseWatch(text) {
-  const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-  const r = JSON.parse(json);
+  const r = looseJson(text);
   const clean = (s) => String(s || "").replace(/\s*[—–]\s*/g, ", ").trim();
   return {
     verdict: ["watch", "skim", "skip"].includes(r.verdict) ? r.verdict : "skim",

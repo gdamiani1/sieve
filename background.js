@@ -93,27 +93,36 @@ async function watch(req) {
   if (!orKey) return { error: "Add an OpenRouter key in Sieve's settings." };
   if (req.seconds && req.seconds / 60 > MAX_MINUTES) return { error: `Videos over ${MAX_MINUTES} minutes are too long to watch in one go.` };
   const prefs = await loadPrefs();
-  let res;
-  try {
-    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-      body: JSON.stringify({ model: videoModel, messages: watchMessages(req, prefs), max_tokens: 1500, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
-    });
-  } catch {
-    return { error: "Network error reaching OpenRouter." };
+  // One retry with more room: an unreadable answer is usually a cut-off or a stray quote.
+  let out = null, cost = 0, lastError = "";
+  for (const maxTokens of [2000, 4000]) {
+    let res;
+    try {
+      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
+        body: JSON.stringify({ model: videoModel, messages: watchMessages(req, prefs), max_tokens: maxTokens, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
+      });
+    } catch {
+      return { error: "Network error reaching OpenRouter." };
+    }
+    if (res.status === 401) return { error: "OpenRouter rejected the key." };
+    if (res.status === 402) return { error: "OpenRouter is out of credit." };
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
+    cost += body.usage?.cost || 0;
+    try {
+      out = parseWatch(body.choices?.[0]?.message?.content || "");
+      break;
+    } catch {
+      lastError = body.choices?.[0]?.finish_reason === "length" ? "cut off" : "unreadable";
+    }
   }
-  if (res.status === 401) return { error: "OpenRouter rejected the key." };
-  if (res.status === 402) return { error: "OpenRouter is out of credit." };
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
-  let out;
-  try {
-    out = parseWatch(body.choices?.[0]?.message?.content || "");
-  } catch {
-    return { error: "The video model's answer couldn't be read. Try again." };
+  if (!out) {
+    await stats((s) => { s.draftCost = (s.draftCost || 0) + cost; });
+    return { error: `The video model's answer was ${lastError} twice. Try again, or try a shorter video.` };
   }
-  out = { ...out, id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost: body.usage?.cost || 0, at: Date.now() };
+  out = { ...out, id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost, at: Date.now() };
   await stats((s) => { s.watched = (s.watched || 0) + 1; s.draftCost = (s.draftCost || 0) + out.cost; });
   const { watched: w = {} } = await chrome.storage.local.get("watched");
   const keep = Object.fromEntries(Object.entries({ ...w, [req.id]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300));

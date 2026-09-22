@@ -136,7 +136,12 @@
     head.append(close);
     d.append(head, el("div", "sieve-d-title", v.title), el("div", "sieve-d-meta", [v.channel, v.seconds ? `${Math.round(v.seconds / 60)} min` : ""].filter(Boolean).join(" · ")));
     if (!r) { d.append(el("div", "sieve-d-wait", `Watching the whole video${v.seconds ? ` (${cost(v.seconds)})` : ""}. This takes about 10 to 40 seconds…`)); return; }
-    if (r.error) { d.append(el("div", "sieve-d-err", r.error)); return; }
+    if (r.error) {
+      const retry = el("button", "sieve-d-again", "Try again");
+      retry.onclick = () => watch(v, true);
+      d.append(el("div", "sieve-d-err", r.error), retry);
+      return;
+    }
     const verdict = el("div", `sieve-d-verdict sieve-v-${r.verdict}`, { watch: "Worth watching", skim: "Skim it", skip: "Skip it" }[r.verdict]);
     d.append(verdict, el("p", "sieve-d-why", r.why), el("p", "", r.summary));
     if (r.best) {
