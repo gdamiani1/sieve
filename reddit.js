@@ -3,6 +3,17 @@
 (() => {
   // After the extension is reloaded or updated, scripts already running in open tabs lose their
   // connection to it. Stop quietly and ask for a page reload instead of throwing errors.
+  // Dark page (LinkedIn/X/Reddit/YouTube dark themes): switch on-page accents to the lighter blue.
+  let darkCheckedAt = 0;
+  const markDark = () => {
+    if (Date.now() - darkCheckedAt < 3000) return; // theme switches are rare; don't recompute on every scan
+    darkCheckedAt = Date.now();
+    const bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g)?.map(Number) || [255, 255, 255];
+    const lum = (0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2]) / 255;
+    document.documentElement.classList.toggle("sieve-dark", lum < 0.5);
+  };
+  markDark();
+
   let retired = false;
   const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
   function retire() {
@@ -197,6 +208,7 @@
 
   function scan() {
     if (retired || !alive()) { if (!retired) retire(); return; }
+    markDark();
     for (const el of posts()) {
       if (!el.dataset.jevWatched) { el.dataset.jevWatched = "1"; seen.observe(el); }
       const r = el.dataset.jevKey && results.get(el.dataset.jevKey);

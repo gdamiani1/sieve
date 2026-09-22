@@ -1,3 +1,6 @@
+:root { --sieve-line: #2433f5; }
+html.sieve-dark { --sieve-line: #7b87ff; }
+
 .jev-badge {
   font: 600 12px/1.3 -apple-system, system-ui, sans-serif;
   padding: 6px 12px;
@@ -5,7 +8,7 @@
   background: #ece7de;
   color: #14120e;
 }
-.jev-strong { box-shadow: inset 4px 0 0 #2433f5 !important; }
+.jev-strong { box-shadow: inset 4px 0 0 var(--sieve-line) !important; }
 .jev-strong > .jev-badge { background: #2433f5; color: #fff; }
 .jev-maybe { box-shadow: inset 4px 0 0 #9aa2ff !important; }
 .jev-maybe > .jev-badge { background: #e3e5ff; color: #1b2399; }
@@ -38,12 +41,12 @@
 .jev-r-wrap.jev-strong .jev-badge { background: #2433f5; color: #fff; }
 .jev-r-wrap.jev-maybe .jev-badge { background: #e3e5ff; color: #1b2399; }
 .jev-quiet { opacity: 0.6; font-weight: 500; }
-shreddit-post.jev-strong, .thing.jev-strong { outline: 2px solid #2433f5; outline-offset: 2px; border-radius: 8px; }
+shreddit-post.jev-strong, .thing.jev-strong { outline: 2px solid var(--sieve-line); outline-offset: 2px; border-radius: 8px; }
 shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-offset: 2px; border-radius: 8px; }
 .jev-layout-note { position: fixed; bottom: 16px; right: 16px; z-index: 99999; max-width: 320px; padding: 10px 14px; border-radius: 8px;
   background: #fff0ea; color: #9a2a00; font: 600 12px/1.4 -apple-system, system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.15); cursor: pointer; }
 /* keep the left bar visible through the angles panel */
-.jev-strong > .jev-draft { box-shadow: inset 4px 0 0 #2433f5; }
+.jev-strong > .jev-draft { box-shadow: inset 4px 0 0 var(--sieve-line); }
 .jev-maybe > .jev-draft { box-shadow: inset 4px 0 0 #9aa2ff; }
 .jev-hidden { display: none !important; }
 
@@ -57,9 +60,9 @@ shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-
   background: #14120e; color: #fff; white-space: nowrap; }
 .sieve-yt-chip-strong .sieve-yt-watch { background: #fff; color: #2433f5; }
 .sieve-yt-watch:disabled { opacity: .5; cursor: default; }
-.sieve-yt-strong { outline: 2px solid #2433f5; outline-offset: 4px; border-radius: 12px; }
+.sieve-yt-strong { outline: 2px solid var(--sieve-line); outline-offset: 4px; border-radius: 12px; }
 .sieve-yt-bar { display: flex; gap: 10px; align-items: center; margin: 8px 0 4px; }
-.sieve-yt-bar-label { font: 800 12px/1 -apple-system, system-ui, sans-serif; color: #2433f5; letter-spacing: .04em; text-transform: uppercase; }
+.sieve-yt-bar-label { font: 800 12px/1 -apple-system, system-ui, sans-serif; color: var(--sieve-line); letter-spacing: .04em; text-transform: uppercase; }
 .sieve-yt-bar .sieve-yt-watch { font-size: 13px; padding: 8px 14px; background: #2433f5; }
 
 #sieve-drawer { position: fixed; top: 64px; right: 16px; bottom: 16px; width: 400px; z-index: 99999; overflow-y: auto;
@@ -90,5 +93,9 @@ shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-
 .sieve-x-wrap.jev-strong .jev-badge { background: #2433f5; color: #fff; }
 .sieve-x-wrap.jev-maybe .jev-badge { background: #e3e5ff; color: #1b2399; }
 .sieve-x-wrap .jev-draft { border-radius: 0 0 8px 8px; }
-article.sieve-x-strong { box-shadow: inset 4px 0 0 #2433f5; }
+article.sieve-x-strong { box-shadow: inset 4px 0 0 var(--sieve-line); }
 article.sieve-x-maybe { box-shadow: inset 4px 0 0 #9aa2ff; }
+
+/* dark pages: the solid blue badge keeps white text; a light edge separates it from dark cards */
+html.sieve-dark .jev-strong > .jev-badge, html.sieve-dark .sieve-yt-chip-strong, html.sieve-dark .sieve-x-wrap.jev-strong .jev-badge,
+html.sieve-dark .jev-r-wrap.jev-strong .jev-badge { background: #3d4bff; }
