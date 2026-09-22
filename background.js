@@ -1,4 +1,5 @@
-import { loadPrefs, linkedinQuestions, redditQuestions, verdict } from "./prefs.js";
+import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict } from "./prefs.js";
+import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
 
@@ -17,7 +18,7 @@ async function classify(state, platform) {
   if (!apiKey) return { error: "no_key" };
   const prefs = await loadPrefs();
   const reddit = platform === "reddit";
-  const questions = reddit ? redditQuestions(prefs) : linkedinQuestions(prefs);
+  const questions = reddit ? redditQuestions(prefs) : platform === "youtube" ? youtubeQuestions(prefs) : linkedinQuestions(prefs, platform === "x" ? "X (Twitter)" : "LinkedIn");
   const jevState = reddit ? { ...state, reader_experience: redditAbout } : state;
   const text = [state.author, state.subreddit, state.title, state.body, state.post].filter(Boolean).join("\n");
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -85,6 +86,46 @@ async function draft(req) {
   return { error: "The model returned no angles twice. Try Another, or switch model in options." };
 }
 
+// "Watch it for me": the video model watches the whole video, the result is kept for the digest.
+async function watch(req) {
+  const { orKey, videoModel = DEFAULT_VIDEO_MODEL, watched = {} } = await chrome.storage.local.get(["orKey", "videoModel", "watched"]);
+  if (watched[req.id] && !req.again) return watched[req.id];
+  if (!orKey) return { error: "Add an OpenRouter key in Sieve's settings." };
+  if (req.seconds && req.seconds / 60 > MAX_MINUTES) return { error: `Videos over ${MAX_MINUTES} minutes are too long to watch in one go.` };
+  const prefs = await loadPrefs();
+  let res;
+  try {
+    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
+      body: JSON.stringify({ model: videoModel, messages: watchMessages(req, prefs), max_tokens: 1500, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
+    });
+  } catch {
+    return { error: "Network error reaching OpenRouter." };
+  }
+  if (res.status === 401) return { error: "OpenRouter rejected the key." };
+  if (res.status === 402) return { error: "OpenRouter is out of credit." };
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
+  let out;
+  try {
+    out = parseWatch(body.choices?.[0]?.message?.content || "");
+  } catch {
+    return { error: "The video model's answer couldn't be read. Try again." };
+  }
+  out = { ...out, id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost: body.usage?.cost || 0, at: Date.now() };
+  await stats((s) => { s.watched = (s.watched || 0) + 1; s.draftCost = (s.draftCost || 0) + out.cost; });
+  const { watched: w = {} } = await chrome.storage.local.get("watched");
+  const keep = Object.fromEntries(Object.entries({ ...w, [req.id]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300));
+  await chrome.storage.local.set({ watched: keep });
+  await save({
+    key: `yt-${req.id}`, platform: "youtube", authorName: req.channel, authorUrl: req.url, title: req.title,
+    text: `${req.title}\n\n${out.summary}\n\nLearnings:\n${out.learnings.map((l) => "- " + l).join("\n")}`,
+    topic: "", kind: "video", worth: 1,
+  });
+  return out;
+}
+
 const KEEP_DAYS = 30;
 const MAX_SAVED = 400;
 
@@ -132,6 +173,10 @@ async function digest(since) {
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.type === "save") {
     save(msg.post).then(() => reply({ ok: true }));
+    return true;
+  }
+  if (msg.type === "watch") {
+    watch(msg).then(reply);
     return true;
   }
   if (msg.type === "digest") {

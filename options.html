@@ -44,8 +44,8 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 </section>
 
 <section>
-<h2>LinkedIn</h2>
-<div class="inline"><label><input id="linkedinOn" type="checkbox"> Score my LinkedIn feed</label></div>
+<h2>LinkedIn and X</h2>
+<div class="inline"><label><input id="linkedinOn" type="checkbox"> Score my LinkedIn feed</label><label><input id="xOn" type="checkbox"> Score my X feed</label></div>
 <label class="f">Kinds of posts to show</label>
 <div class="checks" id="kinds"></div>
 </section>
@@ -59,6 +59,16 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <div class="checks" id="redditKinds"></div>
 <label class="f">Call a thread "still fresh" when it's at most</label>
 <div class="inline"><label><input id="freshHours" type="number" min="1" max="168"> hours old</label><label><input id="freshComments" type="number" min="0" max="1000"> comments</label></div>
+</section>
+
+<section>
+<h2>YouTube</h2>
+<div class="inline"><label><input id="youtubeOn" type="checkbox"> Score YouTube videos and offer "Watch it for me"</label></div>
+<label class="f">Kinds of videos to show</label>
+<div class="checks" id="youtubeKinds"></div>
+<label class="f" for="videoModel">Video model for "Watch it for me" (OpenRouter id, must accept video)</label>
+<input id="videoModel" type="text">
+<p class="hint" style="margin-top:6px">Gemini 2.5 Flash-Lite watches picture and sound for about 0.2 cents a minute. Only public videos, up to 55 minutes.</p>
 </section>
 
 <section>

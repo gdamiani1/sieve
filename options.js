@@ -1,5 +1,6 @@
 import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT } from "./draft.js";
-import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, loadPrefs } from "./prefs.js";
+import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs } from "./prefs.js";
+import { DEFAULT_VIDEO_MODEL } from "./watch-prompt.js";
 
 const $ = (id) => document.getElementById(id);
 const lines = (id) => $(id).value.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -17,15 +18,19 @@ const readChecks = (container) => Object.fromEntries([...$(container).querySelec
 
 async function load() {
   const p = await loadPrefs();
-  const s = await chrome.storage.local.get(["apiKey", "orKey", "model", "about", "redditAbout", "reminderOn", "reminderTime"]);
+  const s = await chrome.storage.local.get(["apiKey", "orKey", "model", "about", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Paste your TypeSafe key";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
   $("role").value = p.role;
   $("topics").value = p.topics.join("\n");
   $("linkedinOn").checked = p.linkedinOn;
+  $("xOn").checked = p.xOn;
   $("redditOn").checked = p.redditOn;
   checks("kinds", KINDS, p.kinds);
   checks("redditKinds", REDDIT_KINDS, p.redditKinds);
+  checks("youtubeKinds", YOUTUBE_KINDS, p.youtubeKinds);
+  $("youtubeOn").checked = p.youtubeOn;
+  $("videoModel").value = s.videoModel || DEFAULT_VIDEO_MODEL;
   $("subreddits").value = p.subreddits.join("\n");
   $("freshHours").value = p.freshHours;
   $("freshComments").value = p.freshComments;
@@ -50,7 +55,10 @@ $("saveAll").onclick = async () => {
     topics: lines("topics").slice(0, 8),
     kinds: readChecks("kinds"),
     redditKinds: readChecks("redditKinds"),
+    youtubeKinds: readChecks("youtubeKinds"),
+    youtubeOn: $("youtubeOn").checked,
     linkedinOn: $("linkedinOn").checked,
+    xOn: $("xOn").checked,
     redditOn: $("redditOn").checked,
     subreddits: lines("subreddits"),
     freshHours: Number($("freshHours").value) || DEFAULT_PREFS.freshHours,
@@ -63,6 +71,7 @@ $("saveAll").onclick = async () => {
   await chrome.storage.local.set({
     prefs,
     model: $("model").value.trim() || DEFAULT_MODEL,
+    videoModel: $("videoModel").value.trim() || DEFAULT_VIDEO_MODEL,
     about: $("about").value.trim() || DEFAULT_ABOUT,
     redditAbout: $("redditAbout").value.trim() || DEFAULT_REDDIT_ABOUT,
     reminderOn: $("remind").checked,

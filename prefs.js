@@ -19,11 +19,21 @@ export const REDDIT_KINDS = {
   promo: "Promotion",
 };
 
+export const YOUTUBE_KINDS = {
+  tutorial: "Tutorials and how-tos",
+  build_demo: "Builds and demos",
+  talk: "Talks, interviews, podcasts",
+  commentary: "Commentary and news",
+  entertainment: "Entertainment",
+  promo: "Promotion and sponsored",
+};
+
 export const DEFAULT_PREFS = {
   role: "someone who uses AI and automation in their work",
   topics: ["AI and machine learning in practice", "Automating everyday work", "Running a small business"],
   kinds: { built_something: true, opinion: true, question: true, news: true, promo: false, personal: false },
   redditKinds: { asking_help: true, discussion: true, showcase: true, rant: false, news: false, promo: false },
+  youtubeKinds: { tutorial: true, build_demo: true, talk: true, commentary: true, entertainment: false, promo: false },
   boostWords: [],
   muteWords: [],
   highAt: 0.7,
@@ -31,6 +41,8 @@ export const DEFAULT_PREFS = {
   lowMode: "fade", // fade | hide | show
   linkedinOn: true,
   redditOn: true,
+  youtubeOn: true,
+  xOn: true,
   subreddits: [], // empty = every subreddit
   freshHours: 12,
   freshComments: 40,
@@ -41,6 +53,7 @@ export async function loadPrefs() {
   const merged = { ...DEFAULT_PREFS, ...prefs };
   merged.kinds = { ...DEFAULT_PREFS.kinds, ...(prefs.kinds || {}) };
   merged.redditKinds = { ...DEFAULT_PREFS.redditKinds, ...(prefs.redditKinds || {}) };
+  merged.youtubeKinds = { ...DEFAULT_PREFS.youtubeKinds, ...(prefs.youtubeKinds || {}) };
   if (!prefs.lowMode && dimLow === false) merged.lowMode = "show"; // carry over the old checkbox
   merged.topics = merged.topics.map((t) => t.trim()).filter(Boolean).slice(0, 8);
   if (!merged.topics.length) merged.topics = DEFAULT_PREFS.topics;
@@ -54,11 +67,11 @@ const topicCriteria = (prefs) => ({
 
 export const topicLabel = (prefs, key) => (key === "other" ? "" : (prefs.topics[Number(key.slice(1))] || "").slice(0, 32));
 
-export function linkedinQuestions(prefs) {
+export function linkedinQuestions(prefs, site = "LinkedIn") {
   return {
     worth: {
       type: "noul",
-      instructions: `The reader is ${prefs.role}. Should they read this LinkedIn post closely and consider replying?`,
+      instructions: `The reader is ${prefs.role}. Should they read this ${site} post closely and consider replying?`,
       criteria: {
         true: `The post is about one of the reader's topics (${prefs.topics.join("; ")}) and has something concrete to respond to: a build, a test with results, numbers, a method, or a real question.`,
         false: "Off the reader's topics, or generic motivation, self-promotion, announcements, engagement bait, or hype with nothing concrete to respond to.",
@@ -129,6 +142,32 @@ export function redditQuestions(prefs) {
   };
 }
 
+export function youtubeQuestions(prefs) {
+  return {
+    worth: {
+      type: "noul",
+      instructions: `The viewer is ${prefs.role}. From the title, channel, length and any snippet, is this YouTube video likely worth their time?`,
+      criteria: {
+        true: `Likely substantive and about one of the viewer's topics (${prefs.topics.join("; ")}): a real tutorial, build, test, talk or analysis.`,
+        false: "Off the viewer's topics, or clickbait, hype, get-rich-quick, reaction content or mostly promotion.",
+      },
+    },
+    topic: { type: "choice", instructions: "Which of these topics is the video mainly about?", criteria: topicCriteria(prefs) },
+    kind: {
+      type: "choice",
+      instructions: "What kind of video is it?",
+      criteria: {
+        tutorial: "Teaches how to do something step by step.",
+        build_demo: "Shows something being built, tested or demonstrated.",
+        talk: "A talk, interview, panel or podcast.",
+        commentary: "Opinion, commentary, news or reaction.",
+        entertainment: "Entertainment, vlogs, challenges.",
+        promo: "Mainly sells a course, product, community or service.",
+      },
+    },
+  };
+}
+
 // Jev's answers + the user's rules -> what to show. Rules are plain code, so they always win.
 export function verdict(answers, prefs, platform, text) {
   const worth = (answers.worth || answers.answerable).noul;
@@ -136,12 +175,12 @@ export function verdict(answers, prefs, platform, text) {
   let tier = worth >= prefs.highAt ? "strong" : worth >= prefs.lowBelow ? "maybe" : "low";
   let reason = "";
   const lower = text.toLowerCase();
-  const kindsOn = platform === "reddit" ? prefs.redditKinds : prefs.kinds;
-  const kindNames = platform === "reddit" ? REDDIT_KINDS : KINDS;
+  const kindsOn = { reddit: prefs.redditKinds, youtube: prefs.youtubeKinds }[platform] || prefs.kinds;
+  const kindNames = { reddit: REDDIT_KINDS, youtube: YOUTUBE_KINDS }[platform] || KINDS;
   if (kindsOn[kind] === false) { tier = "low"; reason = `${kindNames[kind] || kind}: turned off`; }
   const mute = prefs.muteWords.find((w) => w && lower.includes(w.toLowerCase()));
   if (mute) { tier = "low"; reason = `muted word "${mute}"`; }
   const boost = prefs.boostWords.find((w) => w && lower.includes(w.toLowerCase()));
   if (boost) { tier = "strong"; reason = `always show "${boost}"`; }
-  return { worth, tier, reason, kind, topic: topicLabel(prefs, answers.topic.choice), angle: answers.angle.choice, lowMode: prefs.lowMode };
+  return { worth, tier, reason, kind, topic: topicLabel(prefs, answers.topic.choice), angle: answers.angle?.choice || "none", lowMode: prefs.lowMode };
 }

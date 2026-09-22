@@ -1,6 +1,6 @@
 # Sieve
 
-A Chrome extension that tells you which LinkedIn and Reddit posts are worth your attention, and suggests
+A Chrome extension that tells you which LinkedIn, X, Reddit and YouTube posts are worth your attention, and suggests
 angles for a reply. It never writes or posts anything for you.
 
 It is built on [Jev](https://typesafe.ai), TypeSafe's decision model (Sieve is an independent project, not made by TypeSafe): a model that doesn't generate text,
@@ -21,6 +21,16 @@ reading? could I answer this?), plain code handles the rules, and you do the par
   The badge also shows the thread's age and comment count, and whether it's still fresh
   (≤ 12 hours, ≤ 40 comments).
 - **Reply angles** (Answer / Ask / Your experience / Watch out). No links, no promotion.
+
+**YouTube**
+- Every video tile you scroll past gets a Jev chip, scored from its title, channel and length.
+- **Watch it for me**: a video model (Gemini 2.5 Flash-Lite via OpenRouter by default) watches the whole
+  public video, picture and sound, and returns watch / skim / skip, key points with clickable timestamps,
+  the best moment, learnings and claims to check. About 0.2 US cents per minute of video, up to 55 minutes.
+  Every result is saved to the daily learnings.
+
+**X**
+- Same scoring and reply angles as LinkedIn. Ads are skipped.
 
 **Daily learnings**
 - Posts scored 0.7+ are saved locally for 30 days. The digest page summarises them into what people built,
@@ -78,6 +88,7 @@ The tests use invented posts (`test/sample.json`, `test/reddit_test.mjs`). Keys 
     node test/angles_test.mjs       # comment angles never borrow your facts for the author
     node test/compare_drafts.mjs    # the same angles from several models, with cost
     node test/digest_test.mjs       # daily learnings digest
+    node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
 
 On the invented set, LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
 scored high where it was labelled maybe) and Reddit on 5 of 6 (the shared-inbox question scored 0.52, maybe
@@ -99,7 +110,8 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 
 - `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
 - `draft.js`: the angle prompts and parser. `digest-prompt.js`: the digest prompt.
-- `content.js` (LinkedIn), `reddit.js` (Reddit), `background.js` (API calls, saving, reminder).
+- `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
+- `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
 
 ## License

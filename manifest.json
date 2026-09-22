@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Sieve: posts worth your time",
-  "version": "1.1.0",
-  "description": "Sieve scores the LinkedIn and Reddit posts you scroll past and suggests reply angles. Never clicks, comments or posts.",
+  "version": "1.2.0",
+  "description": "Sieve scores the LinkedIn, X, Reddit and YouTube posts you scroll past, suggests reply angles, and can watch a video for you. Never clicks, comments or posts.",
   "permissions": [
     "storage",
     "alarms",
@@ -36,6 +36,31 @@
       ],
       "js": [
         "reddit.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "youtube.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "x.js"
       ],
       "css": [
         "content.css"

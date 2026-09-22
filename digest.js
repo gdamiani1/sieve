@@ -54,9 +54,38 @@ function redditList(saved) {
   return [box];
 }
 
+function videoList(watched) {
+  // Every video Sieve watched for you in the last 7 days, with its learnings.
+  const recent = Object.values(watched).filter((w) => Date.now() - w.at < 7 * 864e5).sort((a, b) => b.at - a.at);
+  if (!recent.length) return [];
+  const box = document.createElement("div");
+  box.className = "rlist";
+  const h = document.createElement("h3");
+  h.textContent = "Videos watched for you (last 7 days)";
+  box.append(h);
+  for (const w of recent) {
+    const div = document.createElement("div");
+    div.className = "post";
+    const a = document.createElement("a");
+    a.href = w.url; a.target = "_blank"; a.rel = "noopener";
+    a.textContent = w.title;
+    const m = document.createElement("div");
+    m.className = "m";
+    m.textContent = `${w.channel} · ${{ watch: "worth watching", skim: "skim it", skip: "skip it" }[w.verdict]} · ${new Date(w.at).toLocaleDateString()}`;
+    const t = document.createElement("div");
+    t.className = "t";
+    t.style.maxHeight = "none";
+    t.textContent = w.learnings.map((l) => "• " + l).join("\n") || w.summary;
+    div.append(a, m, t);
+    box.append(div);
+  }
+  return [box];
+}
+
 async function load() {
-  const { digests = [], saved = [] } = await chrome.storage.local.get(["digests", "saved"]);
+  const { digests = [], saved = [], watched = {} } = await chrome.storage.local.get(["digests", "saved", "watched"]);
   $("reddit").replaceChildren(...redditList(saved));
+  $("videos").replaceChildren(...videoList(watched));
   $("digests").replaceChildren(...digests.map(renderDigest));
   if (!digests.length) $("digests").textContent = "No digests yet.";
   $("savedSum").textContent = `Saved posts (${saved.length}, kept 30 days)`;

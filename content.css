@@ -46,3 +46,49 @@ shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-
 .jev-strong > .jev-draft { box-shadow: inset 4px 0 0 #2433f5; }
 .jev-maybe > .jev-draft { box-shadow: inset 4px 0 0 #9aa2ff; }
 .jev-hidden { display: none !important; }
+
+/* ---- YouTube ---- */
+.sieve-yt-chip { position: absolute; top: 6px; left: 6px; z-index: 5; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  max-width: calc(100% - 12px); padding: 4px 6px 4px 8px; border-radius: 8px; background: rgba(236, 231, 222, 0.95); color: #14120e;
+  font: 600 11.5px/1.2 -apple-system, system-ui, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.sieve-yt-chip-strong { background: #2433f5; color: #fff; }
+.sieve-yt-err { background: #fff0ea; color: #9a2a00; }
+.sieve-yt-watch { font: 700 11px/1 -apple-system, system-ui, sans-serif; padding: 5px 9px; border-radius: 999px; border: 0; cursor: pointer;
+  background: #14120e; color: #fff; white-space: nowrap; }
+.sieve-yt-chip-strong .sieve-yt-watch { background: #fff; color: #2433f5; }
+.sieve-yt-watch:disabled { opacity: .5; cursor: default; }
+.sieve-yt-strong { outline: 2px solid #2433f5; outline-offset: 4px; border-radius: 12px; }
+.sieve-yt-bar { display: flex; gap: 10px; align-items: center; margin: 8px 0 4px; }
+.sieve-yt-bar-label { font: 800 12px/1 -apple-system, system-ui, sans-serif; color: #2433f5; letter-spacing: .04em; text-transform: uppercase; }
+.sieve-yt-bar .sieve-yt-watch { font-size: 13px; padding: 8px 14px; background: #2433f5; }
+
+#sieve-drawer { position: fixed; top: 64px; right: 16px; bottom: 16px; width: 400px; z-index: 99999; overflow-y: auto;
+  background: #ece7de; color: #14120e; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.35); padding: 16px 20px 20px;
+  font: 14px/1.5 -apple-system, system-ui, sans-serif; }
+#sieve-drawer h4 { margin: 16px 0 6px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #2433f5; }
+#sieve-drawer ul { margin: 0; padding-left: 18px; } #sieve-drawer li { margin: 6px 0; }
+#sieve-drawer p { margin: 8px 0; }
+.sieve-d-head { display: flex; justify-content: space-between; align-items: center; }
+.sieve-d-brand { font-weight: 800; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #6b655b; }
+.sieve-d-close { border: 0; background: none; font-size: 24px; line-height: 1; cursor: pointer; color: #14120e; }
+.sieve-d-title { font-weight: 750; font-size: 16px; margin-top: 8px; }
+.sieve-d-meta { color: #6b655b; font-size: 12.5px; }
+.sieve-d-wait { margin-top: 18px; color: #3a362f; }
+.sieve-d-err { margin-top: 18px; color: #9a2a00; }
+.sieve-d-verdict { display: inline-block; margin-top: 14px; padding: 5px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; }
+.sieve-v-watch { background: #2433f5; color: #fff; } .sieve-v-skim { background: #e3e5ff; color: #1b2399; } .sieve-v-skip { background: #d6cebf; color: #14120e; }
+.sieve-d-why { font-weight: 600; }
+.sieve-d-best { margin-top: 10px; padding: 10px 12px; background: #fff; border-radius: 10px; }
+.sieve-ts { font-weight: 700; color: #2433f5; text-decoration: none; font-variant-numeric: tabular-nums; }
+.sieve-d-foot { margin-top: 18px; font-size: 12px; color: #6b655b; }
+.sieve-d-again { margin-top: 8px; font: 600 12px/1 -apple-system, system-ui, sans-serif; padding: 7px 12px; border-radius: 7px; border: 1px solid #c9c1b3; background: #fff; cursor: pointer; }
+
+/* ---- X ---- */
+.sieve-x-wrap { margin: 4px 12px 0; border-radius: 8px; overflow: hidden; }
+.sieve-x-wrap:empty { display: none; }
+.sieve-x-wrap .jev-badge { border-radius: 8px; }
+.sieve-x-wrap.jev-strong .jev-badge { background: #2433f5; color: #fff; }
+.sieve-x-wrap.jev-maybe .jev-badge { background: #e3e5ff; color: #1b2399; }
+.sieve-x-wrap .jev-draft { border-radius: 0 0 8px 8px; }
+article.sieve-x-strong { box-shadow: inset 4px 0 0 #2433f5; }
+article.sieve-x-maybe { box-shadow: inset 4px 0 0 #9aa2ff; }
