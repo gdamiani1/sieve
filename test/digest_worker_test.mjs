@@ -98,8 +98,8 @@ assert.equal(store.digests, undefined, "no digest stored");
 assert.equal(store.lastDigestAt, undefined, "and the window isn't moved on");
 answer = DIGEST;
 
-// Two digests for different windows at once: both are kept. The same window twice at once (a double
-// click): one call, one digest.
+// Two digests for different windows at once: both are kept. The exact same window asked twice while
+// the first is still out (a second click on "Summarise since last digest"): one call, one digest.
 reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })] });
 requests.length = 0;
 const [day, week] = await Promise.all([send({ type: "digest", since }), send({ type: "digest", since: now - 7 * 864e5 })]);
@@ -108,7 +108,7 @@ assert.deepEqual(store.digests.map((x) => x.since).sort(), [day.since, week.sinc
 reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })] });
 requests.length = 0;
 const [one, two] = await Promise.all([send({ type: "digest", since }), send({ type: "digest", since })]);
-assert.equal(requests.length, 1, "a double click is charged once");
+assert.equal(requests.length, 1, "a repeat request for the same window is charged once");
 assert.deepEqual(one, two);
 assert.equal(store.digests.length, 1);
 
@@ -140,16 +140,18 @@ assert.deepEqual(await send({ type: "digest", since }), { error: "No saved posts
 assert.equal(requests.length, 0);
 
 // The daily reminder counts posts the way the digest does: one copy of a cross-posted post, and posts
-// with no key never taken for each other.
+// with no key (missing or "") never taken for each other.
 reset({ saved: [
   post("42", "Cross-posted.", { platform: "x", authorName: "On X" }),
   post("42", "Cross-posted.", { authorName: "On LinkedIn" }),
-  post("", "No key one."),
+  post("", "Empty key one."),
+  post("", "Empty key two."),
+  post(undefined, "No key one."),
   post(undefined, "No key two."),
 ] });
 notes.length = 0;
 await alarm({ name: "daily-digest" });
 assert.equal(notes.length, 1);
-assert.equal(notes[0].title, "3 posts worth reading today");
+assert.equal(notes[0].title, "5 posts worth reading today");
 
 console.log("digest worker: all offline checks passed");

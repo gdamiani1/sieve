@@ -397,7 +397,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "digest") {
-    // The same window asked for twice at once (a double click) is one digest and one charge.
+    // A second request for the exact same window while the first is still out (a second click on
+    // "Summarise since last digest") joins it: one digest, one charge. The other two buttons compute a
+    // fresh window on every click, so each click there is a digest of its own.
     once(`digest:${msg.since}`, () => digest(msg.since)).then(reply, () => reply({ error: "Sieve couldn't make the digest. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }

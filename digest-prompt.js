@@ -114,7 +114,9 @@ export function leftOutNote(left) {
   const names = new Map(); // the name as shown -> whether it's safe to show
   for (const p of left) {
     const raw = rawName(p);
-    const shown = cap(cleanText(raw), NOTE_NAME_CAP);
+    // One trailing group like "(she/her)" or "[Hiring]" goes, so a name with pronouns or a tag is still
+    // named; any other bracket keeps the name out (NOT_A_NAME below).
+    const shown = cap(cleanText(raw), NOTE_NAME_CAP).replace(/\s*[([][^()[\]]*[)\]]$/, "");
     if (!shown) continue;
     // Raw catches hidden characters, the 40-cut form a match the cut creates. The full cleaned form
     // also hides a name whose match sits past the cut: its first 40 code points may look harmless, but
@@ -149,9 +151,9 @@ function withoutLeftOut(s) {
 // break ("in 2025 – 12 failed" becomes "in 2025, 12 failed", never "2025-12"), and an unspaced one as
 // a range or a compound ("3–5", "30%–40%", "Q1–Q3", "3—5" keep a hyphen). An en dash right before a
 // number is a minus sign ("–12%" becomes "−12%", a sign the page never strips as a bullet); a dash at
-// the start of a line, or right after a "- " bullet, is a bullet; one at the end of a line goes. Runs of spaces are collapsed first,
-// which also keeps the line-end rule from slowing down on a runaway line. None of these rules reach
-// across a line break, so bullets and headings stay on their own lines. Then the "Left out" section
+// the start of a line, or right after a "- " bullet, is a bullet; one at the end of a line goes. Runs
+// of spaces are collapsed first, which also keeps the line-end rule from slowing down on a runaway
+// line. None of these rules reach across a line break, so bullets and headings stay on their own lines. Then the "Left out" section
 // when anything was left out, added after the model has answered, so no post can reach or rewrite it.
 export function digestText(modelText, left) {
   const body = withoutLeftOut(stripInvisible(str(modelText)))
@@ -169,9 +171,9 @@ export function digestText(modelText, left) {
 }
 
 // What the digest page shows when every post in the window was left out: no model call, no charge.
-// "Could summarise", because Reddit threads saved in the same window never go into a digest anyway.
+// It names the platforms, because Reddit threads saved in the same window never go into a digest.
 export function allLeftOutError(n) {
   return n === 1
-    ? "The one post Sieve could summarise from that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts."
-    : `All ${n} posts Sieve could summarise from that window contain text aimed at AI tools, so Sieve left them out. They're under Saved posts.`;
+    ? "The one LinkedIn, X or YouTube post in that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts."
+    : `All ${n} LinkedIn, X and YouTube posts in that window contain text aimed at AI tools, so Sieve left them out. They're under Saved posts.`;
 }
