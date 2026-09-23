@@ -31,6 +31,34 @@ export function facts(about) {
   return about.split("\n").map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean);
 }
 
+// Which fact may reach the angle prompt is Jev's call, not the drafting model's. Given every fact,
+// a cheap model stretches one that only shares a broad field (AI, agents) onto any post. Jev rates
+// each fact against the post; plain code keeps the best one at FACT_MIN or above, or none.
+// FACT_MIN came from 27 invented posts: unrelated ones scored 0.56 at most, real matches 0.71 or more.
+export const FACT_MIN = 0.7;
+
+export function factQuestions(list) {
+  return Object.fromEntries(list.map((f, i) => [`f${i + 1}`, {
+    type: "noul",
+    instructions: `The reader may reply to this post and mention this first-hand fact of theirs. Would the post's author see the fact as directly about what they wrote? Fact: ${f}`,
+    criteria: {
+      true: "Directly about what the author wrote: the same kind of task, tool, method or problem, so it adds a real data point to their post.",
+      false: "Only shares a broad topic with the post (AI, automation, LLMs, agents, email, small business), or is about something else.",
+    },
+  }]));
+}
+
+// Index of the fact Jev rates highest, if it reaches min; -1 when none does. A tie keeps the first.
+export function pickFact(answers, count, min = FACT_MIN) {
+  let best = -1;
+  for (let i = 0; i < count; i++) {
+    const p = answers?.[`f${i + 1}`]?.noul;
+    if (typeof p !== "number" || Number.isNaN(p) || p < min) continue;
+    if (best < 0 || p > answers[`f${best + 1}`].noul) best = i;
+  }
+  return best;
+}
+
 export function buildMessages({ author, post, angle }, about) {
   const list = facts(about).map((f, i) => `F${i + 1}: ${f}`).join("\n");
   const system = `You suggest angles for a LinkedIn comment. You do NOT write the comment. The commenter ("me") writes it himself.
@@ -52,15 +80,17 @@ Rules:
 - Do not make all three about failures or error rates. Vary the move.
 - English only. No praise, no selling, no emojis, no em dashes.
 - Output only the 3 lines.`;
+  // No fact passed Jev's check: say so, and don't ask for a result there is no fact for.
+  const mine = list ? `MY FACTS (mine, not the author's)\n${list}` : `MY FACTS: none apply to this post. Give three lines without "Your angle".`;
+  const move = !list && angle === "share_result" ? ANGLES.none : ANGLES[angle] || ANGLES.none;
   const user = `THE POST
 Author: ${author}
 
 ${post}
 
-MY FACTS (mine, not the author's)
-${list}
+${mine}
 
-Jev's suggested move, as one of the three if it fits: ${ANGLES[angle] || ANGLES.none}`;
+Jev's suggested move, as one of the three if it fits: ${move}`;
   return [{ role: "system", content: system }, { role: "user", content: user }];
 }
 

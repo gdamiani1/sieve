@@ -1,6 +1,6 @@
 import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
-import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles } from "./draft.js";
+import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
@@ -91,12 +91,33 @@ async function classify(state, platform) {
   return { error: "rate_limited" };
 }
 
+// LinkedIn and X: only the fact Jev rates as about this post reaches the angle prompt (see pickFact).
+// If Jev can't be asked, no fact goes: an unrelated fact is worse than none.
+async function relevantFact(post, list) {
+  const { apiKey } = await chrome.storage.local.get("apiKey");
+  if (!apiKey || !list.length) return "";
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: "jev-latest", state: { post }, questions: factQuestions(list) }),
+    });
+    if (!res.ok) return "";
+    const body = await res.json();
+    await stats((s) => { s.tokens += body.usage?.input_tokens || 0; });
+    const i = pickFact(body.answers, list.length);
+    return i < 0 ? "" : `- ${list[i]}`;
+  } catch {
+    return "";
+  }
+}
+
 async function draft(req) {
   const { orKey, model = DEFAULT_MODEL, about: liAbout = DEFAULT_ABOUT, redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get(["orKey", "model", "about", "redditAbout"]);
   const reddit = req.platform === "reddit";
-  const about = reddit ? redditAbout : liAbout;
   const build = reddit ? buildRedditMessages : buildMessages;
   if (!orKey) return { error: "Add an OpenRouter key in the extension options to get comment angles." };
+  const about = reddit ? redditAbout : await relevantFact(req.post || "", facts(liAbout));
   // Reasoning is switched off; if a provider thinks anyway and runs out of room, retry once with more.
   for (const maxTokens of [200, 800]) {
     let res;
