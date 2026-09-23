@@ -7,26 +7,28 @@
 //     Every item has exactly these fields, always present, always this type:
 //       id        string, never empty, one per post per platform: the stored key for LinkedIn ("123")
 //                 and YouTube ("yt-abc"); "<platform>:<key>" for every other platform ("x:123",
-//                 "reddit:456"), since LinkedIn and X can give a cross-posted post the same key.
+//                 "reddit:456"), since LinkedIn and X can give a cross-posted post the same key. A
+//                 watched video from another platform is "<platform>:<video id>".
 //       platform  a lowercase platform name, usually linkedin, x, reddit or youtube (old posts
 //                 without one, and any value that isn't a plain lowercase word, are linkedin).
 //       kind      string, e.g. "technique", "video"; "" when unknown.
-//       title     the post title on Reddit, the video title on YouTube (on another video platform, the
-//                 first line of its caption). LinkedIn and X posts have
-//                 none of their own: a briefed one carries its brief's title (the post's first
-//                 line), any other "".
+//       title     the post title on Reddit, the video title on YouTube, or (a video from another
+//                 platform) the first line of its caption -- "" when the caption gives no line to
+//                 use. LinkedIn and X posts have none of their own: a briefed one carries its
+//                 brief's title (the post's first line), any other "".
 //       author    string, the author or channel name.
-//       url       string. The post on X and Reddit, the video's page on YouTube and other video
-//                 platforms. On LinkedIn, the post when
-//                 Sieve kept its link, else the author's profile (posts saved before Sieve kept the
-//                 link). Only a real http(s) link ever leaves the extension; "" otherwise.
+//       url       string. The post on X and Reddit, the video's page on YouTube and every other
+//                 video platform. On LinkedIn, the post when Sieve kept its link, else the
+//                 author's profile (posts saved before Sieve kept the link). Only a real http(s)
+//                 link ever leaves the extension; "" otherwise.
 //       savedAt   ISO string or null: when Sieve kept the item (saved, watched or briefed).
 //       text      string, raw third-party text (a post body or a video summary), uncleaned.
 //       worth     number or null.
 //       topic     string, "" when there is none.
-//       watch     { verdict, why, summary, points, best, learnings, checks, seconds } or null:
-//                 points: [{t, text}], best: {t, text} | null, learnings and checks: string[],
-//                 seconds: number | null.
+//       watch     { verdict, why, summary, points, best, learnings, checks, seconds } or null: set
+//                 on a watched video from any platform, whichever platform its id carries. points:
+//                 [{t, text}], best: {t, text} | null, learnings and checks: string[], seconds:
+//                 number | null.
 //       brief     a normalized brief (brief.js normalizeBrief) plus `at`, or null.
 //   digests: [{ at, since, count, text }], `at` and `since` each an ISO string or null.
 //

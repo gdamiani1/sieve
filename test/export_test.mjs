@@ -263,6 +263,21 @@ assert.deepEqual(
   assert.equal(reel.brief.what, "Reel technique");
   assert.equal(byId["yt-Abc_1234567"].platform, "youtube");
   assert.equal(byId["yt-Abc_1234567"].watch.verdict, "watch");
+  assert.equal(reel.worth, 1, "the saved post's own fields survive the join");
+  assert.equal(reel.text, "t");
+}
+
+// Another platform's watched video with no saved post left: its item comes from the watched record
+// alone. One with no usable id makes no item, and the storage key is never used in its place.
+{
+  const out = buildExport({
+    watched: {
+      "example:Xyz_7654321": { platform: "example", id: "Xyz_7654321", url: "https://example.com/reel/Xyz_7654321/", title: "", channel: "@bo", verdict: "watch", summary: "s", at: 5 },
+      "example:noid": { platform: "example", url: "https://example.com/reel/noid/", at: 4 },
+    },
+  }, 10);
+  assert.deepEqual(out.items.map((it) => [it.id, it.platform, it.kind, it.author, it.url]),
+    [["example:Xyz_7654321", "example", "video", "@bo", "https://example.com/reel/Xyz_7654321/"]]);
 }
 
 console.log("export: all offline checks passed");
