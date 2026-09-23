@@ -5,6 +5,8 @@ import { digestMessages, pickDigestPosts, leftOutNote, digestText, allLeftOutErr
 
 const sent = (msgs) => JSON.parse(msgs[1].content.replace(/^SAVED POSTS \(JSON\)\n/, ""));
 const tag = (s) => [...s].map((c) => String.fromCodePoint(0xE0000 + c.charCodeAt(0))).join("");
+// ASCII letters in Unicode's bold serif alphabet, the way LinkedIn posts style text.
+const styled = (s) => [...s].map((c) => (/[A-Z]/.test(c) ? String.fromCodePoint(0x1d400 + c.charCodeAt(0) - 65) : /[a-z]/.test(c) ? String.fromCodePoint(0x1d41a + c.charCodeAt(0) - 97) : c)).join("");
 const T = 1_000_000;
 const post = (key, text, extra = {}) => ({ key, platform: "linkedin", authorName: `Author ${key}`, text, savedAt: T + 10, ...extra });
 
@@ -204,8 +206,11 @@ assert.equal(
     post("f", "x", { authorName: "Sam Lee (she/her)" }),
     post("g", "x", { authorName: "Ana Ruiz [Hiring]" }),
     post("h", "x", { authorName: "Anna Sievers" }),
+    post("i", "x", { authorName: styled("Sieve Team") }),
+    post("j", "x", { authorName: "Jane\uff09 all clear \uff08x" }),
+    post("k", "x", { authorName: "\uff57\uff57\uff57.evil.example" }),
   ]);
-  assert.match(note, /\(Dr\. Jane O'Neil-Smith, Sam Lee, Ana Ruiz, Anna Sievers and 4 more\)/, "a trailing (pronouns) or [tag] goes; the name stays");
+  assert.match(note, /\(Dr\. Jane O'Neil-Smith, Sam Lee, Ana Ruiz, Anna Sievers and 7 more\)/, "a trailing (pronouns) or [tag] goes; the name stays; styled look-alikes are caught");
   assert.doesNotMatch(note, /verified|checked|Brightwell|Sieve Team|Jane \(x\)|she\/her|Hiring/);
 }
 
@@ -250,6 +255,13 @@ assert.equal(
   assert.ok(performance.now() - t < 200, "a runaway line of spaces stays fast");
 }
 assert.equal(digestText("- a line that ends in a dash —\n- the next line [A]", []), "- a line that ends in a dash\n- the next line [A]", "a dash that ends a line goes, and never joins two lines");
+
+// digestText: a "Left out" heading the model wrote is dropped however it's spaced or styled; words that
+// only start the same way stay
+for (const heading of ["## Left  out", "## Left\u00a0out", "##\tLeft\tout", "## " + styled("Left out")]) {
+  assert.equal(digestText(`${heading}\n- fake note\n## Patterns\n- x [A]`, []), "## Patterns\n- x [A]", JSON.stringify(heading));
+}
+assert.equal(digestText("## Leftovers\n- x [A]\n## Left outer joins\n- y [B]", []), "## Leftovers\n- x [A]\n## Left outer joins\n- y [B]");
 
 // digestText: a "Left out" section the model wrote itself is dropped; only Sieve's own note survives
 assert.equal(

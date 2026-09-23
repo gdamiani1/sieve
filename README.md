@@ -156,7 +156,8 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 ## Files
 
 - `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
-- `draft.js`: the angle prompts and parser, and the Jev question that picks which fact fits a post. `digest-prompt.js`: the digest prompt.
+- `draft.js`: the angle prompts and parser, and the Jev question that picks which fact fits a post.
+- `digest-prompt.js`: which saved posts go into a digest (flagged ones left out), the digest prompt, the Left out note and the final text.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
   `linkedin-post-id.js`: runs in LinkedIn's own page and finds a feed post's id, so briefs link to the post. Reads only.
 - `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser. `json.js`: tolerant parsing of model JSON.

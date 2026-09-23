@@ -121,7 +121,7 @@ export function leftOutNote(left) {
     // Raw catches hidden characters, the 40-cut form a match the cut creates. The full cleaned form
     // also hides a name whose match sits past the cut: its first 40 code points may look harmless, but
     // the name as a whole isn't one Sieve should vouch for.
-    const safe = !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown);
+    const safe = !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown.normalize("NFKC"));
     names.set(shown, (names.get(shown) ?? true) && safe);
   }
   const safe = [...names].filter(([, ok]) => ok).map(([name]) => name).slice(0, NOTE_NAMES);
@@ -136,11 +136,12 @@ export function leftOutNote(left) {
 
 // The model's text without any "Left out" section of its own. That heading is Sieve's, written by code
 // below, so a steered model can't imitate it or get in first. A heading is any line that starts with
-// "#", the same test the digest page uses.
+// "#", the same test the digest page uses; it's read NFKC-folded and with any run of spaces, so styled
+// letters, a non-breaking space or a tab can't slip a "Left out" heading past.
 function withoutLeftOut(s) {
   let skip = false;
   return s.split("\n").filter((line) => {
-    if (/^\s*#/.test(line)) skip = /^\s*#+\s*left out\b/i.test(line);
+    if (/^\s*#/.test(line)) skip = /^\s*#+\s*left\s+out\b/i.test(line.normalize("NFKC"));
     return !skip;
   }).join("\n");
 }
