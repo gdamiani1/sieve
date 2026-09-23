@@ -71,7 +71,7 @@ assert.doesNotMatch(JSON.stringify(requests[0]), /Brightwell|Riley Park/, "the f
 assert.equal(d.count, 2, "count is the posts the digest summarises");
 assert.equal(
   d.text,
-  "## What people built or tested\n- Ran golden sets on every prompt change, caught 3 regressions [Jane Doe]\n\n## Left out\n- 1 post wasn't summarised because it contains text aimed at AI tools (Riley Park). It's under Saved posts if you want to read it yourself.",
+  "## What people built or tested\n- Ran golden sets on every prompt change, caught 3 regressions [Jane Doe]\n\n## Left out\n- 1 post wasn't summarised because it contains text that looks aimed at AI tools (Riley Park). It's under Saved posts if you want to read it yourself.",
 );
 assert.equal(d.cost, 0.0001);
 assert.deepEqual(store.digests[0], d, "stored as returned");

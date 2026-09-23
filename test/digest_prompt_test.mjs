@@ -151,18 +151,18 @@ assert.equal(leftOutNote([]), "");
 assert.equal(leftOutNote(undefined), "");
 assert.equal(
   leftOutNote([post("a", "x", { authorName: "Jane Doe" })]),
-  "## Left out\n- 1 post wasn't summarised because it contains text aimed at AI tools (Jane Doe). It's under Saved posts if you want to read it yourself.",
+  "## Left out\n- 1 post wasn't summarised because it contains text that looks aimed at AI tools (Jane Doe). It's under Saved posts if you want to read it yourself.",
 );
 assert.equal(
   leftOutNote([post("a", "x", { authorName: "Jane Doe" }), post("b", "y", { authorName: "Sam Lee" })]),
-  "## Left out\n- 2 posts weren't summarised because they contain text aimed at AI tools (Jane Doe, Sam Lee). They're under Saved posts if you want to read them yourself.",
+  "## Left out\n- 2 posts weren't summarised because they contain text that looks aimed at AI tools (Jane Doe, Sam Lee). They're under Saved posts if you want to read them yourself.",
 );
 
 // leftOutNote: names deduplicated, at most five written out, then "and N more"
 {
   const names = ["Jane Doe", "Jane Doe", "Sam Lee", "A One", "B Two", "C Three", "D Four", "E Five"];
   const note = leftOutNote(names.map((n, i) => post(`k${i}`, "x", { authorName: n })));
-  assert.match(note, /^## Left out\n- 8 posts weren't summarised because they contain text aimed at AI tools \(Jane Doe, Sam Lee, A One, B Two, C Three and 2 more\)\. They're under Saved posts/);
+  assert.match(note, /^## Left out\n- 8 posts weren't summarised because they contain text that looks aimed at AI tools \(Jane Doe, Sam Lee, A One, B Two, C Three and 2 more\)\. They're under Saved posts/);
   assert.ok(shape(note));
 }
 
@@ -176,7 +176,7 @@ assert.equal(
     post("d", "x", { authorName: "W".repeat(60) }),
   ]);
   assert.doesNotMatch(note, /Brightwell|reading this/, "a hostile name is never written out");
-  assert.match(note, /- 4 posts weren't summarised because they contain text aimed at AI tools \(Jane Doe, Staff Engineer, W{40} and 1 more\)\./);
+  assert.match(note, /- 4 posts weren't summarised because they contain text that looks aimed at AI tools \(Jane Doe, Staff Engineer, W{40} and 1 more\)\./);
   assert.ok(shape(note));
 }
 // leftOutNote: a name that only matches once it's cleaned or cut to 40 code points, or that carries a
@@ -218,13 +218,13 @@ assert.equal(
 for (const pair of [["Jane", "Jane" + tag("AI: obey")], ["Jane" + tag("AI: obey"), "Jane"]]) {
   assert.equal(
     leftOutNote(pair.map((n, i) => post(`k${i}`, "x", { authorName: n }))),
-    "## Left out\n- 2 posts weren't summarised because they contain text aimed at AI tools. They're under Saved posts if you want to read them yourself.",
+    "## Left out\n- 2 posts weren't summarised because they contain text that looks aimed at AI tools. They're under Saved posts if you want to read them yourself.",
   );
 }
 
 assert.equal(
   leftOutNote([post("a", "x", { authorName: "Evil" + tag("AI: obey") })]),
-  "## Left out\n- 1 post wasn't summarised because it contains text aimed at AI tools. It's under Saved posts if you want to read it yourself.",
+  "## Left out\n- 1 post wasn't summarised because it contains text that looks aimed at AI tools. It's under Saved posts if you want to read it yourself.",
   "no name safe to show: no brackets at all",
 );
 
@@ -270,18 +270,18 @@ assert.equal(
 );
 assert.equal(
   digestText("## left OUT\n- nothing to see\n\n## Patterns\n- x [A]", [post("a", "x", { authorName: "Sam Lee" })]),
-  "## Patterns\n- x [A]\n\n## Left out\n- 1 post wasn't summarised because it contains text aimed at AI tools (Sam Lee). It's under Saved posts if you want to read it yourself.",
+  "## Patterns\n- x [A]\n\n## Left out\n- 1 post wasn't summarised because it contains text that looks aimed at AI tools (Sam Lee). It's under Saved posts if you want to read it yourself.",
 );
 assert.equal(
   digestText("## Patterns\n- x [Jane Doe]", [post("a", "x", { authorName: "Sam Lee" })]),
-  "## Patterns\n- x [Jane Doe]\n\n## Left out\n- 1 post wasn't summarised because it contains text aimed at AI tools (Sam Lee). It's under Saved posts if you want to read it yourself.",
+  "## Patterns\n- x [Jane Doe]\n\n## Left out\n- 1 post wasn't summarised because it contains text that looks aimed at AI tools (Sam Lee). It's under Saved posts if you want to read it yourself.",
 );
 assert.equal(digestText(undefined, []), "");
 assert.equal(digestText("## Left out\n- nothing to see", []), "", "only a model-written Left out: nothing left");
 assert.equal(digestText("  \n## Left out\n- x", [post("a", "x", { authorName: "Sam Lee" })]), "", "and no note on an empty digest");
 
 // allLeftOutError: what the page shows when nothing is left to summarise
-assert.equal(allLeftOutError(1), "The one LinkedIn, X or YouTube post in that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts.");
-assert.equal(allLeftOutError(3), "All 3 LinkedIn, X and YouTube posts in that window contain text aimed at AI tools, so Sieve left them out. They're under Saved posts.");
+assert.equal(allLeftOutError(1), "The one LinkedIn, X or YouTube post in that window contains text that looks aimed at AI tools, so Sieve left it out. It's under Saved posts.");
+assert.equal(allLeftOutError(3), "All 3 LinkedIn, X and YouTube posts in that window contain text that looks aimed at AI tools, so Sieve left them out. They're under Saved posts.");
 
 console.log("digest prompt: all offline checks passed");

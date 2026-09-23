@@ -130,7 +130,7 @@ export function leftOutNote(left) {
   const one = n === 1;
   return [
     "## Left out",
-    `- ${one ? "1 post wasn't" : `${n} posts weren't`} summarised because ${one ? "it contains" : "they contain"} text aimed at AI tools${who}. ${one ? "It's" : "They're"} under Saved posts if you want to read ${one ? "it" : "them"} yourself.`,
+    `- ${one ? "1 post wasn't" : `${n} posts weren't`} summarised because ${one ? "it contains" : "they contain"} text that looks aimed at AI tools${who}. ${one ? "It's" : "They're"} under Saved posts if you want to read ${one ? "it" : "them"} yourself.`,
   ].join("\n");
 }
 
@@ -175,6 +175,6 @@ export function digestText(modelText, left) {
 // It names the platforms, because Reddit threads saved in the same window never go into a digest.
 export function allLeftOutError(n) {
   return n === 1
-    ? "The one LinkedIn, X or YouTube post in that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts."
-    : `All ${n} LinkedIn, X and YouTube posts in that window contain text aimed at AI tools, so Sieve left them out. They're under Saved posts.`;
+    ? "The one LinkedIn, X or YouTube post in that window contains text that looks aimed at AI tools, so Sieve left it out. It's under Saved posts."
+    : `All ${n} LinkedIn, X and YouTube posts in that window contain text that looks aimed at AI tools, so Sieve left them out. They're under Saved posts.`;
 }
