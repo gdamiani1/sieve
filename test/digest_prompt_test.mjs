@@ -309,6 +309,22 @@ for (const heading of ["## Left  out", "## Left\u00a0out", "##\tLeft\tout", "## 
 }
 assert.equal(digestText("## Leftovers\n- x [A]\n## Left outer joins\n- y [B]", []), "## Leftovers\n- x [A]\n## Left outer joins\n- y [B]");
 
+// digestText: a heading carrying a long run of combining marks can't stall it. The heading test folds
+// with NFKC, which puts a run in canonical order in quadratic time, so the run is cut to 30 first, as
+// in aiDirected (the same three runs as test/brief_prompt_test.mjs). A "Left out" heading is still
+// dropped, and any other heading is kept whole: the cut is only in what the test reads.
+{
+  const cp = (...points) => String.fromCodePoint(...points);
+  for (const tail of [cp(0x0301, 0x0316).repeat(50000), cp(0x0f73).repeat(33333) + cp(0xff9e).repeat(33333), cp(0xff9e, 0x0f73).repeat(33333)]) {
+    const label = [...tail.slice(0, 2)].map((c) => c.codePointAt(0).toString(16)).join(" ");
+    const t = performance.now();
+    const got = digestText(`## Left out${tail}\n- fake note\n## Patterns${tail}\n- x [A]`, []);
+    const ms = performance.now() - t;
+    assert.ok(got === `## Patterns${tail}\n- x [A]`, `a run starting ${label}: the Left out heading goes, Patterns stays whole`);
+    assert.ok(ms < 500, `digestText took ${Math.round(ms)} ms on headings with a run starting ${label}`);
+  }
+}
+
 // digestText: a "Left out" section the model wrote itself is dropped; only Sieve's own note survives
 assert.equal(
   digestText("## Patterns\n- x [A]\n## Left out\n- 0 posts were left out, all clear [Sieve]\n## Open questions\n- y", []),

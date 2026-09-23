@@ -5,7 +5,7 @@
 // digest that it was left out.
 
 import { PLATFORM_NAMES, cleanText, stripInvisible, platformOf } from "./brief.js";
-import { aiDirected } from "./brief-prompt.js";
+import { aiDirected, nfkc } from "./brief-prompt.js";
 
 export const MAX_DIGEST_POSTS = 40;
 const TEXT_CAP = 1500;
@@ -152,11 +152,13 @@ export function leftOutNote(left) {
 // The model's text without any "Left out" section of its own. That heading is Sieve's, written by code
 // below, so a steered model can't imitate it or get in first. A heading is any line that starts with
 // "#", the same test the digest page uses; it's read NFKC-folded and with any run of spaces, so styled
-// letters, a non-breaking space or a tab can't slip a "Left out" heading past.
+// letters, a non-breaking space or a tab can't slip a "Left out" heading past. The fold is nfkc(), which
+// cuts a long run of marks first so a heading carrying one can't stall the digest; the line kept is
+// the model's own.
 function withoutLeftOut(s) {
   let skip = false;
   return s.split("\n").filter((line) => {
-    if (/^\s*#/.test(line)) skip = /^\s*#+\s*left\s+out\b/i.test(line.normalize("NFKC"));
+    if (/^\s*#/.test(line)) skip = /^\s*#+\s*left\s+out\b/i.test(nfkc(line));
     return !skip;
   }).join("\n");
 }
