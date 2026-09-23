@@ -2,7 +2,7 @@ import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdic
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
-import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine } from "./brief.js";
+import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
@@ -147,12 +147,29 @@ async function draft(req) {
 
 // "Watch it for me": the video model watches the whole video, the result is kept for the digest.
 // When the video teaches a technique, its brief is kept with the other briefs.
+// Any platform the request names (videoPlatform in brief.js). YouTube keeps its keys and records exactly
+// as before. Every id must be a plain code (a YouTube id always is), so no id can carry the ":" that other
+// platforms' keys use (watchedKey). Another platform's video must also come with its page link (`url`,
+// stored and shown) and its video link (`video`, https, for the model only: it's signed and expires, so
+// it's never stored).
 async function watch(req) {
+  const platform = videoPlatform(req.platform);
+  if (!platform) return { error: "Sieve can't watch videos from this page." };
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(req.id ?? ""))) return { error: "Sieve couldn't read this video's link. Reload the page and try again." };
+  if (platform !== "youtube" && (!webUrl(req.url) || !webUrl(req.video).startsWith("https://"))) {
+    return { error: "Sieve couldn't read this video's link. Reload the page and try again." };
+  }
+  const key = watchedKey(platform, req.id);
   const { orKey, videoModel = DEFAULT_VIDEO_MODEL, watched = {} } = await chrome.storage.local.get(["orKey", "videoModel", "watched"]);
-  if (watched[req.id] && !req.again) return withPrompt(watched[req.id]);
+  if (Object.hasOwn(watched, key) && !req.again) return withPrompt(watched[key]);
   if (!orKey) return { error: "Add an OpenRouter key in Sieve's settings." };
   if (req.seconds && req.seconds / 60 > MAX_MINUTES) return { error: `Videos over ${MAX_MINUTES} minutes are too long to watch in one go.` };
   const prefs = await loadPrefs();
+  // Built once, outside the attempt loop and its try/catch: watchMessages throws for an invalid request
+  // (a non-YouTube video with no video link), and the checks above already ruled that out, so this never
+  // throws here. Building it inside the loop's try/catch would otherwise turn a genuine throw into a
+  // misleading "Network error reaching OpenRouter."
+  const messages = watchMessages(req, prefs);
   // One retry with more room: an unreadable answer is usually a cut-off or a stray quote. The whole
   // attempt loop runs inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still
   // records whatever was spent before it, exactly once.
@@ -165,7 +182,7 @@ async function watch(req) {
         res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-          body: JSON.stringify({ model: videoModel, messages: watchMessages(req, prefs), max_tokens: maxTokens, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
+          body: JSON.stringify({ model: videoModel, messages, max_tokens: maxTokens, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
         });
       } catch {
         return { error: "Network error reaching OpenRouter." };
@@ -173,7 +190,7 @@ async function watch(req) {
       if (res.status === 401) return { error: "OpenRouter rejected the key." };
       if (res.status === 402) return { error: "OpenRouter is out of credit." };
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
+      if (!res.ok) return { error: `The video model said ${res.status}. ${platform === "youtube" ? "Private, members-only or age-restricted videos can't be watched." : "Private or removed videos can't be watched."}` };
       cost += body.usage?.cost || 0;
       const cutOff = body.choices?.[0]?.finish_reason === "length";
       try {
@@ -194,23 +211,24 @@ async function watch(req) {
   if (!out) {
     return { error: `The video model's answer was ${lastError} twice. Try again, or try a shorter video.` };
   }
-  out = { ...out, id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost, at: Date.now() };
+  out = { ...out, ...(platform === "youtube" ? {} : { platform }), id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost, at: Date.now() };
   await stats((s) => { s.watched = (s.watched || 0) + 1; });
   // The newest 300, same as before, now on the queue: two videos landing together can no longer drop
   // each other's record.
   await update("watched", ({ watched: w = {} }) => ({
-    watched: Object.fromEntries(Object.entries({ ...w, [req.id]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300)),
+    watched: Object.fromEntries(Object.entries({ ...w, [key]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300)),
   }));
   // Watching again replaces the video's brief, or removes it if this time there is none.
   const vr = videoBriefRecord(out);
+  const recKey = videoRecordKey(platform, req.id);
   await update("briefs", ({ briefs = {} }) => {
     if (vr) return { briefs: addBrief(briefs, vr) };
-    if (!findBrief(briefs, "youtube", `yt-${req.id}`)) return null; // nothing to remove
-    return { briefs: removeBrief(briefs, "youtube", `yt-${req.id}`) };
+    if (!findBrief(briefs, platform, recKey)) return null; // nothing to remove
+    return { briefs: removeBrief(briefs, platform, recKey) };
   });
   if (vr) await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
   await save({
-    key: `yt-${req.id}`, platform: "youtube", authorName: req.channel, authorUrl: req.url, title: req.title,
+    key: recKey, platform, authorName: req.channel, authorUrl: req.url, title: req.title,
     text: `${req.title}\n\n${out.summary}\n\nLearnings:\n${out.learnings.map((l) => "- " + l).join("\n")}`,
     topic: "", kind: "video", worth: 1,
   });
@@ -389,7 +407,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "watch") {
-    once(`watch:${msg.id}`, () => watch(msg)).then(reply, () => reply({ error: "Sieve couldn't store the video notes. Try again, and if it keeps failing, reload the extension." }));
+    once(`watch:${videoPlatform(msg.platform)}:${msg.id}`, () => watch(msg)).then(reply, () => reply({ error: "Sieve couldn't store the video notes. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
   if (msg.type === "brief") {

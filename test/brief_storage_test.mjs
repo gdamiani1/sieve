@@ -34,8 +34,10 @@ const postAnswer = (body) => {
   return { technique: true, what: `${post.platform} technique`, try: ["Try it"], skill: { worth: false, why: "" }, warning: "" };
 };
 let answer = postAnswer;
+let lastBody = null;
 globalThis.fetch = async (_url, init) => {
   calls++;
+  lastBody = JSON.parse(init.body);
   const content = JSON.stringify(answer(JSON.parse(init.body)));
   return { status: 200, ok: true, json: async () => ({ choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0 } }) };
 };
@@ -203,6 +205,53 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   reset({ briefs: { "yt-abc": { key: "yt-abc", platform: "youtube", at: 1, what: "Old video technique" }, "linkedin:42": li } });
   await watch();
   assert.deepEqual(Object.keys(store.briefs).sort(), ["linkedin:42"], "an old video record is removed too");
+  answer = postAnswer;
+}
+
+// Watch it for me from another platform: the model gets the video link, Sieve keeps the page link, and
+// every record carries the platform, so a reel code can't meet a YouTube id of the same 11 characters.
+{
+  const reelAnswer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: true, brief: { what: "Reel technique", try: ["t"] } });
+  const reel = (extra = {}) => send({ type: "watch", platform: "example", id: "Abc_1234567", url: "https://example.com/reel/Abc_1234567/", video: "https://cdn.example.com/v.mp4?sig=1", title: "T", channel: "@ana", caption: "A caption.", ...extra });
+  reset();
+  answer = reelAnswer;
+  const got = await reel();
+  assert.equal(got.verdict, "skim");
+  assert.equal(lastBody.messages[1].content[1].video_url.url, "https://cdn.example.com/v.mp4?sig=1", "the model gets the video link");
+  assert.match(lastBody.messages[0].content, /a video from a social feed/);
+  assert.deepEqual(Object.keys(store.watched), ["example:Abc_1234567"]);
+  const w = store.watched["example:Abc_1234567"];
+  assert.equal(w.platform, "example");
+  assert.equal(w.url, "https://example.com/reel/Abc_1234567/");
+  assert.ok(!JSON.stringify(store).includes("cdn.example.com"), "the signed video link is never stored");
+  assert.equal(store.briefs["example:Abc_1234567"].key, "Abc_1234567");
+  assert.equal(store.briefs["example:Abc_1234567"].platform, "example");
+  assert.deepEqual(store.saved.map((p) => [p.platform, p.key]), [["example", "Abc_1234567"]]);
+  assert.ok(got.prompt.includes("(Example)"), "the copied prompt names the platform");
+
+  // The same 11 characters as a YouTube id: two videos, two records, and YouTube's stored as before.
+  answer = () => ({ verdict: "watch", why: "w", summary: "s", learnings: ["l"], technique: false });
+  await send({ type: "watch", id: "Abc_1234567", url: "https://www.youtube.com/watch?v=Abc_1234567", title: "YT", channel: "C", seconds: 60 });
+  assert.deepEqual(Object.keys(store.watched).sort(), ["Abc_1234567", "example:Abc_1234567"]);
+  assert.equal(store.watched.Abc_1234567.platform, undefined, "a YouTube record has no platform field, as before");
+  assert.ok(store.briefs["example:Abc_1234567"], "the YouTube watch left the reel's brief alone");
+
+  // Asked again without "again": from storage, no new call.
+  calls = 0;
+  assert.equal((await reel()).verdict, "skim");
+  assert.equal(calls, 0);
+
+  // Refused before any call: a platform that isn't a plain word (an empty one too), no video link, an
+  // http video link, an id that isn't a plain code, a page link that isn't a web link.
+  for (const bad of [{ platform: "Not Valid" }, { platform: "" }, { video: "" }, { video: "http://cdn.example.com/v.mp4" }, { id: "../x" }, { url: "javascript:alert(1)" }]) {
+    const r = await reel({ ...bad, again: true });
+    assert.ok(r.error, `refused: ${JSON.stringify(bad)}`);
+  }
+  // A YouTube id is checked too: one carrying ":" could otherwise meet another platform's key.
+  const yt = await send({ type: "watch", id: "example:Abc_1234567", url: "https://www.youtube.com/watch?v=x", title: "T", channel: "C", seconds: 60, again: true });
+  assert.ok(yt.error, "a YouTube id that isn't a plain code is refused");
+  assert.equal(store.watched["example:Abc_1234567"].platform, "example", "and the reel's record is untouched");
+  assert.equal(calls, 0, "nothing refused reached the model");
   answer = postAnswer;
 }
 
