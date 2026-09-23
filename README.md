@@ -59,7 +59,8 @@ reading? could I answer this? which of my facts is about this post?), plain code
   A post where Sieve's own check finds a blatant case or hidden characters isn't sent at all, and the digest
   ends with a "Left out" line that says how many and whose. This lowers the risk; it doesn't remove it: the
   model can still miss a passage.
-- Optional daily reminder notification (18:00 by default), only when something new was saved.
+- Optional daily reminder notification (18:00 by default), only when something new was saved, not counting
+  posts the digest leaves out.
 - Technique briefs from the last 30 days are listed with Copy as prompt. **Export library** saves everything
   Sieve kept (posts, videos, briefs, digests) as one JSON file you own.
 

@@ -1,7 +1,7 @@
 import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
-import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey } from "./digest-prompt.js";
+import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
 
@@ -439,9 +439,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await scheduleReminder();
   const { saved, lastDigestAt = 0 } = await chrome.storage.local.get(["saved", "lastDigestAt"]);
   const since = Math.max(lastDigestAt, Date.now() - 864e5);
-  const fresh = onePerKey(savedPosts(saved).filter((p) => p.savedAt > since));
-  if (!fresh.length) return; // nothing new, stay quiet
-  const people = [...new Set(fresh.map((p) => p.authorName).filter(Boolean))].slice(0, 3).join(", ");
+  // What the page will show as worth reading: not a post a digest leaves out. Names follow the Left out
+  // note's rules, so a name Sieve won't vouch for is counted but never shown.
+  const fresh = onePerKey(savedPosts(saved).filter((p) => p.savedAt > since)).filter((p) => !leftOutOfDigest(p));
+  if (!fresh.length) return; // nothing new worth reading, stay quiet
+  const people = [...new Set(fresh.map((p) => noteName(p)).filter((n) => n.safe).map((n) => n.shown))].slice(0, 3).join(", ");
   chrome.notifications.create(ALARM, {
     type: "basic",
     iconUrl: "icons/icon128.png",

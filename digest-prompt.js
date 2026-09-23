@@ -44,6 +44,13 @@ export function onePerKey(posts) {
   return (Array.isArray(posts) ? posts : []).filter((p) => p?.key == null || p.key === "" || (!seen.has(p.key) && seen.add(p.key)));
 }
 
+// Whether a digest leaves a saved post out: Sieve's own check flags it. Never a Reddit thread, which
+// doesn't go into a digest at all (the page lists those on their own). The digest and the daily
+// reminder both use this one rule, both after onePerKey, so they agree about a cross-posted post.
+export function leftOutOfDigest(p) {
+  return !!p && typeof p === "object" && platformOf(p.platform) !== "reddit" && flagged(p);
+}
+
 // Saved posts -> { posts, left }. Both hold only posts saved at or after `since`, Reddit excluded, one
 // copy of a cross-posted post. `left` is every one of those Sieve's own check flags; `posts` is the
 // first MAX_DIGEST_POSTS of the rest. Order is kept in both.
@@ -52,7 +59,7 @@ export function pickDigestPosts(saved, since) {
     .filter((p) => p && typeof p === "object" && p.savedAt >= since && platformOf(p.platform) !== "reddit");
   const posts = [];
   const left = [];
-  for (const p of onePerKey(inWindow)) (flagged(p) ? left : posts).push(p);
+  for (const p of onePerKey(inWindow)) (leftOutOfDigest(p) ? left : posts).push(p);
   return { posts: posts.slice(0, MAX_DIGEST_POSTS), left };
 }
 
@@ -103,26 +110,32 @@ Rules:
 // name. Any of those could read as Sieve's words rather than a person's name.
 const NOT_A_NAME = /[()[\]:]|\bwww\.|\bsieve\b/i;
 
+// A post's name as Sieve writes it into its own text (the Left out note, the daily reminder), and
+// whether it may be written out at all. Only the display name, as the page and the export show it:
+// never the fuller author line, which on LinkedIn is the card header ("Sam Lee reposted this ...").
+// Cleaned; one trailing group like "(she/her)", "[Hiring]" or a Reddit "(r/...)" goes first, so the
+// person is still named, then it's capped at NOTE_NAME_CAP with no space left at the end. Any other
+// bracket keeps the name out (NOT_A_NAME). `safe` is also false with no name at all, or when Sieve's
+// check flags the name in any form: raw catches hidden characters, the shown form a match the cut
+// creates, and the full cleaned form a match past the cut (the first 40 code points may look harmless,
+// but the name as a whole isn't one Sieve should vouch for).
+export function noteName(p) {
+  const raw = str(p?.authorName);
+  const shown = cap(cleanText(raw).replace(/\s*[([][^()[\]]*[)\]]$/, ""), NOTE_NAME_CAP).trim();
+  return { shown, safe: !!shown && !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown.normalize("NFKC")) };
+}
+
 // The posts pickDigestPosts left out -> the "Left out" section code adds to a digest, or "" when there
-// are none. Names are cleaned, capped and deduplicated, at most NOTE_NAMES are written out, then "and
-// N more". A name Sieve's check flags, as stored or as it would be shown, or one that matches NOT_A_NAME,
-// is only counted, never written out: the note is Sieve's own text, so a hostile display name mustn't
-// ride into the digest on the very note that warns about it.
+// are none. Names come from noteName, deduplicated; at most NOTE_NAMES are written out, then "and N
+// more". A name that isn't safe is only counted, never written out: the note is Sieve's own text, so a
+// hostile display name mustn't ride into the digest on the very note that warns about it.
 export function leftOutNote(left) {
   const n = Array.isArray(left) ? left.length : 0;
   if (!n) return "";
   const names = new Map(); // the name as shown -> whether it's safe to show
   for (const p of left) {
-    const raw = rawName(p);
-    // One trailing group like "(she/her)" or "[Hiring]" goes, so a name with pronouns or a tag is still
-    // named; any other bracket keeps the name out (NOT_A_NAME below).
-    const shown = cap(cleanText(raw), NOTE_NAME_CAP).replace(/\s*[([][^()[\]]*[)\]]$/, "");
-    if (!shown) continue;
-    // Raw catches hidden characters, the 40-cut form a match the cut creates. The full cleaned form
-    // also hides a name whose match sits past the cut: its first 40 code points may look harmless, but
-    // the name as a whole isn't one Sieve should vouch for.
-    const safe = !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown.normalize("NFKC"));
-    names.set(shown, (names.get(shown) ?? true) && safe);
+    const { shown, safe } = noteName(p);
+    if (shown) names.set(shown, (names.get(shown) ?? true) && safe);
   }
   const safe = [...names].filter(([, ok]) => ok).map(([name]) => name).slice(0, NOTE_NAMES);
   const more = names.size - safe.length;
