@@ -218,9 +218,10 @@ export const platformOf = (p) => (isPlatformKey(p) ? p : "linkedin");
 export const videoPlatform = (p) =>
   p === undefined || p === "youtube" ? "youtube" : isPlatformKey(p) ? p : null;
 
-// Both trust their id: it has passed the worker's check in watch() (background.js), which only lets
-// through a plain code (letters, digits, - and _), so no id can contain the ":" these keys use.
-// `platform` may be the request's own field: a missing one keys as YouTube.
+// videoRecordKey and watchedKey build keys; they don't check them. The id has passed the worker's
+// check in watch() (background.js), which only lets through a plain code (letters, digits, - and _),
+// so no id can contain the ":" these keys use. `platform` must be one videoPlatform accepts; the
+// request's own field is fine once it has, since a missing one keys as YouTube.
 
 // The key a watched video's saved post and brief are stored under. YouTube keeps "yt-<id>", as every
 // earlier Sieve did; any other platform uses the id itself with the platform beside it, the way a

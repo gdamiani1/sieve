@@ -46,9 +46,11 @@ let stopped = 0;
 for (const fns of Object.values(drawer().listeners)) for (const fn of fns) fn({ stopPropagation: () => stopped++ });
 assert.equal(stopped, 4);
 
-// Minutes round to the nearest minute.
+// Minutes round to the nearest minute, not up to it: 80 seconds is 1 min, not 2.
 show({ ...v, seconds: 90 }, null, youtube);
 assert.match(drawn(), /"Ana · 2 min"/);
+show({ ...v, seconds: 80 }, null, youtube);
+assert.match(drawn(), /"Ana · 1 min"/);
 
 // A failure, with "Try again".
 show(v, { error: "The video model said 500." }, youtube);
@@ -113,6 +115,11 @@ assert.equal(drawn(), [
   "  div.sieve-d-foot", `    "Saved to your daily learnings. These are the creator's claims, not verified facts. Cost $0.0123."`,
   "  button.sieve-d-again", '    "Watch again"',
 ].join("\n"));
+
+// points, learnings and checks aren't always arrays: a field that isn't one (never sent as an array
+// by parseWatch, but worth pinning here) is skipped like an empty list, not thrown on.
+show(v, { ...answer, points: undefined }, youtube);
+assert.ok(button("Watch again"), "the drawer still finishes drawing, down to its last button");
 
 // A page with no link for a moment and no price: plain-text times, no price while waiting, no cost.
 const plain = { again: () => {}, price: "", showCost: false };

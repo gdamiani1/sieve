@@ -293,7 +293,7 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   answer = postAnswer;
 }
 
-// The cache lookup uses Object.hasOwn, not a plain truthy read: a "constructor" id is watched for
+// The cache lookup uses Object.hasOwn, not a plain truthy read: a "__proto__" id is watched for
 // real, never read off Object.prototype.
 {
   reset();
@@ -301,7 +301,7 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
   const r = await send({ type: "watch", id: "__proto__", url: "https://www.youtube.com/watch?v=__proto__", title: "T", channel: "C", seconds: 60 });
   assert.equal(r.verdict, "skim");
-  assert.equal(calls, 1, "a 'constructor' id makes a real call");
+  assert.equal(calls, 1, "a '__proto__' id makes a real call");
   answer = postAnswer;
 }
 
@@ -350,6 +350,17 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
   await send({ type: "watch", id: "abc", url: "https://www.youtube.com/watch?v=abc", title: "T", channel: "C", seconds: 60 });
   assert.equal(calls, 1, "an array cache entry makes a real call");
+  answer = postAnswer;
+}
+
+// A string cached entry counts as absent too: pins `typeof cached === "object"` against a value that's
+// truthy and has no length, so it wouldn't be caught by an object-shaped guard that only excludes arrays.
+{
+  reset({ watched: { abc: "junk" } });
+  calls = 0;
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
+  await send({ type: "watch", id: "abc", url: "https://www.youtube.com/watch?v=abc", title: "T", channel: "C", seconds: 60 });
+  assert.equal(calls, 1, "a string cache entry makes a real call");
   answer = postAnswer;
 }
 

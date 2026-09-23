@@ -4,7 +4,7 @@
 // against a throwaway git repo, then against this repo's own HEAD.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,7 @@ try {
   let r = run("--repo", repo, "--out", out);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(unzipList(join(out, "sieve-9.9.9.zip")), baseList);
+  assert.ok(!existsSync(`${join(out, "sieve-9.9.9.zip")}.tmp`), "no .tmp file is left behind after a successful build");
   // It won't replace a zip without --force.
   r = run("--repo", repo, "--out", out);
   assert.notEqual(r.status, 0);
@@ -100,6 +101,7 @@ try {
     ["manifest.json", JSON.stringify({ ...goodManifestObj, icons: { 16: "gone-icon.png" } }), "gone-icon.png"],
     ["manifest.json", JSON.stringify({ ...goodManifestObj, action: { default_popup: "gone-popup.html" } }), "gone-popup.html"],
     ["manifest.json", JSON.stringify({ ...goodManifestObj, options_ui: { page: "gone-options.html" } }), "gone-options.html"],
+    ["manifest.json", JSON.stringify({ ...goodManifestObj, action: { default_icon: "gone-di.png" } }), "gone-di.png"],
   ];
   for (const [file, content, missing] of missingFileCases) {
     write(file, content);
@@ -110,6 +112,14 @@ try {
     assert.match(r.stderr, new RegExp(`loads ${missing.replace(".", "\\.")}, which isn't in the package`));
     git("revert", "--no-edit", "HEAD");
   }
+
+  // A script tag's src can carry a query string; the part after "?" is stripped before the file is
+  // looked up, so a cache-busting suffix doesn't make a real, present file read as missing.
+  write("popup.html", '<script src="popup.js?v=2"></script>');
+  git("commit", "-qam", "query string on a script src");
+  r = run("--repo", repo, "--out", join(tmp, "query-string"));
+  assert.equal(r.status, 0, r.stderr);
+  git("revert", "--no-edit", "HEAD");
 
   // A manifest key store-zip doesn't check yet is refused rather than passed silently.
   write("manifest.json", JSON.stringify({ ...goodManifestObj, sandbox: { pages: ["sandboxed.html"] } }));
@@ -147,6 +157,12 @@ try {
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /unknown flag --reff/);
 
+  // "--out" followed immediately by another flag: "--force" looks like a value but starts with "--",
+  // so it's refused as a missing value rather than silently taken as the output directory.
+  r = run("--out", "--force");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /--out needs a value/);
+
   // A .gitattributes file anywhere in the commit: git archive would apply it after the checks, so it's refused.
   write(".gitattributes", "* text=auto\n");
   git("add", "-A");
@@ -155,6 +171,26 @@ try {
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /\.gitattributes in the commit/);
   git("revert", "--no-edit", "HEAD");
+
+  // A repo-local .git/info/attributes file is never committed, so the check above can't see it, but
+  // git archive still applies it: store-zip refuses rather than build a package it changed underneath.
+  writeFileSync(join(repo, ".git", "info", "attributes"), "a.js export-ignore\n");
+  r = run("--repo", repo, "--out", join(tmp, "info-attributes"));
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /info\/attributes exists/);
+  assert.ok(!existsSync(join(tmp, "info-attributes", "sieve-9.9.9.zip")), "nothing is written when it refuses");
+  rmSync(join(repo, ".git", "info", "attributes"));
+
+  // A gitattributes file the repo's own config points at (the same thing a global core.attributesFile
+  // would do) must not change what gets packaged: the archive call resets core.attributesFile to
+  // /dev/null for its own run, so an export-ignore rule sitting in a file like this never reaches it.
+  const configuredAttrs = join(tmp, "configured-attributes");
+  writeFileSync(configuredAttrs, "a.js export-ignore\n");
+  git("config", "core.attributesFile", configuredAttrs);
+  r = run("--repo", repo, "--out", join(tmp, "configured-attributes-out"));
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(unzipList(r.stdout.match(/store-zip: (\S+\.zip)/)[1]).includes("a.js"), "a configured attributesFile doesn't drop a.js from the package");
+  git("config", "--unset", "core.attributesFile");
 
   // A filename that mentions the forbidden word, even with harmless bytes.
   write("icons/instagram.png", "png");
@@ -178,6 +214,20 @@ try {
   const globList = unzipList(globZip);
   assert.ok(globList.includes("t*"), "the literal filename is packaged");
   assert.ok(!globList.some((f) => f.startsWith("tools/") || f.startsWith("test/")), "a glob character in a filename can't pull in left-out files");
+  git("revert", "--no-edit", "HEAD");
+
+  // A non-ASCII filename: ls-tree is read with -z, so a name git would otherwise C-quote (as
+  // "caf\303\251.js", wrapped in double quotes) instead comes back, and is packaged, as its raw UTF-8
+  // bytes. Checked directly against the zip's bytes rather than through unzip, whose own filename
+  // decoding varies by platform and locale.
+  write("café.js", "// café\n");
+  git("add", "-A");
+  git("commit", "-qm", "non-ascii filename");
+  r = run("--repo", repo, "--out", join(tmp, "non-ascii"));
+  assert.equal(r.status, 0, r.stderr);
+  const nonAsciiZip = readFileSync(r.stdout.match(/store-zip: (\S+\.zip)/)[1]);
+  assert.ok(nonAsciiZip.includes(Buffer.from("café.js", "utf8")), "the filename is packaged as its raw UTF-8 bytes");
+  assert.ok(!nonAsciiZip.includes(Buffer.from('"caf\\303\\251.js"')), "not left C-quoted, which -z avoids");
   git("revert", "--no-edit", "HEAD");
 
   // This repo's own HEAD makes a clean package.

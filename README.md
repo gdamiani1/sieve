@@ -172,9 +172,11 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 
 `node tools/store-zip.mjs` writes `~/Downloads/sieve-store/sieve-<version>.zip` from the current commit
 (`--ref main` for another commit). It packages committed files only, leaving out `test/`, `tools/`,
-`README.md` and `.gitignore`. Before writing anything it checks the package and refuses, naming the file,
-when a packaged file's name or bytes mention a word it must never contain, or when it loads a file that's
-missing from the package. Commit first, then build.
+`README.md` and `.gitignore`. Before writing anything it checks the package and refuses, naming the
+problem, when a packaged file's name or bytes mention a word it must never contain, when it loads a file
+that's missing from the package, when a `.gitattributes` file exists anywhere the commit or the repo could
+apply one, or when `manifest.json` uses a key store-zip doesn't check yet. The word check is a tripwire
+against committing the owner's personal copy by mistake, not a guarantee. Commit first, then build.
 
 ## License
 

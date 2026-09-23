@@ -66,6 +66,13 @@ try {
 if (rawFiles.some((f) => f === ".gitattributes" || f.endsWith("/.gitattributes")))
   fail(".gitattributes in the commit: store-zip doesn't support it, because git archive would apply it after the checks");
 
+// A repo-local info/attributes file is never committed, so the check above can't see it, but git
+// archive still applies it. store-zip refuses rather than silently build a package an attribute rule
+// changed underneath it.
+const infoAttributes = git("rev-parse", "--path-format=absolute", "--git-path", "info/attributes").toString().trim();
+if (existsSync(infoAttributes))
+  fail(`${infoAttributes} exists: store-zip doesn't support attribute rules from outside the commit`);
+
 const files = rawFiles.filter((f) => !LEFT_OUT.some((x) => (x.endsWith("/") ? f.startsWith(x) : f === x)));
 const has = new Set(files);
 const read = (f) => git("show", `${sha}:${f}`);
@@ -109,10 +116,16 @@ const zip = join(outDir, `sieve-${version}.zip`);
 if (existsSync(zip) && !force) fail(`${zip} already exists; pass --force to replace it`);
 const zipTmp = `${zip}.tmp`;
 try {
-  git("--literal-pathspecs", "archive", "--format=zip", "-o", zipTmp, sha, "--", ...files);
-} catch (e) {
+  // core.attributesFile=/dev/null and GIT_ATTR_NOSYSTEM=1 keep a gitattributes file outside the
+  // commit -- the user's global one, or the system one -- from changing what archive packages; the
+  // repo-local info/attributes is refused outright above, since neither setting reaches it.
+  execFileSync("git", ["-C", repo, "-c", "core.attributesFile=/dev/null", "--literal-pathspecs", "archive", "--format=zip", "-o", zipTmp, sha, "--", ...files], {
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, GIT_ATTR_NOSYSTEM: "1" },
+  });
+} catch {
   try { rmSync(zipTmp, { force: true }); } catch {}
-  fail(`git archive failed: ${e.message.split("\n")[0]}`);
+  fail("git archive failed");
 }
 renameSync(zipTmp, zip);
 console.log(`store-zip: ${zip} (${files.length} files from ${git("rev-parse", "--short", sha).toString().trim()})`);

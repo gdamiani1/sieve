@@ -81,7 +81,7 @@ export function fakeDocument() {
 }
 
 // One line per node, children indented two spaces: `tag#id.class1.class2`, plus ` href=...` on a link;
-// a text node is its text in double quotes. Enough to compare what a script built with what it should.
+// a text node is its text as a JSON string. Enough to compare what a script built with what it should.
 export function outline(node, depth = 0) {
   const pad = "  ".repeat(depth);
   if (node instanceof Text) return [`${pad}${JSON.stringify(node.data)}`];
