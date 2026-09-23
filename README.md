@@ -55,6 +55,10 @@ reading? could I answer this? which of my facts is about this post?), plain code
 - Posts scored 0.7+, and any post you brief, are saved locally for 30 days. The digest page summarises them
   into what people built, numbers worth remembering, patterns, people worth a conversation, and open questions,
   with every bullet attributed to its author. Reddit threads you could still answer are listed on top.
+- The digest model gets your saved posts as data, with a rule never to follow text in them aimed at AI tools.
+  A post where Sieve's own check finds a blatant case or hidden characters isn't sent at all, and the digest
+  ends with a "Left out" line that says how many and whose. This lowers the risk; it doesn't remove it: the
+  model can still miss a passage.
 - Optional daily reminder notification (18:00 by default), only when something new was saved.
 - Technique briefs from the last 30 days are listed with Copy as prompt. **Export library** saves everything
   Sieve kept (posts, videos, briefs, digests) as one JSON file you own.
@@ -97,8 +101,8 @@ else. TypeSafe gets what Jev scores: a post's text (for YouTube, the title, chan
 your role and topics, and on Reddit your Reddit facts. When you ask for angles on LinkedIn or X, TypeSafe also
 gets the post's text and your LinkedIn facts, so Jev can pick which fact, if any, fits. OpenRouter gets a post's
 text when you ask for angles (with the one fact Jev picked, if any; on Reddit, your Reddit facts) or a brief
-(with your role and topics), your saved posts when you ask for a digest, and a video's link, title and channel
-(with your role and topics) when you have it watched. OpenRouter passes each
+(with your role and topics), your saved posts (except any Sieve left out) when you ask for a digest, and a
+video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
 request to the model you picked.
 
 ## Cost (September 2026 prices)
@@ -118,6 +122,8 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/watch_parse_test.mjs  # the video answer parser (offline)
     node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
     node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
+    node test/digest_prompt_test.mjs # the digest prompt, which posts reach it, the Left out note (offline)
+    node test/digest_worker_test.mjs # the digest through the real worker: flagged posts never sent (offline)
     node test/export_test.mjs       # the library export (offline)
     node test/brief_storage_test.mjs # briefs and saved posts kept apart per platform, a cross-post digested once, through the real worker (offline)
     node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
@@ -126,7 +132,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/reddit_test.mjs       # Reddit scoring + reply angles
     node test/angles_test.mjs       # comment angles never borrow your facts for the author
     node test/compare_drafts.mjs    # the same angles from several models, with cost
-    node test/digest_test.mjs       # daily learnings digest
+    node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
 
 On the invented set, LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
@@ -150,7 +156,8 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 ## Files
 
 - `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
-- `draft.js`: the angle prompts and parser, and the Jev question that picks which fact fits a post. `digest-prompt.js`: the digest prompt.
+- `draft.js`: the angle prompts and parser, and the Jev question that picks which fact fits a post.
+- `digest-prompt.js`: which saved posts go into a digest (flagged ones left out), the digest prompt, the Left out note and the final text.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
   `linkedin-post-id.js`: runs in LinkedIn's own page and finds a feed post's id, so briefs link to the post. Reads only.
 - `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser. `json.js`: tolerant parsing of model JSON.
