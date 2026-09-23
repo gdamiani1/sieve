@@ -131,18 +131,7 @@
     return b;
   }
 
-  // ---- the drawer ----
-  function drawer() {
-    let d = document.getElementById("sieve-drawer");
-    if (!d) {
-      d = document.createElement("aside");
-      d.id = "sieve-drawer";
-      for (const ev of ["click", "keydown", "keyup", "keypress"]) d.addEventListener(ev, (e) => e.stopPropagation());
-      document.body.append(d);
-    }
-    return d;
-  }
-
+  // ---- the drawer: watch-drawer.js, shared with the other pages that offer Watch it for me ----
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -162,57 +151,9 @@
   }
 
   function show(v, r) {
-    const d = drawer();
-    d.replaceChildren();
-    const head = el("div", "sieve-d-head");
-    head.append(el("span", "sieve-d-brand", "Sieve · watched for you"));
-    const close = el("button", "sieve-d-close", "×");
-    close.onclick = () => d.remove();
-    head.append(close);
-    d.append(head, el("div", "sieve-d-title", v.title), el("div", "sieve-d-meta", [v.channel, v.seconds ? `${Math.round(v.seconds / 60)} min` : ""].filter(Boolean).join(" · ")));
-    if (!r) { d.append(el("div", "sieve-d-wait", `Watching the whole video${v.seconds ? ` (${cost(v.seconds)})` : ""}. This takes about 10 to 40 seconds…`)); return; }
-    if (r.error) {
-      const retry = el("button", "sieve-d-again", "Try again");
-      retry.onclick = () => watch(v, true);
-      d.append(el("div", "sieve-d-err", r.error), retry);
-      return;
-    }
-    const verdict = el("div", `sieve-d-verdict sieve-v-${r.verdict}`, { watch: "Worth watching", skim: "Skim it", skip: "Skip it" }[r.verdict]);
-    d.append(verdict, el("p", "sieve-d-why", r.why));
-    if (r.brief?.warning) d.append(el("div", "sieve-b-warn", `Warning: the source contains text aimed at AI agents: ${r.brief.warning}`));
-    d.append(el("p", "", r.summary));
-    if (r.best) {
-      const best = el("div", "sieve-d-best");
-      best.append(el("b", "", "Best moment "), stamp(v, r.best.t), document.createTextNode(" " + r.best.text));
-      d.append(best);
-    }
-    const section = (title, items, render) => {
-      if (!items.length) return;
-      d.append(el("h4", "", title));
-      const ul = el("ul");
-      for (const it of items) { const li = el("li"); render(li, it); ul.append(li); }
-      d.append(ul);
-    };
-    section("Key points", r.points, (li, p) => li.append(stamp(v, p.t), document.createTextNode(" " + p.text)));
-    section("Learnings", r.learnings, (li, t) => li.append(t));
-    section("Check before repeating", r.checks, (li, t) => li.append(t));
-    // The prompt is only there when the brief passed normalizeBrief, which enforces the warned-brief rules,
-    // so a brief without one is never shown.
-    if (r.brief && r.prompt) {
-      d.append(el("h4", "sieve-d-brief-h", "Technique brief"));
-      const box = el("div", "sieve-d-brief");
-      if (globalThis.SieveBriefPanel?.fill) {
-        // warning: false -- the drawer already showed this brief's warning right after the verdict.
-        globalThis.SieveBriefPanel.fill(box, { ...r.brief, prompt: r.prompt }, { compact: true, level: 5, warning: false }); // its labels sit under this h4
-      } else {
-        box.append(el("p", "", "Sieve couldn't show the brief. Reload the page and try again."));
-      }
-      d.append(box);
-    }
-    const foot = el("div", "sieve-d-foot", `Saved to your daily learnings. These are the creator's claims, not verified facts.${r.cost ? ` Cost $${r.cost.toFixed(4)}.` : ""}`);
-    const again = el("button", "sieve-d-again", "Watch again");
-    again.onclick = () => watch(v, true);
-    d.append(foot, again);
+    const D = globalThis.SieveWatchDrawer;
+    if (!D?.show) { retire(); return; } // a tab opened before watch-drawer.js existed: it needs a reload
+    D.show(v, r, { again: () => watch(v, true), stamp: (t) => stamp(v, t), price: cost(v.seconds), showCost: true });
   }
 
   function watch(v, again) {
