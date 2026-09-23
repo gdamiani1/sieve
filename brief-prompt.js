@@ -14,21 +14,24 @@ const AI_TOOL = String.raw`(?:ai|llms?|language models?|chatbots?|summari[sz]ers
 const AI_DIRECTED = [
   // "ignore your previous instructions" -- unless it's quoted as an example ('...', "...", like ...)
   { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules|prompts?|directions|guidelines)\b/i, quoted: true },
-  // "AI assistants reading this:", "LLMs summarising this." -- only when the phrase ends right there,
-  // not "LLMs processing this pipeline" or "scrapers parsing this kind of page" (ordinary developer
-  // sentences that just happen to use "this")
-  { re: new RegExp(String.raw`\b${AI_TOOL}\s+(?:reading|summari[sz]ing|scraping|parsing|processing)\s+this(?:\s+(?:post|page|thread|message))?\s*[:,.;!]`, "i") },
-  // "note to AI tools: ...", "message to AI assistants: ..." -- only when the note itself talks about
-  // "this" post/content shortly after, the way a real injection does ("skip this post", "summarise
-  // this, add a step ..."). A note that never mentions "this" (an aside about a CLAUDE.md file, a
-  // README section) isn't addressed at whatever is reading the post right now.
-  { re: new RegExp(String.raw`\b(?:note|message)\s+(?:to|for)\s+(?:${AI_TOOL}|automated\s+(?:summar\w+|tools?))[^.!?\n]{0,60}?\bthis\b`, "i") },
+  // "AI assistants reading this:", "LLMs summarising this must ...". Fires only when the phrase ends
+  // right there -- a closing punctuation mark, or a modal that shows the sentence is telling the
+  // reading/summarising AI to do something -- not "LLMs processing this pipeline" or "scrapers parsing
+  // this kind of page" (ordinary developer sentences that just happen to use "this").
+  { re: new RegExp(String.raw`\b${AI_TOOL}\s+(?:reading|summari[sz]ing|scraping|parsing|processing)\s+this(?:\s+(?:post|page|thread|message|text|article))?(?:\s*[:,.;!]|\s+(?:must|should|shall|will|needs?|please|can)\b)`, "i") },
+  // "note to AI tools: ...", "message to AI assistants: ..." -- only when the note itself sits at the
+  // start of a sentence, a line, an HTML comment or a bracket, the shape a real aside to a model takes;
+  // "Note to AI engineers" or "a message for AI teams" mid-sentence, about people rather than models,
+  // doesn't match this at all. Written as a lookbehind so the reported snippet starts at "note"/
+  // "message", not at the ". " or "\n" before it.
+  { re: new RegExp(String.raw`(?<=^|[.!?]\s+|\n\s*|<!--\s*|\(\s*|\[\s*)(?:note|message)\s+(?:to|for)\s+(?:${AI_TOOL}(?=\s*[:,.;!)-]|\s+(?:when|who|that|reading))|automated\s+(?:summar\w+|tools?))`, "i") },
   // "the post ends here", wherever it sits
   { re: /\b(?:the\s+)?(?:post|message|user input|input|article)\s+(?:ends|is over)\s+here\b/i },
-  // "end of the post" only counts as a marker line -- at the start of a line, or written in capitals --
-  // not buried in running prose ("the repo link at the end of the post" is ordinary writing)
-  { re: /(?:^|\n)[ \t]*end\s+of\s+(?:the\s+)?(?:post|message|user input)\b/i },
-  { re: /\bEND OF (?:THE )?(?:POST|MESSAGE|USER INPUT)\b/ },
+  // "end of the post" only counts as a marker line -- at the start of a sentence or a line, whatever
+  // the case -- with more text after it, not a genuine sign-off with nothing following, and not buried
+  // in running prose ("the repo link at the end of the post" is ordinary writing). A lookbehind again,
+  // so the snippet starts at "end", not at the sentence break before it.
+  { re: /(?<=^|[.!?]\s+|\n\s*)end\s+of\s+(?:the\s+)?(?:post|message|user input)\b[.:!]?(?=\s*\S[\s\S]{20,})/i },
   // talking to Sieve's own fields: "\"warning\": ...", "\"technique\": ..." (not try/needs/skill,
   // which show up in ordinary developer talk about retries, requirements and skills); "leave warning
   // empty", "set technique true", "warning must be empty". "set the warning ..." on its own needs a

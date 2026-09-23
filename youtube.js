@@ -202,7 +202,8 @@
       d.append(el("h4", "sieve-d-brief-h", "Technique brief"));
       const box = el("div", "sieve-d-brief");
       if (globalThis.SieveBriefPanel?.fill) {
-        globalThis.SieveBriefPanel.fill(box, { ...r.brief, prompt: r.prompt }, { compact: true, level: 5 }); // its labels sit under this h4
+        // warning: false -- the drawer already showed this brief's warning right after the verdict.
+        globalThis.SieveBriefPanel.fill(box, { ...r.brief, prompt: r.prompt }, { compact: true, level: 5, warning: false }); // its labels sit under this h4
       } else {
         box.append(el("p", "", "Sieve couldn't show the brief. Reload the page and try again."));
       }
