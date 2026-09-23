@@ -168,13 +168,14 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 - `watch-drawer.js`: the "watched for you" drawer for Watch it for me, shared by every page that offers it.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
 
-## License
-
-MIT
-
 ## Building the store package
 
 `node tools/store-zip.mjs` writes `~/Downloads/sieve-store/sieve-<version>.zip` from the current commit
-(`--ref main` for another). It packages committed files only, leaves out `test/`, `tools/`, `README.md`
-and `.gitignore`, and refuses to build, naming the file, when the package mentions a word it must never
-contain or loads a file it doesn't have. Commit first, then build.
+(`--ref main` for another commit). It packages committed files only, leaving out `test/`, `tools/`,
+`README.md` and `.gitignore`. Before writing anything it checks the package and refuses, naming the file,
+when a packaged file's name or bytes mention a word it must never contain, or when it loads a file that's
+missing from the package. Commit first, then build.
+
+## License
+
+MIT
