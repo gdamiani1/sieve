@@ -2,13 +2,17 @@
 // that offers Watch it for me; a classic content script listed before them in the manifest, like
 // brief-panel.js. It only draws: the page script asks the worker and passes the answer in.
 //   SieveWatchDrawer.show(v, r, opts)
-//     v     the video: { title, channel, seconds }.
-//     r     null while it is being watched, { error } when that failed, or the worker's answer.
-//     opts  again():  what "Try again" and "Watch again" do.
+//     v     the video: { title, channel, seconds }. title should not be empty.
+//     r     null while it is being watched, { error } when that failed, or the worker's answer, whose
+//           points, learnings and checks are arrays and whose cost is a number.
+//     opts  again():  what "Try again" and "Watch again" do; needed, or both buttons do nothing.
 //           stamp(t): an element for a timestamp such as "1:05" (YouTube makes it a link); without it
 //                     the time is plain text.
 //           price:    shown while waiting, such as "<1¢"; "" shows none.
 //           showCost: whether the footer says what the answer cost.
+// Needs content.css to look right. brief-panel.js is optional; without it the brief shows a fallback
+// line instead of breaking. There is one #sieve-drawer per page: each call replaces its contents, and a
+// call after it was closed re-creates it.
 (() => {
   function drawer() {
     let d = document.getElementById("sieve-drawer");
@@ -56,7 +60,7 @@
       d.append(best);
     }
     const section = (title, items, render) => {
-      if (!items.length) return;
+      if (!Array.isArray(items) || !items.length) return;
       d.append(el("h4", "", title));
       const ul = el("ul");
       for (const it of items) { const li = el("li"); render(li, it); ul.append(li); }

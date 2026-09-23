@@ -29,10 +29,11 @@
   }
 
   // Fills `box` with brief `b` (a stored brief plus `prompt`). `compact` leaves out what the author says
-  // and the claims to check, for the YouTube drawer, which already shows them. `level` is the heading
-  // level of the section labels (4 by default; 5 inside a drawer section that is itself a level 4
-  // heading). `warning: false` leaves out the warning block here, for the YouTube drawer, which already
-  // shows it right after the verdict; LinkedIn and X have no such line of their own, so they keep it.
+  // and the claims to check, for the watch drawer (watch-drawer.js), which already shows them. `level`
+  // is the heading level of the section labels (4 by default; 5 inside a drawer section that is itself a
+  // level 4 heading). `warning: false` leaves out the warning block here, for the watch drawer
+  // (watch-drawer.js), which already shows it right after the verdict; LinkedIn and X have no such line
+  // of their own, so they keep it.
   // Without a prompt there is nothing to copy, so the Copy button and its note are left out.
   function fill(box, b, { compact = false, level = 4, warning = true } = {}) {
     box.replaceChildren();

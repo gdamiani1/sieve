@@ -165,6 +165,7 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 - `brief.js`: the technique brief (shape, safety header, markdown, Copy as prompt, the rules for warned briefs).
   `brief-prompt.js`: the prompt that briefs one post, and its parser.
   `brief-panel.js`: shows a brief on LinkedIn, X and YouTube. `export.js`: the Export library file.
+- `watch-drawer.js`: the "watched for you" drawer for Watch it for me, shared by every page that offers it.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
 
 ## License

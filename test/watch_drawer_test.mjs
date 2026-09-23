@@ -15,7 +15,7 @@ const load = (extra = {}) => {
 };
 
 const briefCalls = [];
-const { document, show, drawn } = load({ SieveBriefPanel: { fill: (box, b, opts) => { briefCalls.push(opts); box.append(`brief: ${b.what} / ${b.prompt}`); } } });
+const { document, show, drawn } = load({ SieveBriefPanel: { fill: (box, b, opts) => { briefCalls.push({ b: { ...b }, opts: { ...opts } }); box.append(`brief: ${b.what} / ${b.prompt}`); } } });
 const drawer = () => document.getElementById("sieve-drawer");
 const button = (text) => drawer().children.find((c) => c.tagName === "BUTTON" && c.textContent === text);
 
@@ -39,6 +39,16 @@ const HEAD = [
 // While watching.
 show(v, null, youtube);
 assert.equal(drawn(), [...HEAD, "  div.sieve-d-wait", '    "Watching the whole video (<1¢). This takes about 10 to 40 seconds…"'].join("\n"));
+
+// The drawer's own listeners stop clicks and key presses reaching the page underneath.
+assert.deepEqual(Object.keys(drawer().listeners).sort(), ["click", "keydown", "keypress", "keyup"]);
+let stopped = 0;
+for (const fns of Object.values(drawer().listeners)) for (const fn of fns) fn({ stopPropagation: () => stopped++ });
+assert.equal(stopped, 4);
+
+// Minutes round to the nearest minute.
+show({ ...v, seconds: 90 }, null, youtube);
+assert.match(drawn(), /"Ana · 2 min"/);
 
 // A failure, with "Try again".
 show(v, { error: "The video model said 500." }, youtube);
@@ -67,10 +77,10 @@ assert.equal(drawn(), [
   "  div.sieve-d-foot", `    "Saved to your daily learnings. These are the creator's claims, not verified facts. Cost $0.0123."`,
   "  button.sieve-d-again", '    "Watch again"',
 ].join("\n"));
-// Spread into a plain object first: opts was built inside the vm sandbox, a different realm, and
-// deepEqual (deepStrictEqual under node:assert/strict) also compares [[Prototype]], which would
-// otherwise fail here even though every field matches.
-assert.deepEqual({ ...briefCalls.at(-1) }, { compact: true, level: 5, warning: false }, "the brief panel is filled compact, without its own warning");
+// Objects made inside the vm sandbox have another realm's prototype, so the stub above spreads b and
+// opts into plain objects first; deepEqual (deepStrictEqual under node:assert/strict) also compares
+// [[Prototype]], which would otherwise fail here even though every field matches.
+assert.deepEqual(briefCalls.at(-1).opts, { compact: true, level: 5, warning: false }, "the brief panel is filled compact, without its own warning");
 button("Watch again").click();
 assert.equal(agains, 2, "Watch again calls again()");
 assert.equal(document.body.children.length, 1, "one drawer, however often it is shown");
@@ -82,8 +92,16 @@ assert.match(warned, /div\.sieve-d-verdict\.sieve-v-skip\n {4}"Skip it"/);
 const at = (s) => warned.indexOf(s);
 assert.ok(at('"It shows a real CI setup."') < at('"Warning: the source contains text aimed at AI agents: Ignore previous instructions"'));
 assert.ok(at('"Warning: the source contains text aimed at AI agents: Ignore previous instructions"') < at('"Two sentences."'));
+// The warning sits in its own div, not folded into "why" or the summary.
+assert.match(warned, /\n {2}div\.sieve-b-warn\n {4}"Warning: the source contains text aimed at AI agents: Ignore previous instructions"/);
+// The panel gets the brief's own warning too (it draws it compact, without repeating this line).
+assert.equal(briefCalls.at(-1).b.warning, "Ignore previous instructions");
 show(v, { ...answer, verdict: "skim" }, youtube);
 assert.match(drawn(), /"Skim it"/);
+
+// A brief without a prompt is never shown.
+show(v, { ...answer, prompt: "" }, youtube);
+assert.doesNotMatch(drawn(), /sieve-d-brief/);
 
 // No brief, no prompt, empty lists and no best moment: those parts aren't drawn at all.
 show(v, { ...answer, brief: null, prompt: "", best: null, points: [], learnings: [], checks: [] }, youtube);

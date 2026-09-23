@@ -83,6 +83,7 @@ shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-
 .sieve-d-why { font-weight: 600; }
 .sieve-d-best { margin-top: 10px; padding: 10px 12px; background: #fff; border-radius: 10px; }
 .sieve-ts { font-weight: 700; color: #2433f5; text-decoration: none; font-variant-numeric: tabular-nums; }
+span.sieve-ts { color: inherit; cursor: default; }
 .sieve-d-foot { margin-top: 18px; font-size: 12px; color: #6b655b; }
 .sieve-d-again { margin-top: 8px; font: 600 12px/1 -apple-system, system-ui, sans-serif; padding: 7px 12px; border-radius: 7px; border: 1px solid #c9c1b3; background: #fff; cursor: pointer; }
 

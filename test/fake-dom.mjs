@@ -49,12 +49,17 @@ export class Element {
       this.childNodes.push(node);
     }
   }
-  prepend(...nodes) { const rest = this.childNodes; this.childNodes = []; this.append(...nodes); for (const n of rest) this.childNodes.push(n); }
+  prepend(...nodes) {
+    const norm = nodes.map((n) => (typeof n === "string" ? new Text(n) : n));
+    for (const n of norm) { n.parentNode?.removeChild(n); n.parentNode = this; }
+    this.childNodes = [...norm, ...this.childNodes];
+  }
   removeChild(n) { const i = this.childNodes.indexOf(n); if (i >= 0) this.childNodes.splice(i, 1); n.parentNode = null; }
   replaceChildren(...nodes) { for (const c of this.childNodes) c.parentNode = null; this.childNodes = []; this.append(...nodes); }
   remove() { this.parentNode?.removeChild(this); }
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
   click() {
+    if (this.disabled) return;
     const e = { type: "click", preventDefault() {}, stopPropagation() {} };
     for (const fn of this.listeners.click || []) fn(e);
     this.onclick?.(e);
@@ -79,7 +84,7 @@ export function fakeDocument() {
 // a text node is its text in double quotes. Enough to compare what a script built with what it should.
 export function outline(node, depth = 0) {
   const pad = "  ".repeat(depth);
-  if (node instanceof Text) return [`${pad}"${node.data}"`];
+  if (node instanceof Text) return [`${pad}${JSON.stringify(node.data)}`];
   const name = node.tagName.toLowerCase() + (node.id ? `#${node.id}` : "") + node.className.split(" ").filter(Boolean).map((c) => `.${c}`).join("");
   const extra = node.tagName === "A" && node.href ? ` href=${node.href}` : "";
   return [`${pad}${name}${extra}`, ...node.childNodes.flatMap((c) => outline(c, depth + 1))];

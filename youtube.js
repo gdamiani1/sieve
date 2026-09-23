@@ -152,7 +152,7 @@
 
   function show(v, r) {
     const D = globalThis.SieveWatchDrawer;
-    if (!D?.show) { retire(); return; } // a tab opened before watch-drawer.js existed: it needs a reload
+    if (!D?.show) { retire(); return; } // watch-drawer.js didn't load (it's listed before this script in the manifest): ask for a reload rather than draw nothing
     D.show(v, r, { again: () => watch(v, true), stamp: (t) => stamp(v, t), price: cost(v.seconds), showCost: true });
   }
 
