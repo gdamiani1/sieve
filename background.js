@@ -360,7 +360,8 @@ async function openrouter(messages, maxTokens) {
 // out" note all live in digest-prompt.js; a post Sieve's own check flags never reaches the model, and
 // when every post in the window is flagged there is no call and no charge.
 async function digest(since) {
-  const { saved, digests = [] } = await chrome.storage.local.get(["saved", "digests"]);
+  const startedAt = Date.now();
+  const { saved } = await chrome.storage.local.get("saved");
   const { posts, left } = pickDigestPosts(savedPosts(saved), since);
   if (!posts.length) return { error: left.length ? allLeftOutError(left.length) : "No saved posts in that window yet. Scroll your feed first." };
   const r = await openrouter(digestMessages(posts), 1000);
@@ -368,7 +369,13 @@ async function digest(since) {
   const text = digestText(r.text, left);
   if (!text) return { error: "The model returned an empty digest. Try again." };
   const d = { at: Date.now(), since, count: posts.length, text, cost: r.cost };
-  await chrome.storage.local.set({ digests: [d, ...digests].slice(0, 60), lastDigestAt: d.at });
+  // Through the queue, so two digests that finish together both survive. The next "since last digest"
+  // starts from when this one read the saved posts, so a post saved while the model was writing isn't
+  // skipped.
+  await update(["digests", "lastDigestAt"], ({ digests, lastDigestAt }) => ({
+    digests: [d, ...(Array.isArray(digests) ? digests : [])].slice(0, 60),
+    lastDigestAt: Math.max(Number(lastDigestAt) || 0, startedAt),
+  }));
   return d;
 }
 
@@ -390,7 +397,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "digest") {
-    digest(msg.since).then(reply);
+    // The same window asked for twice at once (a double click) is one digest and one charge.
+    once(`digest:${msg.since}`, () => digest(msg.since)).then(reply, () => reply({ error: "Sieve couldn't make the digest. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
   if (msg.type === "classify") {

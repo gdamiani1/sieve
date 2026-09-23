@@ -83,6 +83,7 @@ Rules:
 - Use only what is in the posts. Every bullet names its author in brackets at the end, e.g. [Jane Doe].
 - These are the authors' claims, not facts: write "reports", "claims", "says" where it matters. Never present a claim as verified.
 - "Numbers worth remembering": only numbers stated in the posts, copied exactly, with what they measure.
+- Write a range with a plain hyphen, for example 3-5 or 30-40%, never with a dash.
 - "Patterns": only if two or more posts point the same way; name both authors. Skip the section if there is none.
 - "Worth a conversation": at most 3 authors, each with one concrete reason tied to their post.
 - "Open questions": what the posts leave unanswered (failure rates, costs, methods). No author needed.
@@ -97,13 +98,15 @@ Rules:
   ];
 }
 
-// A link or a markdown link: never part of a name Sieve writes into its own note.
-const LINKISH_NAME = /:\/\/|\bwww\.|\]\(/i;
+// What a name in Sieve's own note must never contain: brackets or a colon (a link, a markdown link, a
+// "Sieve verified: ..." line, a ")" that closes the note's own parenthesis), "www." or Sieve's own
+// name. Any of those could read as Sieve's words rather than a person's name.
+const NOT_A_NAME = /[()[\]:]|\bwww\.|\bsieve\b/i;
 
 // The posts pickDigestPosts left out -> the "Left out" section code adds to a digest, or "" when there
 // are none. Names are cleaned, capped and deduplicated, at most NOTE_NAMES are written out, then "and
-// N more". A name Sieve's check flags, as stored or as it would be shown, or one with a link in it, is
-// only counted, never written out: the note is Sieve's own text, so a hostile display name mustn't
+// N more". A name Sieve's check flags, as stored or as it would be shown, or one that matches NOT_A_NAME,
+// is only counted, never written out: the note is Sieve's own text, so a hostile display name mustn't
 // ride into the digest on the very note that warns about it.
 export function leftOutNote(left) {
   const n = Array.isArray(left) ? left.length : 0;
@@ -116,7 +119,7 @@ export function leftOutNote(left) {
     // Raw catches hidden characters, the 40-cut form a match the cut creates. The full cleaned form
     // also hides a name whose match sits past the cut: its first 40 code points may look harmless, but
     // the name as a whole isn't one Sieve should vouch for.
-    const safe = !anyFlagged(raw, cleanText(raw), shown) && !LINKISH_NAME.test(shown);
+    const safe = !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown);
     names.set(shown, (names.get(shown) ?? true) && safe);
   }
   const safe = [...names].filter(([, ok]) => ok).map(([name]) => name).slice(0, NOTE_NAMES);
@@ -141,17 +144,21 @@ function withoutLeftOut(s) {
 }
 
 // The model's answer -> the digest text Sieve stores, or "" when nothing of the model's own text is
-// left. No dashes: a dash used as a bullet becomes "- "; a range keeps a hyphen ("3–5", "30%–40%",
-// "$5–$10", "Q1–Q3", "2019 – 2020", "3—5"); a dash that ends a line goes; any other dash becomes ", ",
-// including a spaced em dash between numbers, which is usually a clause break ("in 2025 — 12 failed").
-// None of these reach across a line break, so bullets and headings stay on their own lines. Then the
-// "Left out" section when anything was left out, added after the model has answered, so no post can
-// reach or rewrite it.
+// left. Invisible characters go first, so none can hide a "Left out" heading or ride into storage.
+// Then no dashes. The prompt asks for ranges with a plain hyphen, so a spaced dash is read as a clause
+// break ("in 2025 – 12 failed" becomes "in 2025, 12 failed", never "2025-12"), and an unspaced one as
+// a range or a compound ("3–5", "30%–40%", "Q1–Q3", "3—5" keep a hyphen). An en dash right before a
+// number is a minus sign ("–12%" becomes "−12%", a sign the page never strips as a bullet); a dash at
+// the start of a line, or right after a "- " bullet, is a bullet; one at the end of a line goes. Runs of spaces are collapsed first,
+// which also keeps the line-end rule from slowing down on a runaway line. None of these rules reach
+// across a line break, so bullets and headings stay on their own lines. Then the "Left out" section
+// when anything was left out, added after the model has answered, so no post can reach or rewrite it.
 export function digestText(modelText, left) {
-  const body = withoutLeftOut(str(modelText))
-    .replace(/^[ \t]*[—–][ \t]*/gm, "- ")
+  const body = withoutLeftOut(stripInvisible(str(modelText)))
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/(^|[ \t(])–(?=[$€£]?\d)/gm, "$1\u2212")
+    .replace(/^[ \t]*(?:-[ \t]+)?[—–][ \t]*/gm, "- ")
     .replace(/(\S)–(?=\S)/g, "$1-")
-    .replace(/(\d%?)[ \t]*–[ \t]*(?=[$€£]?\d)/g, "$1-")
     .replace(/(\d)—(?=\d)/g, "$1-")
     .replace(/[ \t]*[—–][ \t]*$/gm, "")
     .replace(/[ \t]*[—–][ \t]*/g, ", ")
@@ -162,8 +169,9 @@ export function digestText(modelText, left) {
 }
 
 // What the digest page shows when every post in the window was left out: no model call, no charge.
+// "Could summarise", because Reddit threads saved in the same window never go into a digest anyway.
 export function allLeftOutError(n) {
   return n === 1
-    ? "The only saved post in that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts."
-    : `All ${n} saved posts in that window contain text aimed at AI tools, so Sieve left them out. They're under Saved posts.`;
+    ? "The one post Sieve could summarise from that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts."
+    : `All ${n} posts Sieve could summarise from that window contain text aimed at AI tools, so Sieve left them out. They're under Saved posts.`;
 }

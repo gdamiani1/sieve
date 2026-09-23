@@ -9,7 +9,8 @@ const reset = (data = {}) => {
   for (const k of Object.keys(store)) delete store[k];
   Object.assign(store, structuredClone({ orKey: "stub", ...data }));
 };
-let listener;
+let listener, alarm;
+const notes = [];
 const event = { addListener: () => {} };
 globalThis.chrome = {
   storage: {
@@ -20,17 +21,25 @@ globalThis.chrome = {
     onChanged: event,
   },
   runtime: { onMessage: { addListener: (fn) => { listener = fn; } }, onInstalled: event, onStartup: event },
-  alarms: { onAlarm: event },
-  notifications: { onClicked: event },
+  alarms: { onAlarm: { addListener: (fn) => { alarm = fn; } }, clear: async () => {}, create: () => {} },
+  notifications: { onClicked: event, create: (_id, opts) => { notes.push(opts); } },
 };
 
-// Every request the worker makes, and one fixed digest as the model's answer (a test can swap it).
+// Every request the worker makes, and one fixed digest as the model's answer (a test can swap it, or
+// make the body unreadable). Each answer arrives after a short wait, the way a real one does, so two
+// requests can be in flight together.
 const requests = [];
 const DIGEST = "## What people built or tested\n- Ran golden sets on every prompt change — caught 3 regressions [Jane Doe]";
 let answer = DIGEST;
+let unreadable = false;
+let whileWriting = null; // runs while the model is "writing", e.g. to save a post meanwhile
 globalThis.fetch = async (_url, init) => {
   requests.push(JSON.parse(init.body));
-  return { status: 200, ok: true, json: async () => ({ choices: [{ message: { content: answer }, finish_reason: "stop" }], usage: { cost: 0.0001 } }) };
+  await new Promise((r) => setTimeout(r, 10));
+  whileWriting?.();
+  await new Promise((r) => setTimeout(r, 10));
+  const body = { choices: [{ message: { content: answer }, finish_reason: "stop" }], usage: { cost: 0.0001 } };
+  return { status: 200, ok: true, json: async () => { if (unreadable) throw new SyntaxError("Unexpected token <"); return body; } };
 };
 
 await import("../background.js");
@@ -54,6 +63,7 @@ reset({ saved: [
   post("old", "An old post.", { savedAt: now - 10 * 864e5 }),
 ] });
 requests.length = 0;
+const before = Date.now();
 const d = await send({ type: "digest", since });
 assert.equal(requests.length, 1, "one model call");
 assert.deepEqual(sentPosts(requests[0]).map((p) => [p.platform, p.author]), [["LinkedIn", "Jane Doe"], ["X", "Sam Lee"]]);
@@ -65,7 +75,16 @@ assert.equal(
 );
 assert.equal(d.cost, 0.0001);
 assert.deepEqual(store.digests[0], d, "stored as returned");
-assert.equal(store.lastDigestAt, d.at);
+assert.ok(store.lastDigestAt >= before && store.lastDigestAt <= d.at, "the next \"since last digest\" starts from when this one read the saved posts");
+
+// A post saved while the model was writing is in the next "since last digest", not skipped.
+reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe", savedAt: now - 1000 })] });
+whileWriting = () => { store.saved = [post("mid", "Saved mid-call.", { authorName: "Mid Call", savedAt: Date.now() }), ...store.saved]; };
+await send({ type: "digest", since });
+whileWriting = null;
+requests.length = 0;
+assert.equal((await send({ type: "digest", since: store.lastDigestAt })).count, 1);
+assert.deepEqual(sentPosts(requests[0]).map((p) => p.author), ["Mid Call"]);
 
 // Nothing flagged: no "Left out" section.
 reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })] });
@@ -76,7 +95,33 @@ reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe
 answer = "## Left out\n- 0 posts were left out, all clear";
 assert.deepEqual(await send({ type: "digest", since }), { error: "The model returned an empty digest. Try again." });
 assert.equal(store.digests, undefined, "no digest stored");
+assert.equal(store.lastDigestAt, undefined, "and the window isn't moved on");
 answer = DIGEST;
+
+// Two digests for different windows at once: both are kept. The same window twice at once (a double
+// click): one call, one digest.
+reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })] });
+requests.length = 0;
+const [day, week] = await Promise.all([send({ type: "digest", since }), send({ type: "digest", since: now - 7 * 864e5 })]);
+assert.equal(requests.length, 2);
+assert.deepEqual(store.digests.map((x) => x.since).sort(), [day.since, week.since].sort(), "neither digest is lost");
+reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })] });
+requests.length = 0;
+const [one, two] = await Promise.all([send({ type: "digest", since }), send({ type: "digest", since })]);
+assert.equal(requests.length, 1, "a double click is charged once");
+assert.deepEqual(one, two);
+assert.equal(store.digests.length, 1);
+
+// Stored digests that aren't a list don't lose the new one; an unreadable answer is an error the page
+// can show, not a reply that never comes.
+reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })], digests: { not: "a list" } });
+assert.equal((await send({ type: "digest", since })).count, 1);
+assert.equal(store.digests.length, 1);
+reset({ saved: [post("jane", "Golden sets of 20 cases.", { authorName: "Jane Doe" })] });
+unreadable = true;
+assert.deepEqual(await send({ type: "digest", since }), { error: "Sieve couldn't make the digest. Try again, and if it keeps failing, reload the extension." });
+unreadable = false;
+assert.equal(store.digests, undefined);
 
 // Every post in the window flagged: no model call, no charge, nothing stored.
 reset({ saved: [
@@ -93,5 +138,18 @@ assert.equal(store.stats, undefined, "nothing charged");
 reset({ saved: [post("thread", "Anyone using evals?", { platform: "reddit" })] });
 assert.deepEqual(await send({ type: "digest", since }), { error: "No saved posts in that window yet. Scroll your feed first." });
 assert.equal(requests.length, 0);
+
+// The daily reminder counts posts the way the digest does: one copy of a cross-posted post, and posts
+// with no key never taken for each other.
+reset({ saved: [
+  post("42", "Cross-posted.", { platform: "x", authorName: "On X" }),
+  post("42", "Cross-posted.", { authorName: "On LinkedIn" }),
+  post("", "No key one."),
+  post(undefined, "No key two."),
+] });
+notes.length = 0;
+await alarm({ name: "daily-digest" });
+assert.equal(notes.length, 1);
+assert.equal(notes[0].title, "3 posts worth reading today");
 
 console.log("digest worker: all offline checks passed");
