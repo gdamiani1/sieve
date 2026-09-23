@@ -8,7 +8,7 @@ const t = Date.now();
 const r = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST",
   headers: { "Content-Type": "application/json", Authorization: `Bearer ${openrouterKey()}` },
   body: JSON.stringify({ model: DEFAULT_VIDEO_MODEL, messages: watchMessages({ url, title: process.env.TITLE || "video", channel: process.env.CHANNEL || "creator" }, prefs),
-    max_tokens: 1500, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }) });
+    max_tokens: 2000, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }) });
 const b = await r.json();
 if (!r.ok) { console.log(r.status, JSON.stringify(b).slice(0, 400)); process.exit(1); }
 console.log(JSON.stringify(parseWatch(b.choices[0].message.content), null, 2));

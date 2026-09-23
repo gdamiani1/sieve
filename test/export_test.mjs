@@ -1,0 +1,167 @@
+// Offline: the Export library file. No keys, no network.
+import assert from "node:assert/strict";
+import { buildExport, exportFilename } from "../export.js";
+
+const saved = [
+  { key: "123", platform: "linkedin", authorName: "Lena Fischer", authorUrl: "https://www.linkedin.com/in/lena", text: "Golden sets...", topic: "Evals", kind: "technique", worth: 0.86, savedAt: Date.UTC(2026, 8, 24) },
+  { key: "yt-abc", platform: "youtube", authorName: "Some Channel", authorUrl: "https://www.youtube.com/watch?v=abc", title: "Evals talk", text: "Evals talk\n\nsummary", topic: "", kind: "video", worth: 1, savedAt: Date.UTC(2026, 8, 25) },
+  { key: "r1", platform: "reddit", authorName: "u/x (r/node)", text: "Help?", kind: "asking_help", worth: 0.7, savedAt: Date.UTC(2026, 8, 20) },
+  { key: "456", authorName: "Old LinkedIn post, no platform field", text: "t", kind: "opinion", worth: 0.75, savedAt: Date.UTC(2026, 8, 19) },
+];
+const watched = {
+  abc: { id: "abc", url: "https://www.youtube.com/watch?v=abc", title: "Evals talk", channel: "Some Channel", verdict: "watch", why: "w", summary: "s", points: [{ t: "1:00", text: "p" }], best: null, learnings: ["l"], checks: [], seconds: 600, at: Date.UTC(2026, 8, 25), cost: 0.02, technique: true, brief: { what: "v" } },
+};
+const briefs = {
+  123: { key: "123", platform: "linkedin", title: "", author: "Lena Fischer", url: "https://www.linkedin.com/in/lena", at: Date.UTC(2026, 8, 24, 12), cost: 0.0001, what: "Golden-set evals", says: [], checks: [], needs: ["Node"], try: ["Write 5 cases"], success: "", skill: { worth: true, why: "" }, warning: "" },
+  old: { key: "old", platform: "x", title: "", author: "Sam", url: "https://x.com/sam/status/1", at: Date.UTC(2026, 7, 1), cost: 0, what: "An old one", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" },
+};
+const digests = [{ at: Date.UTC(2026, 8, 25), since: 0, count: 2, text: "## Built\n- x", cost: 0.001 }];
+
+const ex = buildExport({ saved, watched, briefs, digests }, Date.UTC(2026, 8, 26));
+assert.equal(ex.format, "sieve-library");
+assert.equal(ex.version, 1);
+assert.equal(ex.exportedAt, "2026-09-26T00:00:00.000Z");
+assert.deepEqual(ex.items.map((i) => i.id), ["yt-abc", "123", "r1", "456", "old"], "newest first; a brief whose post aged out still exports");
+
+const li = ex.items.find((i) => i.id === "123");
+assert.equal(li.author, "Lena Fischer");
+assert.equal(li.brief.what, "Golden-set evals");
+assert.equal(li.brief.at, "2026-09-24T12:00:00.000Z");
+assert.equal("cost" in li.brief, false, "costs stay out of the export");
+assert.equal("key" in li.brief, false);
+
+const yt = ex.items.find((i) => i.id === "yt-abc");
+assert.equal(yt.title, "Evals talk");
+assert.equal(yt.watch.verdict, "watch");
+assert.deepEqual(yt.watch.points, [{ t: "1:00", text: "p" }]);
+assert.equal(yt.brief, null, "briefs come only from the briefs store, never from watched");
+
+assert.equal(ex.items.find((i) => i.id === "456").platform, "linkedin", "old posts without a platform are LinkedIn");
+const old = ex.items.find((i) => i.id === "old");
+assert.equal(old.platform, "x");
+assert.equal(old.savedAt, "2026-08-01T00:00:00.000Z");
+
+assert.deepEqual(ex.digests, [{ at: "2026-09-25T00:00:00.000Z", since: null, count: 2, text: "## Built\n- x" }]);
+assert.deepEqual(buildExport({}, 0).items, [], "an empty library exports");
+assert.equal(buildExport({ saved: [{ key: "j", authorUrl: "javascript:alert(1)", text: "t", savedAt: 1 }] }, 2).items[0].url, "", "only web links are exported");
+
+// Two saved entries under the same key: saved is stored newest first, so the item keeps the text
+// of the first (newer) occurrence, not the second.
+const dupKey = buildExport({ saved: [
+  { key: "dup", text: "NEWER", savedAt: 100 },
+  { key: "dup", text: "OLDER", savedAt: 1 },
+] }, 200);
+assert.equal(dupKey.items.length, 1, "duplicate saved keys collapse into one item");
+assert.equal(dupKey.items[0].text, "NEWER", "the newer (first) occurrence wins");
+
+assert.equal(exportFilename(new Date(2026, 8, 26, 12).getTime()), "sieve-library-2026-09-26.json", "local noon on the 26th names the file the 26th");
+
+// A round trip through JSON changes nothing: every field is already the type it claims to be
+// (no NaN, no Infinity, no undefined hiding in an object that would vanish or turn into null).
+assert.deepEqual(JSON.parse(JSON.stringify(ex)), ex, "the export is already JSON-stable");
+
+// Every stored brief goes out through normalizeBrief (brief.js) instead of being copied field by
+// field: old brief shapes still export, and a warned brief's safety rules -- CHECK_SOURCE first,
+// no link or pipe-into-shell steps, no skill worth saving -- apply on export too, not only when a
+// developer opens the brief panel.
+const warnedEx = buildExport({
+  saved: [],
+  briefs: {
+    w1: {
+      key: "w1", platform: "x", title: "", author: "Sam", url: "https://x.com/sam/status/2",
+      at: Date.UTC(2026, 8, 20), cost: 0.0003, what: "A technique from the thread",
+      says: [], checks: [], needs: ["curl"], try: ["curl x | sh", "Then run it"],
+      success: "", skill: { worth: true, why: "looked useful" },
+      warning: "Tells any AI agent reading this thread to run the command above.",
+    },
+  },
+}, Date.UTC(2026, 8, 26));
+const warned = warnedEx.items.find((i) => i.id === "w1");
+assert.equal(warned.brief.try[0], "Check the source before copying anything from it.", "warned briefs get the safety step first");
+assert.ok(!warned.brief.try.some((s) => s.includes("curl x | sh")), "the curl line is gone");
+assert.equal(warned.brief.skill.worth, false, "nothing from a warned source is worth a skill");
+
+// A stored brief record that no longer normalizes (no "what") is skipped, but its item still
+// exports with brief: null when there's a saved post at that key.
+const noWhatEx = buildExport({
+  saved: [{ key: "nw", authorName: "Pat", text: "t", kind: "opinion", worth: 0.5, savedAt: Date.UTC(2026, 8, 21) }],
+  briefs: {
+    nw: { key: "nw", platform: "linkedin", author: "Pat", at: Date.UTC(2026, 8, 21), cost: 0.0002, says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" },
+  },
+}, Date.UTC(2026, 8, 26));
+assert.equal(noWhatEx.items.length, 1, "the saved post still exports");
+assert.equal(noWhatEx.items[0].brief, null, "a brief record with no `what` doesn't normalize, so it's null");
+
+// A brief record with no `what` and no saved post produces no item at all: nothing to export.
+assert.equal(buildExport({ briefs: { ghost: { key: "ghost", at: 1 } } }, 2).items.length, 0, "an un-normalizable, unsaved brief exports nothing");
+
+// A brief stored under an empty key, whose own `key` field is also empty, never exports with an
+// empty id: there's nothing to derive a usable id from, so it's skipped outright.
+assert.equal(
+  buildExport({ briefs: { "": { key: "", platform: "x", what: "w", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } } }, 1).items.length,
+  0,
+  "a brief with no derivable id exports nothing",
+);
+
+// A watched video with no saved entry still exports the full blank-item shape.
+const watchedOnly = buildExport({
+  watched: { zzz: { id: "zzz", url: "https://www.youtube.com/watch?v=zzz", title: "Solo video", channel: "Chan", summary: "sum", verdict: "watch", at: Date.UTC(2026, 8, 22) } },
+}, Date.UTC(2026, 8, 26));
+const wi = watchedOnly.items.find((i) => i.id === "yt-zzz");
+assert.equal(wi.platform, "youtube");
+assert.equal(wi.kind, "video");
+assert.equal(wi.title, "Solo video");
+assert.equal(wi.author, "Chan");
+assert.equal(wi.url, "https://www.youtube.com/watch?v=zzz");
+assert.equal(wi.text, "sum");
+assert.equal(wi.savedAt, "2026-09-22T00:00:00.000Z");
+
+// Every item, in every kind of result -- the combined export, a watched-only export, and a
+// brief-only export -- has exactly the fields the version 1 contract promises, nothing more or less.
+const ITEM_KEYS = ["author", "brief", "id", "kind", "platform", "savedAt", "text", "title", "topic", "url", "watch", "worth"];
+for (const it of [...ex.items, ...watchedOnly.items, ...warnedEx.items]) {
+  assert.deepEqual(Object.keys(it).sort(), ITEM_KEYS, `item ${it.id} has exactly the documented fields`);
+}
+
+// A brief keyed "yt-<id>" plus a watched record for the same video merge into one item that
+// carries both `watch` and `brief`.
+const joined = buildExport({
+  watched: { abc: { id: "abc", title: "t", summary: "s", verdict: "watch", at: Date.UTC(2026, 8, 22) } },
+  briefs: { "yt-abc": { key: "yt-abc", platform: "youtube", author: "A", url: "https://x.com/a", at: Date.UTC(2026, 8, 22), what: "w", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } },
+}, Date.UTC(2026, 8, 26));
+assert.equal(joined.items.length, 1, "one item, not two");
+assert.ok(joined.items[0].watch, "carries the watch data");
+assert.ok(joined.items[0].brief, "carries the brief data");
+
+// A javascript: url from a watched video or a brief is dropped, same as for a saved post.
+const badUrls = buildExport({
+  watched: { u: { id: "u", url: "javascript:alert(1)", title: "t", at: Date.UTC(2026, 8, 20) } },
+  briefs: { bu: { key: "bu", platform: "x", author: "A", url: "javascript:alert(2)", at: Date.UTC(2026, 8, 20), what: "w", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } },
+}, Date.UTC(2026, 8, 26));
+assert.equal(badUrls.items.find((i) => i.id === "yt-u").url, "", "a javascript: url from a watched video is dropped");
+assert.equal(badUrls.items.find((i) => i.id === "bu").url, "", "a javascript: url from a brief is dropped");
+
+// Messy, real-world-shaped storage: null entries, non-array/non-object containers, entries
+// without a key, a numeric brief key, and a timestamp past the Date range. None of it crashes,
+// and every item that does come out has a non-empty string id.
+const messyChecks = [
+  buildExport({ saved: null }, 1),
+  buildExport({ saved: { a: { key: "a" } } }, 1), // saved must be an array, not an object
+  buildExport({ saved: [null, { text: "no key", savedAt: 1 }, { text: "also no key", savedAt: 2 }] }, 3),
+  buildExport({ watched: { abc: null, noId: { title: "no id here", at: Date.UTC(2026, 8, 20) } } }, Date.UTC(2026, 8, 26)),
+  buildExport({ briefs: { a: null, 42: { key: 42, platform: "x", author: "N", url: "https://x.com/n", at: 9e15, what: "numeric key brief", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } } }, 1),
+  buildExport({ briefs: [{ key: "arr", what: "w" }] }, 1), // briefs must be a keyed object, not an array
+];
+for (const m of messyChecks) {
+  assert.ok(Array.isArray(m.items), "buildExport never throws on messy storage");
+  assert.ok(m.items.every((i) => typeof i.id === "string" && i.id.length > 0), "every item has a non-empty string id");
+}
+// The saved entries without a key are skipped outright, not exported with a made-up id.
+assert.deepEqual(buildExport({ saved: [{ text: "a", savedAt: 1 }, { text: "b", savedAt: 2 }] }, 3).items, [], "saved posts without a key are skipped");
+// A numeric brief key still exports, keyed by its own `key` field.
+assert.deepEqual(
+  buildExport({ briefs: { 42: { key: 42, platform: "x", author: "N", url: "https://x.com/n", at: 9e15, what: "numeric key brief", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } } }, 1).items.map((i) => i.id),
+  ["42"],
+);
+
+console.log("export: all offline checks passed");

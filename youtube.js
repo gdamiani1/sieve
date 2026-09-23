@@ -31,7 +31,7 @@
     if (!alive()) return retire();
     try {
       chrome.runtime.sendMessage(msg, (r) => {
-        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        if (chrome.runtime.lastError) { if (!alive()) { retire(); return; } return cb?.(undefined); }
         cb?.(r);
       });
     } catch { retire(); }
@@ -42,7 +42,7 @@
   const USD_PER_MINUTE = 0.0022; // keep in sync with watch-prompt.js
   const MAX_MINUTES = 55;
   const LABEL = {
-    tutorial: "tutorial", build_demo: "build or demo", talk: "talk", commentary: "commentary",
+    technique: "technique to try", tutorial: "tutorial", build_demo: "build or demo", talk: "talk", commentary: "commentary",
     entertainment: "entertainment", promo: "promo",
   };
   const ERRORS = {
@@ -194,6 +194,14 @@
     section("Key points", r.points, (li, p) => li.append(stamp(v, p.t), document.createTextNode(" " + p.text)));
     section("Learnings", r.learnings, (li, t) => li.append(t));
     section("Check before repeating", r.checks, (li, t) => li.append(t));
+    // The prompt is only there when the brief passed normalizeBrief, which enforces the warned-brief rules,
+    // so a brief without one is never shown.
+    if (r.brief && r.prompt) {
+      d.append(el("h4", "sieve-d-brief-h", "Technique brief"));
+      const box = el("div", "sieve-d-brief");
+      globalThis.SieveBriefPanel.fill(box, { ...r.brief, prompt: r.prompt }, { compact: true, level: 5 }); // its labels sit under this h4
+      d.append(box);
+    }
     const foot = el("div", "sieve-d-foot", `Saved to your daily learnings. These are the creator's claims, not verified facts.${r.cost ? ` Cost $${r.cost.toFixed(4)}.` : ""}`);
     const again = el("button", "sieve-d-again", "Watch again");
     again.onclick = () => watch(v, true);
@@ -201,6 +209,7 @@
   }
 
   function watch(v, again) {
+    if (retired || !alive()) { show(v, { error: "Sieve was updated. Reload this page to keep using it." }); return; }
     show(v, null);
     send({ type: "watch", id: v.id, url: v.url, title: v.title, channel: v.channel, seconds: v.seconds, again }, (r) => show(v, r || { error: "No answer from the extension." }));
   }

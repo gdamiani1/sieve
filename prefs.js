@@ -2,6 +2,7 @@
 // then plain rules below turn its answers into what's shown. Shared by background and settings.
 
 export const KINDS = {
+  technique: "A technique or tool you could try",
   built_something: "Someone built or tested something",
   opinion: "Opinions and lessons",
   question: "Questions to the audience",
@@ -20,6 +21,7 @@ export const REDDIT_KINDS = {
 };
 
 export const YOUTUBE_KINDS = {
+  technique: "A technique or tool you could try",
   tutorial: "Tutorials and how-tos",
   build_demo: "Builds and demos",
   talk: "Talks, interviews, podcasts",
@@ -31,9 +33,9 @@ export const YOUTUBE_KINDS = {
 export const DEFAULT_PREFS = {
   role: "someone who uses AI and automation in their work",
   topics: ["AI and machine learning in practice", "Automating everyday work", "Running a small business"],
-  kinds: { built_something: true, opinion: true, question: true, news: true, promo: false, personal: false },
+  kinds: { technique: true, built_something: true, opinion: true, question: true, news: true, promo: false, personal: false },
   redditKinds: { asking_help: true, discussion: true, showcase: true, rant: false, news: false, promo: false },
-  youtubeKinds: { tutorial: true, build_demo: true, talk: true, commentary: true, entertainment: false, promo: false },
+  youtubeKinds: { technique: true, tutorial: true, build_demo: true, talk: true, commentary: true, entertainment: false, promo: false },
   boostWords: [],
   muteWords: [],
   highAt: 0.7,
@@ -82,6 +84,7 @@ export function linkedinQuestions(prefs, site = "LinkedIn") {
       type: "choice",
       instructions: "What kind of post is it?",
       criteria: {
+        technique: "The post teaches a specific method, tool, prompt, workflow or pattern that a reader could try themselves, with enough detail to start.",
         built_something: "The author shares something they built or tested, ideally with results.",
         opinion: "The author argues a view or shares lessons.",
         question: "The author asks the audience for input.",
@@ -157,6 +160,7 @@ export function youtubeQuestions(prefs) {
       type: "choice",
       instructions: "What kind of video is it?",
       criteria: {
+        technique: "Teaches a specific method, tool, prompt, workflow or pattern that the viewer could try themselves.",
         tutorial: "Teaches how to do something step by step.",
         build_demo: "Shows something being built, tested or demonstrated.",
         talk: "A talk, interview, panel or podcast.",

@@ -26,14 +26,14 @@
     document.body.append(n);
   }
   function send(msg, cb) {
-    if (retired) return;
-    if (!alive()) return retire();
+    if (retired) return cb?.(undefined);
+    if (!alive()) { retire(); return cb?.(undefined); }
     try {
       chrome.runtime.sendMessage(msg, (r) => {
-        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return cb?.(undefined); }
         cb?.(r);
       });
-    } catch { retire(); }
+    } catch { retire(); return cb?.(undefined); }
   }
 
   const CARD = '[role="listitem"][componentkey^="update-card-"]';
@@ -42,7 +42,7 @@
   const MAX_CHARS = 4000;
 
   const LABEL = {
-    built_something: "built something", opinion: "opinion", question: "asks a question",
+    technique: "technique to try", built_something: "built something", opinion: "opinion", question: "asks a question",
     news: "news", promo: "promo", personal: "personal",
     ask_failures: "ask about failures and limits", ask_how: "ask how it works",
     share_result: "share a related result", answer_question: "answer their question",
@@ -80,10 +80,28 @@
     return { key: hash(text), state: { author: header.slice(0, 400), post: text.slice(0, MAX_CHARS) } };
   }
 
+  // What gets saved, and briefed, for a post: the same record the digest page reads.
+  function postRecord(card, key, r) {
+    // Best guess at the real author against 2026 LinkedIn markup: a card can list a reactor's
+    // profile link ("Jane Reactor likes this") before the author's own, so take the LAST profile
+    // link that comes before the post's text box, not simply the first link on the card. Recheck
+    // this against the live site if it ever picks the wrong person.
+    const links = [...card.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')];
+    const box = card.querySelector(BODY);
+    const before = links.filter((a) => box && (box.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING));
+    const url = (before.at(-1) || links[0])?.href.split("?")[0] || "";
+    const name = links.filter((a) => a.href.split("?")[0] === url).map((a) => a.innerText.trim().split("\n")[0].replace(/\s*•.*$/, "").trim()).find(Boolean);
+    const state = states.get(key) || {};
+    return {
+      key, platform: "linkedin", author: state.author || "", authorName: name || "", authorUrl: url,
+      text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth,
+    };
+  }
+
   function clearAll() {
     document.querySelectorAll(CARD).forEach((c) => {
       c.querySelector(":scope > .jev-badge")?.remove();
-      c.querySelector(":scope > .jev-draft")?.remove();
+      c.querySelectorAll(":scope > .jev-draft").forEach((p) => p.remove());
       c.classList.remove("jev-strong", "jev-maybe", "jev-low", "jev-hidden");
       delete c.dataset.jevKey;
     });
@@ -121,11 +139,23 @@
       badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
       badge.title = "Jev's read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.";
       if (tier !== "low") {
+        const actions = document.createElement("span");
+        actions.className = "jev-actions";
         const btn = document.createElement("button");
         btn.className = "jev-suggest";
         btn.textContent = "Comment angles";
         btn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openDraft(card, r, false); });
-        badge.append(btn);
+        actions.append(btn);
+        if (r.kind === "technique") {
+          const bb = document.createElement("button");
+          bb.className = "jev-suggest";
+          bb.textContent = "Brief";
+          bb.title = "A brief for your coding agent: what it is, what you need, and a small way to try it.";
+          bb.dataset.jevBriefBtn = "1";
+          bb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openBrief(card, r, false); });
+          actions.append(bb);
+        }
+        badge.append(actions);
       }
     }
     card.prepend(badge);
@@ -133,7 +163,7 @@
 
   function openDraft(card, r, again) {
     const key = card.dataset.jevKey;
-    let panel = card.querySelector(":scope > .jev-draft");
+    let panel = card.querySelector(":scope > .jev-draft:not(.jev-brief)");
     if (!panel) {
       panel = document.createElement("div");
       panel.className = "jev-draft";
@@ -168,6 +198,55 @@
     });
   }
 
+  function openBrief(card, r, again) {
+    const key = card.dataset.jevKey;
+    let panel = card.querySelector(":scope > .jev-brief");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "jev-draft jev-brief";
+      panel.innerHTML = `<div class="jev-draft-note">A brief for your coding agent.</div>
+        <div class="sieve-b-body"></div>
+        <div class="jev-draft-row"><button data-a="again">Write it again</button><button data-a="close">Close</button><span class="jev-draft-msg" role="status"></span></div>`;
+      for (const ev of ["click", "keydown", "keyup", "keypress", "focusin"]) panel.addEventListener(ev, (e) => e.stopPropagation());
+      panel.querySelector('[data-a="again"]').onclick = () => openBrief(card, r, true);
+      panel.querySelector('[data-a="close"]').onclick = () => {
+        panel.remove();
+        card.querySelector(":scope > .jev-badge [data-jev-brief-btn]")?.focus();
+      };
+      card.querySelector(":scope > .jev-badge").after(panel);
+    }
+    if (panel.dataset.busy) return; // a brief is already loading; ignore Brief / Write it again clicks
+    const body = panel.querySelector(".sieve-b-body");
+    const msg = panel.querySelector(".jev-draft-msg");
+    if (!panel.dataset.hasBrief) body.textContent = ""; // "again" keeps the current brief up until the new one arrives; the status line says "reading…"
+    msg.textContent = "reading…";
+    msg.classList.remove("jev-brief-err");
+    if (!globalThis.SieveBriefPanel?.fill) {
+      msg.classList.add("jev-brief-err");
+      const text = "Sieve couldn't show the brief. Reload the page and try again.";
+      msg.textContent = panel.dataset.hasBrief ? `Couldn't write it again: ${text}` : text;
+      if (!panel.dataset.hasBrief) body.textContent = "";
+      return;
+    }
+    panel.dataset.busy = "1";
+    const req = String((Number(panel.dataset.req) || 0) + 1);
+    panel.dataset.req = req;
+    send({ type: "brief", post: postRecord(card, key, r), again }, (b) => {
+      if (panel.dataset.req !== req) return; // a newer request replaced this one
+      panel.dataset.busy = "";
+      if (!b || b.error) {
+        msg.classList.add("jev-brief-err");
+        const text = b?.error || "No answer from the extension. Reload the page and try again.";
+        msg.textContent = panel.dataset.hasBrief ? `Couldn't write it again: ${text}` : text;
+        if (!panel.dataset.hasBrief) body.textContent = "";
+        return;
+      }
+      globalThis.SieveBriefPanel.fill(body, b);
+      panel.dataset.hasBrief = "1";
+      msg.textContent = "Brief ready.";
+    });
+  }
+
   function check(card) {
     if (retired) return;
     if (!enabled) return;
@@ -182,14 +261,7 @@
       pending.delete(post.key);
       if (!r) return;
       results.set(post.key, r);
-      if (!r.error && r.tier === "strong") {
-        const profile = card.querySelector('a[href*="/in/"], a[href*="/company/"]');
-        const name = [...card.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')].map((a) => a.innerText.trim().split("\n")[0].replace(/\s*•.*$/, "").trim()).find(Boolean);
-        send({ type: "save", post: {
-          key: post.key, author: post.state.author, authorName: name || "", authorUrl: profile ? profile.href.split("?")[0] : "",
-          text: post.state.post, topic: r.topic, kind: r.kind, worth: r.worth,
-        } });
-      }
+      if (!r.error && r.tier === "strong") send({ type: "save", post: postRecord(card, post.key, r) });
       document.querySelectorAll(CARD).forEach((c) => { if (c.dataset.jevKey === post.key) render(c, r); });
     });
   }

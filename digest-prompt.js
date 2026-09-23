@@ -5,7 +5,7 @@ export function digestMessages(posts) {
   const body = posts
     .map((p, i) => `POST ${i + 1}\nAuthor: ${p.authorName || p.author}\nTopic: ${p.topic}, ${p.kind}\n${p.text.slice(0, 1500)}`)
     .join("\n\n---\n\n");
-  const system = `You write a short daily learnings digest for a freelance builder of practical AI automation, from LinkedIn posts he flagged as worth reading.
+  const system = `You write a short daily learnings digest for a freelance builder of practical AI automation, from LinkedIn posts they flagged as worth reading.
 
 Sections, in this order, each as a heading line starting with "## " followed by "- " bullets:
 ## What people built or tested

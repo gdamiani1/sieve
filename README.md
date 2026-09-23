@@ -1,7 +1,9 @@
 # Sieve
 
 A Chrome extension that tells you which LinkedIn, X, Reddit and YouTube posts are worth your attention, and suggests
-angles for a reply. It never writes or posts anything for you.
+angles for a reply. For developers, it turns techniques worth trying into briefs your coding agent (Claude Code,
+Codex, Cursor and others) can try in your repo. It never clicks, comments or posts for you, and never installs
+or runs anything: a brief is text you copy.
 
 It is built on [Jev](https://typesafe.ai), TypeSafe's decision model (Sieve is an independent project, not made by TypeSafe): a model that doesn't generate text,
 it picks from answers you define and returns a probability. Jev makes the narrow calls (is this worth
@@ -14,7 +16,7 @@ reading? could I answer this?), plain code handles the rules, and you do the par
   with the kind of post, the topic and a suggested move. 0.4 to 0.7 gets a light bar. Below 0.4 fades
   (hover to read; can be turned off). Promoted posts are skipped. Reshares include the shared post.
 - **Comment angles**: three one-line ideas (Ask / Push back / Build on it / Your angle), not a comment.
-  You pick one and write it yourself.
+  You pick one and write it yourself. Technique posts also show a Brief button.
 
 **Reddit** (www and old.reddit)
 - Different question: is this someone asking for help that *you* could answer from first-hand experience?
@@ -23,7 +25,7 @@ reading? could I answer this?), plain code handles the rules, and you do the par
 - **Reply angles** (Answer / Ask / Your experience / Watch out). No links, no promotion.
 
 **YouTube**
-- Every video tile you scroll past gets a Jev chip, scored from its title, channel and length.
+- Every video tile you scroll past gets a Jev chip, scored from its title, channel, length and any snippet.
 - **Watch it for me**: a video model (Gemini 2.5 Flash-Lite via OpenRouter by default) watches the whole
   public video, picture and sound, and returns watch / skim / skip, key points with clickable timestamps,
   the best moment, learnings and claims to check. About 0.2 US cents per minute of video, up to 55 minutes.
@@ -32,24 +34,44 @@ reading? could I answer this?), plain code handles the rules, and you do the par
 **X**
 - Same scoring and reply angles as LinkedIn. Ads are skipped.
 
+**Technique briefs**
+- On LinkedIn and X, posts that teach a technique or tool you could try get a "technique to try" badge and,
+  unless they score low, a **Brief** button. On YouTube, Watch it for me writes a brief when the video teaches one.
+- A brief says what it is, what the author claims (labelled as theirs), what to check, what you need, a 15 to
+  30 minute way to try it, and whether it's worth keeping as a skill.
+- **Copy as prompt** puts the brief on your clipboard for your coding agent. It starts with a note that it's
+  third-party material, that the agent should treat it as information and not instructions, and that it should
+  ask before running any command.
+- When the model notices text aimed at AI agents in the source, or Sieve's own check finds a blatant case or
+  hidden characters, the brief carries a warning at the top. Sieve's own code then makes "Check the source
+  before copying anything from it." the first step, drops any step or need with a link, a download, a pipe
+  into a shell or a package install, marks the brief not worth a skill, and ends the copied prompt with an
+  instruction to show you the warning first and not fetch, install or run anything from it unless you ask.
+  This lowers the risk; it doesn't remove it: the model can miss a passage, and the rest of the brief can
+  still quote the source.
+
 **Daily learnings**
-- Posts scored 0.7+ are saved locally for 30 days. The digest page summarises them into what people built,
-  numbers worth remembering, patterns, people worth a conversation, and open questions, with every bullet
-  attributed to its author. Reddit threads you could still answer are listed on top.
+- Posts scored 0.7+, and any post you brief, are saved locally for 30 days. The digest page summarises them
+  into what people built, numbers worth remembering, patterns, people worth a conversation, and open questions,
+  with every bullet attributed to its author. Reddit threads you could still answer are listed on top.
 - Optional daily reminder notification (18:00 by default), only when something new was saved.
+- Technique briefs from the last 30 days are listed with Copy as prompt. **Export library** saves everything
+  Sieve kept (posts, videos, briefs, digests) as one JSON file you own.
 
 ## Make it yours
 
 Settings (right-click the icon → Options, or **Settings** in the popup):
 - **What you care about:** one line about who you are and up to 8 topics. Jev scores every post against these,
   and the badge shows which of your topics a post is about.
-- **Kinds of posts** to show on LinkedIn (built something, opinions, questions, news, promotion, personal) and on
-  Reddit (asking for help, discussions, showcases, rants, news, promotion).
+- **Kinds of posts** to show on LinkedIn and X (technique to try, built something, opinions, questions, news,
+  promotion, personal) and on Reddit (asking for help, discussions, showcases, rants, news, promotion); YouTube
+  has its own list.
 - **Rules** that always win over Jev: words that always show a post (a person, your company) and words that
   never do (crypto, webinar, "we're hiring").
 - **Scores:** where highlighting starts, what counts as low, and whether low posts fade, hide or stay.
 - **Reddit:** only in the subreddits you list, and your own definition of "still fresh".
-- LinkedIn and Reddit can each be switched off from the popup. Saving settings re-scores what's on screen.
+- LinkedIn, X, Reddit and YouTube can each be switched off from the popup. Saving settings re-scores what's
+  on screen.
 
 ## Why angles and not ready-made comments
 
@@ -65,24 +87,34 @@ word for word under the idea. Lines that talk about "me" anywhere else are dropp
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
    - **TypeSafe API key** (for Jev scoring). Checked against the API before it's saved.
-   - **OpenRouter API key** (for angles and digests). Default model `deepseek/deepseek-v4-flash`.
+   - **OpenRouter API key** (for angles, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`.
    - **Your facts** for LinkedIn and for Reddit. Only true, first-hand things. Angles can only point to these.
-3. Reload LinkedIn or Reddit and scroll.
+3. Reload LinkedIn, X, Reddit or YouTube and scroll.
 
-Keys live only in `chrome.storage.local` in your browser profile. Post text goes to TypeSafe (scoring) and,
-when you ask for angles or a digest, to OpenRouter.
+Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services and nowhere
+else. TypeSafe gets what it scores: a post's text (for YouTube, the title, channel, length and any snippet),
+your role and topics, and on Reddit your Reddit facts. OpenRouter gets a post's text when you ask for angles
+(with your facts) or a brief (with your role and topics), your saved posts when you ask for a digest, and a
+video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
+request to the model you picked.
 
 ## Cost (September 2026 prices)
 
 - Jev scoring: about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
 - Angles: about $0.00005 per request with DeepSeek V4 Flash. A digest of a day's posts: well under a cent.
+- A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
 
 ## Tests
 
-The tests use invented posts (`test/sample.json`, `test/reddit_test.mjs`). Keys come from
+The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/reddit_test.mjs`). Keys come from
 `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY`, or on macOS from Keychain items `typesafe-api-key` / `openrouter-api-key`.
 
     node test/rules_test.mjs        # the rules on top of Jev (offline, no keys)
+    node test/watch_parse_test.mjs  # the video answer parser (offline)
+    node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
+    node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
+    node test/export_test.mjs       # the library export (offline)
+    node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring + reply angles
     node test/angles_test.mjs       # comment angles never borrow your facts for the author
@@ -102,7 +134,7 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
   `<shreddit-post>` attributes. If badges stop appearing, those changed. Reddit shows a note if it can't find posts.
 - **Personal use.** It only reads what you scroll past in your own browser and never acts on the page.
   LinkedIn and Reddit both restrict automated activity; don't turn this into something that does.
-- **Scores and angles are suggestions from cheap models.** Check any number before you repeat it.
+- **Scores, angles and briefs are suggestions from cheap models.** Check any number before you repeat it.
 - If the model returns an empty answer (reasoning models sometimes think until they run out of tokens),
   it retries once with reasoning disabled and more room.
 
@@ -111,7 +143,10 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 - `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
 - `draft.js`: the angle prompts and parser. `digest-prompt.js`: the digest prompt.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
-- `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser.
+- `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser. `json.js`: tolerant parsing of model JSON.
+- `brief.js`: the technique brief (shape, safety header, markdown, Copy as prompt, the rules for warned briefs).
+  `brief-prompt.js`: the prompt that briefs one post, and its parser.
+  `brief-panel.js`: shows a brief on LinkedIn, X and YouTube. `export.js`: the Export library file.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
 
 ## License

@@ -26,21 +26,21 @@
     document.body.append(n);
   }
   function send(msg, cb) {
-    if (retired) return;
-    if (!alive()) return retire();
+    if (retired) return cb?.(undefined);
+    if (!alive()) { retire(); return cb?.(undefined); }
     try {
       chrome.runtime.sendMessage(msg, (r) => {
-        if (chrome.runtime.lastError) { if (!alive()) retire(); return; }
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return cb?.(undefined); }
         cb?.(r);
       });
-    } catch { retire(); }
+    } catch { retire(); return cb?.(undefined); }
   }
 
   const POST = 'article[data-testid="tweet"]';
   const TEXT = '[data-testid="tweetText"]';
   const DWELL_MS = 600;
   const LABEL = {
-    built_something: "built something", opinion: "opinion", question: "asks a question", news: "news", promo: "promo", personal: "personal",
+    technique: "technique to try", built_something: "built something", opinion: "opinion", question: "asks a question", news: "news", promo: "promo", personal: "personal",
     ask_failures: "ask about failures and limits", ask_how: "ask how it works", share_result: "share a related result",
     answer_question: "answer their question", disagree: "respectful counterpoint", none: "",
   };
@@ -49,6 +49,7 @@
   let enabled = true;
   const results = new Map();
   const states = new Map();
+  const urls = new Map(); // key -> the post's own link
   const pending = new Set();
   chrome.storage.local.get("prefs").then((v) => { enabled = v.prefs?.xOn !== false; if (!enabled) clearAll(); });
 
@@ -66,6 +67,12 @@
     return { key: hash(text), url: link ? `https://x.com${link}` : "", state: { author: user.slice(0, 200), post: text.slice(0, 4000) } };
   }
 
+  // What gets saved, and briefed, for a post: the same record the digest page reads.
+  function postRecord(key, r) {
+    const state = states.get(key) || {};
+    return { key, platform: "x", authorName: (state.author || "").split(" @")[0], authorUrl: urls.get(key) || "", text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth };
+  }
+
   // Badges sit just above the post, outside X's own layout.
   function wrapOf(post) {
     let w = post.previousElementSibling;
@@ -80,6 +87,7 @@
 
   function render(post, r) {
     const wrap = wrapOf(post);
+    wrap.dataset.jevKey = post.dataset.jevKey;
     wrap.replaceChildren();
     wrap.className = "sieve-x-wrap";
     post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
@@ -93,16 +101,28 @@
     const angle = r.tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
     badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
     if (r.tier === "low") { badge.classList.add("jev-quiet"); wrap.append(badge); return; }
+    const actions = document.createElement("span");
+    actions.className = "jev-actions";
     const btn = document.createElement("button");
     btn.className = "jev-suggest";
     btn.textContent = "Reply angles";
     btn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); angles(wrap, post, r, false); });
-    badge.append(btn);
+    actions.append(btn);
+    if (r.kind === "technique") {
+      const bb = document.createElement("button");
+      bb.className = "jev-suggest";
+      bb.textContent = "Brief";
+      bb.title = "A brief for your coding agent: what it is, what you need, and a small way to try it.";
+      bb.dataset.jevBriefBtn = "1";
+      bb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); briefPanel(wrap, post, r, false); });
+      actions.append(bb);
+    }
+    badge.append(actions);
     wrap.append(badge);
   }
 
   function angles(wrap, post, r, again) {
-    let panel = wrap.querySelector(".jev-draft");
+    let panel = wrap.querySelector(".jev-draft:not(.jev-brief)");
     if (!panel) {
       panel = document.createElement("div");
       panel.className = "jev-draft";
@@ -132,6 +152,54 @@
     });
   }
 
+  function briefPanel(wrap, post, r, again) {
+    let panel = wrap.querySelector(".jev-brief");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "jev-draft jev-brief";
+      panel.innerHTML = `<div class="jev-draft-note">A brief for your coding agent.</div>
+        <div class="sieve-b-body"></div>
+        <div class="jev-draft-row"><button data-a="again">Write it again</button><button data-a="close">Close</button><span class="jev-draft-msg" role="status"></span></div>`;
+      for (const ev of ["click", "keydown", "keyup", "keypress", "focusin"]) panel.addEventListener(ev, (e) => e.stopPropagation());
+      panel.querySelector('[data-a="again"]').onclick = () => briefPanel(wrap, post, r, true);
+      panel.querySelector('[data-a="close"]').onclick = () => {
+        panel.remove();
+        wrap.querySelector("[data-jev-brief-btn]")?.focus();
+      };
+      wrap.append(panel);
+    }
+    if (panel.dataset.busy) return; // a brief is already loading; ignore Brief / Write it again clicks
+    const body = panel.querySelector(".sieve-b-body");
+    const msg = panel.querySelector(".jev-draft-msg");
+    if (!panel.dataset.hasBrief) body.textContent = ""; // "again" keeps the current brief up until the new one arrives; the status line says "reading…"
+    msg.textContent = "reading…";
+    msg.classList.remove("jev-brief-err");
+    if (!globalThis.SieveBriefPanel?.fill) {
+      msg.classList.add("jev-brief-err");
+      const text = "Sieve couldn't show the brief. Reload the page and try again.";
+      msg.textContent = panel.dataset.hasBrief ? `Couldn't write it again: ${text}` : text;
+      if (!panel.dataset.hasBrief) body.textContent = "";
+      return;
+    }
+    panel.dataset.busy = "1";
+    const req = String((Number(panel.dataset.req) || 0) + 1);
+    panel.dataset.req = req;
+    send({ type: "brief", post: postRecord(post.dataset.jevKey, r), again }, (b) => {
+      if (panel.dataset.req !== req) return; // a newer request replaced this one
+      panel.dataset.busy = "";
+      if (!b || b.error) {
+        msg.classList.add("jev-brief-err");
+        const text = b?.error || "No answer from the extension. Reload the page and try again.";
+        msg.textContent = panel.dataset.hasBrief ? `Couldn't write it again: ${text}` : text;
+        if (!panel.dataset.hasBrief) body.textContent = "";
+        return;
+      }
+      globalThis.SieveBriefPanel.fill(body, b);
+      panel.dataset.hasBrief = "1";
+      msg.textContent = "Brief ready.";
+    });
+  }
+
   function check(post) {
     if (retired) return;
     if (!enabled) return;
@@ -139,19 +207,19 @@
     if (!p) return;
     post.dataset.jevKey = p.key;
     states.set(p.key, p.state);
-    if (results.has(p.key)) return render(post, results.get(p.key));
+    urls.set(p.key, p.url);
+    if (results.has(p.key)) {
+      const w = post.previousElementSibling;
+      if (w?.classList.contains("sieve-x-wrap") && w.dataset.jevKey === p.key) return;
+      return render(post, results.get(p.key));
+    }
     if (pending.has(p.key)) return;
     pending.add(p.key);
     send({ type: "classify", platform: "x", state: p.state }, (r) => {
       pending.delete(p.key);
       if (!r || r.error === "rate_limited" || r.error === "network") return;
       results.set(p.key, r);
-      if (!r.error && r.tier === "strong") {
-        send({ type: "save", post: {
-          key: p.key, platform: "x", authorName: p.state.author.split(" @")[0], authorUrl: p.url,
-          text: p.state.post, topic: r.topic, kind: r.kind, worth: r.worth,
-        } });
-      }
+      if (!r.error && r.tier === "strong") send({ type: "save", post: postRecord(p.key, r) });
       document.querySelectorAll(POST).forEach((el) => { if (el.dataset.jevKey === p.key) render(el, r); });
     });
   }

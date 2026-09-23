@@ -9,7 +9,9 @@ h1{font-size:24px;margin:0 0 4px}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:22px}
 button{font:600 13px/1 -apple-system,system-ui,sans-serif;padding:9px 14px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-#msg{color:var(--accent);font-size:13px}
+#msg{color:var(--accent);font-size:13px;flex-basis:100%}
+#msg.alert{color:#9a2a00}
+#export{margin-left:auto}
 .digest{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:16px}
 .digest .meta{font-size:12px;color:var(--muted);margin-bottom:6px}
 .digest h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px;color:var(--accent)}
@@ -20,16 +22,26 @@ details{margin-top:28px}summary{cursor:pointer;font-weight:600}
 .post .t{color:#3a362f;white-space:pre-wrap;max-height:4.6em;overflow:hidden}
 .rlist{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin-bottom:16px}.rlist h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;color:var(--accent)}
 .post .m{font-size:12px;color:var(--muted)}
+.brief .w{margin:4px 0 8px}.brief button{padding:7px 12px;font-size:12px}
+.brief .warn{margin:4px 0;padding:8px 12px;border-radius:8px;background:#fff0ea;color:#9a2a00;font-weight:600}
+.brief .note{margin-top:6px;font-size:11.5px;color:var(--ink)}
+.brief .status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.brief .fail{margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff0ea;color:#9a2a00}
+.brief .fallback{display:block;width:100%;box-sizing:border-box;height:140px;margin-top:6px;padding:6px;font:12px/1.4 ui-monospace,Menlo,monospace;color:#14120e;background:#fff;border:1px solid #c9c1b3;border-radius:8px;resize:vertical}
+.empty{color:var(--muted);font-size:13.5px;margin:0}
+.sect-err{margin:4px 0;padding:8px 12px;border-radius:8px;background:#fff0ea;color:#9a2a00;font-size:13.5px}
 </style></head><body><main>
 <h1>Daily learnings</h1>
-<p class="sub">From LinkedIn posts Sieve rated worth a close read. These are what people posted, not verified facts.</p>
+<p class="sub">What Sieve kept from your feeds: posts it rated worth a close read, videos it watched and briefs you asked for. These are what people posted, not verified facts.</p>
 <div class="bar">
   <button class="primary" id="today">Summarise since last digest</button>
   <button id="day">Last 24 hours</button>
   <button id="week">Last 7 days</button>
+  <button id="export">Export library</button>
   <span id="msg"></span>
 </div>
 <section id="reddit"></section>
+<section id="briefs"></section>
 <section id="videos"></section>
 <section id="digests"></section>
 <details><summary id="savedSum">Saved posts</summary><div id="saved"></div></details>

@@ -2,15 +2,53 @@ import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdic
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
+import { briefPrompt, addBrief, videoBriefRecord, normalizeBrief, cleanText } from "./brief.js";
+import { briefMessages, parseBrief } from "./brief-prompt.js";
+
+// A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
+// always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
+function briefReply(rec) {
+  const b = normalizeBrief(rec);
+  return b ? { ...rec, ...b, prompt: briefPrompt(rec) } : null;
+}
+
+// A watched video with a brief also carries the ready-to-copy prompt, and the same normalized brief.
+const withPrompt = (w) => {
+  const rec = videoBriefRecord(w);
+  return rec ? { ...w, brief: normalizeBrief(w.brief), prompt: briefPrompt(rec) } : w;
+};
+
+// Read-modify-write on storage, one at a time. Only this worker writes these keys, so a queue here
+// stops two replies that land together from dropping each other's record or count.
+let queue = Promise.resolve();
+// fn must be synchronous: it runs between the get() and the set() as one atomic step.
+function update(keys, fn) {
+  const run = queue.then(async () => {
+    const next = fn(await chrome.storage.local.get(keys));
+    if (typeof next?.then === "function") throw new Error("update() callbacks must be synchronous");
+    if (next) await chrome.storage.local.set(next);
+  });
+  queue = run.catch(() => {});
+  return run;
+}
+
+// One request per post or video at a time: a second click while the first is out joins it instead
+// of paying again. Memory only: if Chrome stops the worker, the map goes too and the next click starts fresh.
+const inflight = new Map();
+function once(id, fn) {
+  if (!inflight.has(id)) inflight.set(id, fn().finally(() => inflight.delete(id)));
+  return inflight.get(id);
+}
 
 const API = "https://api.typesafe.ai/v1/systemone";
 const PRICE_PER_MTOK = 0.042; // USD per million input tokens, output free
 
-async function stats(update) {
-  const { stats = { posts: 0, tokens: 0, strong: 0, maybe: 0 } } = await chrome.storage.local.get("stats");
-  update(stats);
-  stats.cost = (stats.tokens * PRICE_PER_MTOK) / 1e6;
-  await chrome.storage.local.set({ stats });
+function stats(change) {
+  return update("stats", ({ stats = { posts: 0, tokens: 0, strong: 0, maybe: 0 } }) => {
+    change(stats);
+    stats.cost = (stats.tokens * PRICE_PER_MTOK) / 1e6;
+    return { stats };
+  });
 }
 
 async function classify(state, platform) {
@@ -87,63 +125,171 @@ async function draft(req) {
 }
 
 // "Watch it for me": the video model watches the whole video, the result is kept for the digest.
+// When the video teaches a technique, its brief is kept with the other briefs.
 async function watch(req) {
   const { orKey, videoModel = DEFAULT_VIDEO_MODEL, watched = {} } = await chrome.storage.local.get(["orKey", "videoModel", "watched"]);
-  if (watched[req.id] && !req.again) return watched[req.id];
+  if (watched[req.id] && !req.again) return withPrompt(watched[req.id]);
   if (!orKey) return { error: "Add an OpenRouter key in Sieve's settings." };
   if (req.seconds && req.seconds / 60 > MAX_MINUTES) return { error: `Videos over ${MAX_MINUTES} minutes are too long to watch in one go.` };
   const prefs = await loadPrefs();
-  // One retry with more room: an unreadable answer is usually a cut-off or a stray quote.
+  // One retry with more room: an unreadable answer is usually a cut-off or a stray quote. The whole
+  // attempt loop runs inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still
+  // records whatever was spent before it, exactly once.
   let out = null, cost = 0, lastError = "";
-  for (const maxTokens of [2000, 4000]) {
-    let res;
-    try {
-      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-        body: JSON.stringify({ model: videoModel, messages: watchMessages(req, prefs), max_tokens: maxTokens, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
-      });
-    } catch {
-      return { error: "Network error reaching OpenRouter." };
+  try {
+    for (const maxTokens of [2000, 4000]) {
+      let res;
+      try {
+        res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
+          body: JSON.stringify({ model: videoModel, messages: watchMessages(req, prefs), max_tokens: maxTokens, temperature: 0.2, response_format: { type: "json_object" }, usage: { include: true } }),
+        });
+      } catch {
+        return { error: "Network error reaching OpenRouter." };
+      }
+      if (res.status === 401) return { error: "OpenRouter rejected the key." };
+      if (res.status === 402) return { error: "OpenRouter is out of credit." };
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
+      cost += body.usage?.cost || 0;
+      try {
+        out = parseWatch(body.choices?.[0]?.message?.content || "", req);
+        break;
+      } catch {
+        lastError = body.choices?.[0]?.finish_reason === "length" ? "cut off" : "unreadable";
+      }
     }
-    if (res.status === 401) return { error: "OpenRouter rejected the key." };
-    if (res.status === 402) return { error: "OpenRouter is out of credit." };
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
-    cost += body.usage?.cost || 0;
-    try {
-      out = parseWatch(body.choices?.[0]?.message?.content || "");
-      break;
-    } catch {
-      lastError = body.choices?.[0]?.finish_reason === "length" ? "cut off" : "unreadable";
-    }
+  } finally {
+    if (cost) await stats((s) => { s.draftCost = (s.draftCost || 0) + cost; });
   }
   if (!out) {
-    await stats((s) => { s.draftCost = (s.draftCost || 0) + cost; });
     return { error: `The video model's answer was ${lastError} twice. Try again, or try a shorter video.` };
   }
   out = { ...out, id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost, at: Date.now() };
-  await stats((s) => { s.watched = (s.watched || 0) + 1; s.draftCost = (s.draftCost || 0) + out.cost; });
-  const { watched: w = {} } = await chrome.storage.local.get("watched");
-  const keep = Object.fromEntries(Object.entries({ ...w, [req.id]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300));
-  await chrome.storage.local.set({ watched: keep });
+  await stats((s) => { s.watched = (s.watched || 0) + 1; });
+  // The newest 300, same as before, now on the queue: two videos landing together can no longer drop
+  // each other's record.
+  await update("watched", ({ watched: w = {} }) => ({
+    watched: Object.fromEntries(Object.entries({ ...w, [req.id]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300)),
+  }));
+  // Watching again replaces the video's brief, or removes it if this time there is none.
+  const vr = videoBriefRecord(out);
+  await update("briefs", ({ briefs = {} }) => {
+    const key = `yt-${req.id}`;
+    if (!vr && !Object.hasOwn(briefs, key)) return null; // nothing to replace or remove
+    const { [key]: _replaced, ...others } = briefs;
+    return { briefs: vr ? addBrief(others, vr) : others };
+  });
+  if (vr) await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
   await save({
     key: `yt-${req.id}`, platform: "youtube", authorName: req.channel, authorUrl: req.url, title: req.title,
     text: `${req.title}\n\n${out.summary}\n\nLearnings:\n${out.learnings.map((l) => "- " + l).join("\n")}`,
     topic: "", kind: "video", worth: 1,
   });
-  return out;
+  return withPrompt(out);
+}
+
+// A URL, but only when it is actually a web link: javascript:, data: and other odd schemes a post
+// could put in its author link never reach storage or the brief header.
+const webUrl = (u) => {
+  try {
+    const x = new URL(String(u));
+    return /^https?:$/.test(x.protocol) ? x.href : "";
+  } catch {
+    return "";
+  }
+};
+
+// A technique brief for one post the user clicked "Brief" on. The brief is kept (and the post saved)
+// for the digest page and the export. Cached per post unless asked again.
+async function brief(req) {
+  const p = req.post || {};
+  if (!p.key || !p.text) return { error: "Sieve couldn't read this post. Reload the page and try again." };
+  // A watched video's own "yt-" record belongs to Watch it for me, not to this flow: briefing it here
+  // by mistake would overwrite the video's brief with a LinkedIn/X-shaped prompt.
+  if (String(p.key).startsWith("yt-")) return { error: "YouTube videos get their brief from Watch it for me." };
+  // A platform that isn't a plain lowercase word (empty, a stray line, a platform Sieve doesn't know
+  // yet) falls back to linkedin rather than reaching the header or the stored record as-is.
+  let platform = p.platform || "linkedin";
+  if (!/^[a-z]{1,20}$/.test(platform)) platform = "linkedin";
+  const { orKey, model = DEFAULT_MODEL, briefs = {} } = await chrome.storage.local.get(["orKey", "model", "briefs"]);
+  // A record already in storage but that no longer normalizes (an older shape, or corrupted) doesn't
+  // count as cached: fall through and brief the post again rather than hand back nothing useful.
+  const cached = Object.hasOwn(briefs, p.key) ? briefReply(briefs[p.key]) : null;
+  if (cached && !req.again) return cached;
+  if (!orKey) return { error: "Briefs need an OpenRouter key. Add one in Sieve's settings." };
+  const prefs = await loadPrefs();
+  // One retry with more room: an unreadable answer is usually a cut-off. The whole attempt loop runs
+  // inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still records whatever was
+  // spent before it, exactly once -- and never writes stats at all when nothing was spent.
+  let parsed = null, cost = 0, lastError = "";
+  try {
+    for (const maxTokens of [900, 1800]) {
+      let res;
+      try {
+        res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
+          body: JSON.stringify({ model, messages: briefMessages(p, prefs), max_tokens: maxTokens, temperature: req.again ? 0.5 : 0.2, response_format: { type: "json_object" }, reasoning: { enabled: false }, usage: { include: true } }),
+        });
+      } catch {
+        return { error: "Network error reaching OpenRouter. Check your connection, then try again." };
+      }
+      if (res.status === 401) return { error: "OpenRouter rejected the key. Paste a new one in Sieve's settings." };
+      if (res.status === 402) return { error: "OpenRouter is out of credit. Add credit at openrouter.ai, then try again." };
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Code-point sliced, so a 160-char cut never splits a surrogate pair in half; the trailing
+        // punctuation strip stops OpenRouter's own "." from turning into a "..".
+        const why = Array.from(cleanText(body.error?.message)).slice(0, 160).join("").replace(/[.\s]+$/, "");
+        const retry = res.status === 408 || res.status === 429 || res.status >= 500;
+        return { error: `OpenRouter said ${res.status}${why ? `: ${why}` : ""}. ${retry ? "Try again in a minute." : "Check the model in Sieve's settings, or pick another one."}` };
+      }
+      cost += body.usage?.cost || 0;
+      try {
+        parsed = parseBrief(body.choices?.[0]?.message?.content || "", p); // p: Sieve's own check backs up the model's warning
+        break;
+      } catch {
+        lastError = body.choices?.[0]?.finish_reason === "length" ? "cut off" : "unreadable";
+      }
+    }
+  } finally {
+    if (cost) await stats((s) => { s.draftCost = (s.draftCost || 0) + cost; });
+  }
+  if (!parsed) return { error: `The model's brief was ${lastError} twice. Try again, or switch model in settings.` };
+  if (!parsed.technique) {
+    const cap200 = (s) => Array.from(cleanText(s)).slice(0, 200).join("");
+    const parts = ["No technique to try in this post, so no brief was written."];
+    if (parsed.what) parts.push(`The model read it as: ${cap200(parsed.what)}`);
+    if (parsed.warning) parts.push(`Warning: the post contains text aimed at AI agents: ${cap200(parsed.warning)}`);
+    return { error: parts.join(" ") };
+  }
+  const rec = { key: p.key, platform, title: p.title || "", author: p.authorName || "", url: webUrl(p.authorUrl), at: Date.now(), cost, ...parsed.brief };
+  await update("briefs", ({ briefs: latest = {} }) => ({ briefs: addBrief(latest, rec) }));
+  // The brief is what the user asked for; a storage hiccup on the post copy shouldn't lose it. save()
+  // does its own field cleanup now, the same for every route that calls it.
+  try {
+    await save(p);
+  } catch {}
+  await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
+  return briefReply(rec);
 }
 
 const KEEP_DAYS = 30;
 const MAX_SAVED = 400;
 
-async function save(post) {
-  const { saved = [] } = await chrome.storage.local.get("saved");
-  if (saved.some((p) => p.key === post.key)) return;
-  const cutoff = Date.now() - KEEP_DAYS * 864e5;
-  const next = [{ ...post, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
-  await chrome.storage.local.set({ saved: next });
+// Same race as classify()'s saves and everything else here: read-modify-write goes through the queue.
+// The field cleanup lives here, not in brief(), so every route that saves a post gets it: the old
+// "save" message from the content scripts, watch()'s video record, and brief()'s post copy alike.
+function save(post) {
+  const clean = { ...post, authorUrl: webUrl(post.authorUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
+  return update("saved", ({ saved = [] }) => {
+    if (saved.some((p) => p.key === clean.key)) return null;
+    const cutoff = Date.now() - KEEP_DAYS * 864e5;
+    const next = [{ ...clean, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
+    return { saved: next };
+  });
 }
 
 async function openrouter(messages, maxTokens) {
@@ -185,7 +331,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "watch") {
-    watch(msg).then(reply);
+    once(`watch:${msg.id}`, () => watch(msg)).then(reply, () => reply({ error: "Sieve couldn't store the video notes. Try again, and if it keeps failing, reload the extension." }));
+    return true;
+  }
+  if (msg.type === "brief") {
+    once(`brief:${msg.post?.key}`, () => brief(msg)).then(reply, () => reply({ error: "Sieve couldn't store the brief. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
   if (msg.type === "digest") {
