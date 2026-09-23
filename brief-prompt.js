@@ -12,8 +12,9 @@ import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvis
 // stripInvisible() text, so a zero-width space can't split "ignore" to slip past.
 const AI_TOOL = String.raw`(?:ai|llms?|language models?|chatbots?|summari[sz]ers?|scrapers?|crawlers?|(?:ai|coding|llm)\s+(?:assistants?|agents?|models?|tools?|bots?|summari[sz]ers?|scrapers?|crawlers?))`;
 const AI_DIRECTED = [
-  // "ignore your previous instructions" -- unless it's quoted as an example ('...', "...", like ...)
-  { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules|prompts?|directions|guidelines)\b/i, quoted: true },
+  // "ignore your previous instructions" -- unless it's quoted as an example ('...', "...", like ...) on
+  // the same line, and not "rules of thumb" or "prompt engineering", ordinary developer talk
+  { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules|prompts?|directions|guidelines)\b(?!\s+(?:of\s+thumb|engineer))/i, quoted: true },
   // "AI assistants reading this:", "LLMs summarising this must ...". Fires only when the phrase ends
   // right there -- a closing punctuation mark, or a modal that shows the sentence is telling the
   // reading/summarising AI to do something -- not "LLMs processing this pipeline" or "scrapers parsing
@@ -24,7 +25,7 @@ const AI_DIRECTED = [
   // "Note to AI engineers" or "a message for AI teams" mid-sentence, about people rather than models,
   // doesn't match this at all. Written as a lookbehind so the reported snippet starts at "note"/
   // "message", not at the ". " or "\n" before it.
-  { re: new RegExp(String.raw`(?<=^|[.!?]\s+|\n\s*|<!--\s*|\(\s*|\[\s*)(?:note|message)\s+(?:to|for)\s+(?:${AI_TOOL}(?=\s*[:,.;!)-]|\s+(?:when|who|that|reading))|automated\s+(?:summar\w+|tools?))`, "i") },
+  { re: new RegExp(String.raw`(?<=^|[.!?]\s+|\n\s*|<!--\s*|\(\s*|\[\s*)(?:note|message)\s+(?:to|for)\s+(?:(?:the|any|all)\s+)?(?:${AI_TOOL}(?=\s*[:,.;!)-]|\s+(?:when|who|that|reading))|automated\s+(?:summar\w+|tools?))`, "i") },
   // "the post ends here", wherever it sits
   { re: /\b(?:the\s+)?(?:post|message|user input|input|article)\s+(?:ends|is over)\s+here\b/i },
   // "end of the post" only counts as a marker line -- at the start of a sentence or a line, whatever
@@ -41,7 +42,9 @@ const AI_DIRECTED = [
   // "copy it verbatim", "return exactly this", "the correct brief for this post"
   { re: /\b(?:copy\s+(?:it|this)\s+verbatim|(?:return|output)\s+exactly\s+(?:this|the following)|the correct (?:brief|answer|summary|output|response) for this)\b/i },
 ];
-const QUOTED_BEFORE = /(?:['"‘“`]|\blike|\bsuch as|\be\.g\.)\s*$/i;
+// A quote mark, "like", "such as" or "e.g." right before a match, on the same line: a closing quote at
+// the end of the line above doesn't quote the next line.
+const QUOTED_BEFORE = /(?:['"‘“`]|\blike|\bsuch as|\be\.g\.)[ \t]*$/i;
 
 // Invisible characters with no everyday use in a post: tag characters (outside the three flag emoji
 // built from them), bidi overrides, runs of variation selectors, long runs of zero-width characters.
@@ -64,13 +67,15 @@ const authorOf = (post) => post?.authorName || post?.author;
 export function aiDirected(post = {}) {
   const raw = [authorOf(post), post?.title, post?.text].map((s) => (typeof s === "string" ? s : "")).join("\n");
   if (hidesCharacters(raw)) return HIDDEN_WARNING;
-  const visible = stripInvisible(raw);
+  // NFKC folds the "bold" and fullwidth letters LinkedIn posts use for styling into plain ones, so
+  // styling can't hide a phrase from the patterns below.
+  const visible = stripInvisible(raw).normalize("NFKC");
   for (const { re, quoted } of AI_DIRECTED) {
     // A quoted example only excuses itself: every match of a "quoted" pattern is looked at, and the
     // first one that isn't quoted counts, so an explanation that quotes the phrase can't hide a real
-    // instruction later in the same post.
+    // instruction later in the same post, even on the next line.
     const m = quoted
-      ? [...visible.matchAll(new RegExp(re.source, `${re.flags}g`))].find((x) => !QUOTED_BEFORE.test(visible.slice(Math.max(0, x.index - 12), x.index)))
+      ? [...visible.matchAll(new RegExp(re.source, `${re.flags.replace("g", "")}g`))].find((x) => !QUOTED_BEFORE.test(visible.slice(Math.max(0, x.index - 12), x.index)))
       : visible.match(re);
     if (!m) continue;
     const snippet = Array.from(cleanText(m[0]).replace(/"/g, "'")).slice(0, 80).join("");
