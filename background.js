@@ -136,7 +136,7 @@ async function draft(req) {
     const body = await res.json();
     await stats((s) => { s.draftCost = (s.draftCost || 0) + (body.usage?.cost || 0); });
     const text = body.choices?.[0]?.message?.content;
-    const angles = text ? parseAngles(text, about) : [];
+    const angles = text ? parseAngles(text, about, req.post || "") : [];
     if (angles.length) {
       await stats((s) => { s.drafts = (s.drafts || 0) + 1; });
       return { angles };

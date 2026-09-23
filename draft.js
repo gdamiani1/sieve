@@ -75,7 +75,7 @@ Give exactly 3 angles, each a different move, one per line:
 Labels: Ask, Push back, Build on it, Your angle.
 Rules:
 - Every line names a specific detail from THE POST and is under 25 words.
-- Only a line labelled "Your angle" may relate to me. Write it as "Your angle (F<n>): <how that one fact connects to this post>". Do not restate the fact's numbers or details; the reader sees the fact itself. Use it only if one fact is truly relevant; otherwise give three lines without it.
+- Only a line labelled "Your angle" may relate to me. Write it as "Your angle (F<n>): <a note to me on how to use that fact here>", starting with a verb, for example "Mention your rota built with a solver, then ask how they handle sick days." In that line "you" and "your" mean me, and the post author is "they". It is a note, not the comment: no "I", and no number or detail the fact does not have, because I can see the fact under the line. Use it only if one fact is truly relevant; otherwise give three lines without it.
 - The other lines say nothing about me: no "I", "my" or "me".
 - Do not make all three about failures or error rates. Vary the move.
 - English only. No praise, no selling, no emojis, no em dashes.
@@ -108,7 +108,7 @@ Give exactly 3 angles, each a different move, one per line:
 Labels: Answer, Ask, Your experience, Watch out.
 Rules:
 - Every line addresses a specific detail from THE POST and is under 25 words.
-- Only a line labelled "Your experience" may relate to me: "Your experience (F<n>): <how that fact helps this poster>". Do not restate the fact's numbers or details. Skip it if no fact truly applies.
+- Only a line labelled "Your experience" may relate to me. Write it as "Your experience (F<n>): <a note to me on how that fact helps this poster>", starting with a verb, for example "Suggest splitting the rota by skill, from your own time running a cafe." In that line "you" and "your" mean me, and the poster is "they". It is a note, not the reply: no "I", and no number or detail the fact does not have, because I can see the fact under the line. Skip it if no fact truly applies.
 - Other lines say nothing about me: no "I", "my" or "me".
 - The goal is to actually help the poster. No links, no product or service mentions, nothing that reads as promotion.
 - Reddit voice: plain, practical, specific. No praise, no emojis, no em dashes.
@@ -125,24 +125,41 @@ Jev's suggested move, as one of the three if it fits: ${ANGLES[angle] || ANGLES.
   return [{ role: "system", content: system }, { role: "user", content: user }];
 }
 
-export function parseAngles(text, about) {
+const LABEL = /^(Ask|Push back|Build on it|Your angle|Answer|Your experience|Watch out)\s*(?:\((F\d+)\))?\s*:\s*/i;
+const FIRST_PERSON = /\b(I|I'm|I've|I'd|[Mm]y|[Mm]e|[Mm]ine)\b/;
+const numbers = (s) => s.match(/\d+(?:[.,]\d+)?/g) || [];
+
+// post: the post's text. A fact line may use numbers from its fact or the post, never one worked out or invented.
+export function parseAngles(text, about, post = "") {
   const known = facts(about);
+  const inPost = numbers(post);
   const out = [];
   for (const raw of text.split("\n")) {
     const line = clean(raw.replace(/^\s*[-*•\d.)]+\s*/, ""));
-    const m = line.match(/^(Ask|Push back|Build on it|Your angle|Answer|Your experience|Watch out)\s*(?:\((F\d+)\))?\s*:\s*(.+)$/i);
+    const m = line.match(new RegExp(LABEL.source + "(.+)$", "i"));
     if (!m) continue;
     const label = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
     const n = m[2] ? Number(m[2].slice(1)) - 1 : -1;
+    const body = m[3].replace(LABEL, ""); // the model sometimes writes the label twice
+    if (!body) continue;
     if (/^your (angle|experience)$/i.test(m[1])) {
       if (!known[n]) continue; // no valid fact reference, drop it
-      out.push({ label, text: m[3], fact: known[n] });
+      // A note to the reader, not the comment: first person means the model wrote the comment and
+      // may have added what the fact doesn't say; a number the post lacks came from the fact or was worked out.
+      if (FIRST_PERSON.test(body)) continue;
+      const allowed = new Set([...inPost, ...numbers(known[n])]);
+      if (numbers(body).some((x) => !allowed.has(x))) continue;
+      out.push({ label, text: body, fact: known[n] });
     } else {
-      if (/\b(I|I'm|I've|my|me)\b/.test(m[3])) continue; // talks about me outside "Your angle"
-      out.push({ label, text: m[3] });
+      if (FIRST_PERSON.test(body)) continue; // talks about me outside "Your angle"
+      out.push({ label, text: body });
     }
   }
-  return out.slice(0, 3);
+  // Three lines. The model sometimes writes four: the fact line is the one Jev checked, so it stays.
+  const hasFact = out.some((a) => a.fact);
+  let spare = hasFact ? 2 : 3;
+  let factKept = false;
+  return out.filter((a) => (a.fact ? !factKept && (factKept = true) : spare-- > 0));
 }
 
 export function clean(text) {
