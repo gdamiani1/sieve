@@ -190,6 +190,12 @@ export function briefPrompt(rec) {
 // `rec.key` stays the post's own key; only the map is namespaced.
 export const briefId = (platform, key) => `${platform}:${key}`;
 
+// A post's platform. One that isn't a plain lowercase word (empty, a stray line, a platform Sieve
+// doesn't know yet) is linkedin rather than reaching a header, a stored record or an export id as-is;
+// posts saved before Sieve recorded a platform are LinkedIn too. Briefs, saved posts and the export
+// all use this one rule, so they agree on which post a record is.
+export const platformOf = (p) => (typeof p === "string" && /^[a-z]{1,20}$/.test(p) ? p : "linkedin");
+
 // A record's id, or `fallback` when it has no platform or key to build one from.
 const recordId = (b, fallback) =>
   b && typeof b === "object" && typeof b.platform === "string" && b.platform && b.key != null && b.key !== "" ? briefId(b.platform, b.key) : fallback;

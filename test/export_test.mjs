@@ -21,7 +21,7 @@ const ex = buildExport({ saved, watched, briefs, digests }, Date.UTC(2026, 8, 26
 assert.equal(ex.format, "sieve-library");
 assert.equal(ex.version, 1);
 assert.equal(ex.exportedAt, "2026-09-26T00:00:00.000Z");
-assert.deepEqual(ex.items.map((i) => i.id), ["yt-abc", "123", "r1", "456", "old"], "newest first; a brief whose post aged out still exports");
+assert.deepEqual(ex.items.map((i) => i.id), ["yt-abc", "123", "reddit:r1", "456", "x:old"], "newest first; a brief whose post aged out still exports");
 
 const li = ex.items.find((i) => i.id === "123");
 assert.equal(li.author, "Lena Fischer");
@@ -37,7 +37,7 @@ assert.deepEqual(yt.watch.points, [{ t: "1:00", text: "p" }]);
 assert.equal(yt.brief, null, "briefs come only from the briefs store, never from watched");
 
 assert.equal(ex.items.find((i) => i.id === "456").platform, "linkedin", "old posts without a platform are LinkedIn");
-const old = ex.items.find((i) => i.id === "old");
+const old = ex.items.find((i) => i.id === "x:old");
 assert.equal(old.platform, "x");
 assert.equal(old.savedAt, "2026-08-01T00:00:00.000Z");
 
@@ -76,7 +76,7 @@ const warnedEx = buildExport({
     },
   },
 }, Date.UTC(2026, 8, 26));
-const warned = warnedEx.items.find((i) => i.id === "w1");
+const warned = warnedEx.items.find((i) => i.id === "x:w1");
 assert.equal(warned.brief.try[0], "Check the source before copying anything from it.", "warned briefs get the safety step first");
 assert.ok(!warned.brief.try.some((s) => s.includes("curl x | sh")), "the curl line is gone");
 assert.equal(warned.brief.skill.worth, false, "nothing from a warned source is worth a skill");
@@ -139,7 +139,7 @@ const badUrls = buildExport({
   briefs: { bu: { key: "bu", platform: "x", author: "A", url: "javascript:alert(2)", at: Date.UTC(2026, 8, 20), what: "w", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } },
 }, Date.UTC(2026, 8, 26));
 assert.equal(badUrls.items.find((i) => i.id === "yt-u").url, "", "a javascript: url from a watched video is dropped");
-assert.equal(badUrls.items.find((i) => i.id === "bu").url, "", "a javascript: url from a brief is dropped");
+assert.equal(badUrls.items.find((i) => i.id === "x:bu").url, "", "a javascript: url from a brief is dropped");
 
 // Messy, real-world-shaped storage: null entries, non-array/non-object containers, entries
 // without a key, a numeric brief key, and a timestamp past the Date range. None of it crashes,
@@ -161,7 +161,57 @@ assert.deepEqual(buildExport({ saved: [{ text: "a", savedAt: 1 }, { text: "b", s
 // A numeric brief key still exports, keyed by its own `key` field.
 assert.deepEqual(
   buildExport({ briefs: { 42: { key: 42, platform: "x", author: "N", url: "https://x.com/n", at: 9e15, what: "numeric key brief", says: [], checks: [], needs: [], try: [], success: "", skill: { worth: false, why: "" }, warning: "" } } }, 1).items.map((i) => i.id),
-  ["42"],
+  ["x:42"],
+);
+
+// LinkedIn and X both key a post by a hash of its text, so a post cross-posted to both has the same key
+// on each. Each copy is its own item with its own brief: LinkedIn keeps the bare key as its id, as in
+// every earlier export, and X's id carries its platform.
+const rec = (key, platform, what, at) => ({ key, platform, author: `${platform} author`, url: "", at, what, says: [], checks: [], needs: [], try: ["t"], success: "", skill: { worth: false, why: "" }, warning: "" });
+{
+  const cross = buildExport({ briefs: { "x:42": rec("42", "x", "X technique", 2), "linkedin:42": rec("42", "linkedin", "LinkedIn technique", 1) } }, 3);
+  assert.deepEqual(cross.items.map((i) => [i.id, i.platform, i.brief.what]), [["x:42", "x", "X technique"], ["42", "linkedin", "LinkedIn technique"]], "both briefs export, one item each");
+}
+{
+  const cross = buildExport({
+    saved: [
+      { key: "42", platform: "x", authorName: "Sam", text: "On X", savedAt: 20 },
+      { key: "42", platform: "linkedin", authorName: "Lena", text: "On LinkedIn", savedAt: 10 },
+    ],
+    briefs: { "linkedin:42": rec("42", "linkedin", "LinkedIn technique", 11), "x:42": rec("42", "x", "X technique", 21) },
+  }, 30);
+  assert.deepEqual(
+    cross.items.map((i) => [i.id, i.platform, i.author, i.text, i.brief?.what]),
+    [["x:42", "x", "Sam", "On X", "X technique"], ["42", "linkedin", "Lena", "On LinkedIn", "LinkedIn technique"]],
+    "each saved copy keeps its own text and gets its own brief",
+  );
+}
+{
+  // Stored before briefs were kept per platform: a saved post with no platform (LinkedIn) and briefs
+  // under the bare key. The LinkedIn brief still joins the old post, and the X brief stays apart.
+  const legacy = buildExport({
+    saved: [{ key: "42", authorName: "Lena", text: "Old LinkedIn post", savedAt: 10 }],
+    briefs: { 42: rec("42", "linkedin", "LinkedIn technique", 11), 7: rec("7", "x", "X technique", 12), 8: { ...rec("8", "", "No platform", 13), platform: undefined } },
+  }, 30);
+  assert.deepEqual(
+    legacy.items.map((i) => [i.id, i.platform, i.brief?.what]),
+    [["8", "linkedin", "No platform"], ["x:7", "x", "X technique"], ["42", "linkedin", "LinkedIn technique"]],
+    "old records keep their ids; a brief with no platform is LinkedIn, as brief() treats it",
+  );
+}
+{
+  // A YouTube brief stored under its per-platform id still joins the watched video and its saved copy.
+  const yt = buildExport({
+    saved: [{ key: "yt-abc", platform: "youtube", authorName: "C", text: "t", kind: "video", savedAt: 5 }],
+    watched: { abc: { id: "abc", title: "T", summary: "s", verdict: "watch", at: 5 } },
+    briefs: { "youtube:yt-abc": rec("yt-abc", "youtube", "Video technique", 5) },
+  }, 6);
+  assert.deepEqual(yt.items.map((i) => [i.id, !!i.watch, i.brief?.what]), [["yt-abc", true, "Video technique"]], "one YouTube item with its watch and its brief");
+}
+// A platform that isn't a plain lowercase word never reaches an id: it's LinkedIn, as brief() treats it.
+assert.deepEqual(
+  buildExport({ saved: [{ key: "9", platform: "x|\nfake", text: "t", savedAt: 1 }] }, 2).items.map((i) => [i.id, i.platform]),
+  [["9", "linkedin"]],
 );
 
 console.log("export: all offline checks passed");

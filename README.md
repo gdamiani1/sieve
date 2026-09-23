@@ -114,7 +114,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
     node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
     node test/export_test.mjs       # the library export (offline)
-    node test/brief_storage_test.mjs # briefs kept apart per platform, through the real worker (offline)
+    node test/brief_storage_test.mjs # briefs and saved posts kept apart per platform, a cross-post digested once, through the real worker (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring + reply angles

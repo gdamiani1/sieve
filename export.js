@@ -5,9 +5,11 @@
 //   format: "sieve-library", version: 1, exportedAt: an ISO string, or null for an invalid clock.
 //   items: one entry per saved post, watched video or briefed post, newest `savedAt` first.
 //     Every item has exactly these fields, always present, always this type:
-//       id        string, never empty: the stored key ("123", "yt-abc", ...).
+//       id        string, never empty, one per post per platform: the stored key for LinkedIn ("123")
+//                 and YouTube ("yt-abc"); "<platform>:<key>" for every other platform ("x:123",
+//                 "reddit:456"), since LinkedIn and X can give a cross-posted post the same key.
 //       platform  a lowercase platform name, usually linkedin, x, reddit or youtube (old posts
-//                 without one are linkedin).
+//                 without one, and any value that isn't a plain lowercase word, are linkedin).
 //       kind      string, e.g. "technique", "video"; "" when unknown.
 //       title     "" for LinkedIn and X posts; the post title on Reddit, the video title on YouTube.
 //       author    string, the author or channel name.
@@ -27,13 +29,17 @@
 //   text or model output derived from it; consumers treat it as data and clean it for display.
 //   New fields may appear within version 1; a consumer ignores fields it doesn't recognise. Only
 //   renaming or removing a field, or changing what a field means, bumps the version.
-import { normalizeBrief } from "./brief.js";
+import { normalizeBrief, platformOf } from "./brief.js";
 
 const iso = (ms) => { const d = new Date(typeof ms === "number" && ms > 0 ? ms : NaN); return Number.isNaN(d.getTime()) ? null : d.toISOString(); };
 const arr = (a) => (Array.isArray(a) ? a : []);
 const isRec = (r) => !!r && typeof r === "object" && !Array.isArray(r);
 // A stored key can be a string or (old LinkedIn data) a number; never trust anything else.
 const idOf = (k) => (typeof k === "string" ? k : typeof k === "number" && Number.isFinite(k) ? String(k) : "");
+// LinkedIn and X both key a post by a hash of its text, so one key can be a LinkedIn post and an X post.
+// LinkedIn keeps the bare key and YouTube its "yt-<video id>", as in every earlier export; every other
+// platform's id carries the platform.
+const itemId = (platform, key) => { const k = idOf(key); return !k || platform === "linkedin" || platform === "youtube" ? k : `${platform}:${k}`; };
 // Every text field must actually be a string in the exported JSON: a stray number becomes text,
 // anything else (an object, an array, a boolean) becomes "" rather than leaking its shape out.
 const str = (s) => (typeof s === "string" ? s : typeof s === "number" && Number.isFinite(s) ? String(s) : "");
@@ -59,10 +65,11 @@ export function buildExport(data = {}, now = Date.now()) {
   // (newest) occurrence of a duplicate id win.
   for (const p of savedArr) {
     if (!isRec(p)) continue;
-    const id = idOf(p.key);
+    const platform = platformOf(p.platform);
+    const id = itemId(platform, p.key);
     if (!id || items.has(id)) continue;
     items.set(id, blank(id, {
-      platform: str(p.platform) || "linkedin", kind: str(p.kind), title: str(p.title), author: str(p.authorName), url: webUrl(p.authorUrl),
+      platform, kind: str(p.kind), title: str(p.title), author: str(p.authorName), url: webUrl(p.authorUrl),
       savedAt: iso(p.savedAt), text: str(p.text), worth: num(p.worth), topic: str(p.topic),
     }));
   }
@@ -87,9 +94,12 @@ export function buildExport(data = {}, now = Date.now()) {
     if (!isRec(b)) continue;
     const nb = normalizeBrief(b);
     if (!nb) continue;
-    const id = idOf(b.key) || k;
+    // Briefs are stored under "<platform>:<key>" now, and under the bare key by older versions, so the
+    // record's own key and platform say which item it belongs to; the storage key is only a fallback.
+    const platform = platformOf(b.platform);
+    const id = itemId(platform, idOf(b.key) || k);
     if (!id) continue;
-    const it = items.get(id) || blank(id, { platform: str(b.platform), title: str(b.title), author: str(b.author), url: webUrl(b.url), savedAt: iso(b.at) });
+    const it = items.get(id) || blank(id, { platform, title: str(b.title), author: str(b.author), url: webUrl(b.url), savedAt: iso(b.at) });
     it.brief = { ...nb, at: iso(b.at) };
     items.set(id, it);
   }

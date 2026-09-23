@@ -1,7 +1,7 @@
-// Offline: background.js stores briefs from different platforms apart, even when two posts share a
-// key (LinkedIn and X both key a post by a hash of its text, so a cross-posted post has the same key
-// on each). Runs the real worker against an in-memory chrome.storage and a stubbed OpenRouter: no
-// keys, no network.
+// Offline: background.js stores briefs and saved posts from different platforms apart, even when two
+// posts share a key (LinkedIn and X both key a post by a hash of its text, so a cross-posted post has
+// the same key on each). Runs the real worker against an in-memory chrome.storage and a stubbed
+// OpenRouter: no keys, no network.
 import assert from "node:assert/strict";
 
 const store = {};
@@ -9,7 +9,8 @@ const reset = (data = {}) => {
   for (const k of Object.keys(store)) delete store[k];
   Object.assign(store, structuredClone({ orKey: "stub", ...data }));
 };
-let listener;
+let listener, alarm;
+const notes = [];
 const event = { addListener: () => {} };
 globalThis.chrome = {
   storage: {
@@ -20,8 +21,8 @@ globalThis.chrome = {
     onChanged: event,
   },
   runtime: { onMessage: { addListener: (fn) => { listener = fn; } }, onInstalled: event, onStartup: event },
-  alarms: { onAlarm: event },
-  notifications: { onClicked: event },
+  alarms: { onAlarm: { addListener: (fn) => { alarm = fn; } }, clear: async () => {}, create: () => {} },
+  notifications: { onClicked: event, create: (_id, opts) => { notes.push(opts); } },
 };
 
 // By default the stubbed model briefs whatever platform the post came from, so a reply shows which
@@ -51,6 +52,7 @@ assert.equal((await brief("x", "42")).what, "X technique");
 {
   const stored = Object.values(store.briefs).filter((r) => r.key === "42");
   assert.deepEqual(stored.map((r) => [r.platform, r.what]).sort(), [["linkedin", "LinkedIn technique"], ["x", "X technique"]], "the X brief doesn't replace the LinkedIn one");
+  assert.deepEqual(store.saved.filter((p) => p.key === "42").map((p) => p.platform).sort(), ["linkedin", "x"], "briefing both saves both posts");
 }
 
 // Asking again for either post hands back its own cached brief, without paying for a new one.
@@ -80,6 +82,54 @@ assert.deepEqual(
 );
 assert.equal((await send({ type: "brief", post: post("linkedin", "42"), again: true })).what, "LinkedIn technique");
 assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin").length, 1, "briefing it again replaces the old record, no duplicate");
+
+// Saved posts are kept apart by platform too: the X copy of a cross-posted post is saved next to the
+// LinkedIn one, and the other way round, while the same post on the same platform is saved once.
+{
+  const save = (p) => send({ type: "save", post: p });
+  const savedFor = (key) => store.saved.filter((p) => p.key === key).map((p) => [p.platform, p.text]).sort();
+
+  reset();
+  await save(post("linkedin", "42"));
+  await save(post("x", "42"));
+  await save(post("x", "42"));
+  assert.deepEqual(savedFor("42"), [["linkedin", "A post about evals, on linkedin."], ["x", "A post about evals, on x."]], "the X copy is saved next to the LinkedIn one, once");
+
+  reset();
+  await save(post("x", "43"));
+  await save(post("linkedin", "43"));
+  assert.deepEqual(savedFor("43").map(([platform]) => platform), ["linkedin", "x"], "and the LinkedIn copy next to the X one");
+
+  // An older Sieve saved LinkedIn posts without a platform: that post is still the LinkedIn copy.
+  reset({ saved: [{ key: "44", authorName: "Old", text: "Old LinkedIn post", worth: 1, savedAt: Date.now() }] });
+  await save(post("linkedin", "44"));
+  assert.equal(store.saved.length, 1, "an old platform-less post counts as the LinkedIn copy");
+  await save(post("x", "44"));
+  assert.deepEqual(store.saved.map((p) => p.platform ?? "none").sort(), ["none", "x"], "but not as the X copy");
+
+  // A platform that isn't a plain lowercase word is LinkedIn here too, as brief() treats it, so a brief
+  // and its saved post copy always agree on which post they are.
+  reset();
+  await save({ ...post("linkedin", "45"), platform: "LinkedIn\n" });
+  await save(post("linkedin", "45"));
+  await save({ ...post("linkedin", "45"), platform: "" });
+  assert.deepEqual(store.saved.map((p) => p.platform), ["linkedin"], "saved once, as LinkedIn");
+
+  // Both copies of a cross-posted post are saved, but it's one post for the daily digest and the
+  // daily reminder: the same text isn't summarised twice or counted twice.
+  const crossPosted = () => reset({ saved: [
+    { key: "46", platform: "x", authorName: "Sam", text: "Same text", worth: 1, savedAt: Date.now() },
+    { key: "46", platform: "linkedin", authorName: "Sam", text: "Same text", worth: 1, savedAt: Date.now() - 1000 },
+  ] });
+  crossPosted();
+  answer = () => "## Built\n- x";
+  assert.equal((await send({ type: "digest", since: 0 })).count, 1, "the digest reads it once");
+  answer = postAnswer;
+  crossPosted();
+  notes.length = 0;
+  await alarm({ name: "daily-digest" });
+  assert.equal(notes[0]?.title, "1 post worth reading today", "the reminder counts it once");
+}
 
 // Watch it for me: watching again replaces the video's brief, or removes it when there is none this
 // time, including one an older Sieve stored under the bare "yt-" key. A post's brief is never touched.

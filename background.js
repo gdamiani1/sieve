@@ -2,7 +2,7 @@ import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdic
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
-import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText } from "./brief.js";
+import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
@@ -215,10 +215,7 @@ async function brief(req) {
   // A watched video's own "yt-" record belongs to Watch it for me, not to this flow: briefing it here
   // by mistake would overwrite the video's brief with a LinkedIn/X-shaped prompt.
   if (String(p.key).startsWith("yt-")) return { error: "YouTube videos get their brief from Watch it for me." };
-  // A platform that isn't a plain lowercase word (empty, a stray line, a platform Sieve doesn't know
-  // yet) falls back to linkedin rather than reaching the header or the stored record as-is.
-  let platform = p.platform || "linkedin";
-  if (!/^[a-z]{1,20}$/.test(platform)) platform = "linkedin";
+  const platform = platformOf(p.platform);
   const { orKey, model = DEFAULT_MODEL, briefs = {} } = await chrome.storage.local.get(["orKey", "model", "briefs"]);
   // A record already in storage but that no longer normalizes (an older shape, or corrupted) doesn't
   // count as cached: fall through and brief the post again rather than hand back nothing useful.
@@ -297,10 +294,12 @@ const MAX_SAVED = 400;
 // Same race as classify()'s saves and everything else here: read-modify-write goes through the queue.
 // The field cleanup lives here, not in brief(), so every route that saves a post gets it: the old
 // "save" message from the content scripts, watch()'s video record, and brief()'s post copy alike.
+// A post is the same post only on the same platform: LinkedIn and X both key a post by a hash of its
+// text, so a cross-posted post has the same key on each.
 function save(post) {
-  const clean = { ...post, authorUrl: webUrl(post.authorUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
+  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
   return update("saved", ({ saved = [] }) => {
-    if (saved.some((p) => p.key === clean.key)) return null;
+    if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;
     const cutoff = Date.now() - KEEP_DAYS * 864e5;
     const next = [{ ...clean, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
     return { saved: next };
@@ -328,9 +327,16 @@ async function openrouter(messages, maxTokens) {
   return { text: body.choices?.[0]?.message?.content || "", cost: body.usage?.cost || 0 };
 }
 
+// A post cross-posted to LinkedIn and X has the same key on both, and both copies are saved: the digest
+// and the reminder count it once. `saved` is newest first, so the newest copy stands for both.
+const onePerKey = (posts) => {
+  const seen = new Set();
+  return posts.filter((p) => !seen.has(p.key) && seen.add(p.key));
+};
+
 async function digest(since) {
   const { saved = [], digests = [] } = await chrome.storage.local.get(["saved", "digests"]);
-  const posts = saved.filter((p) => p.savedAt >= since && p.platform !== "reddit").slice(0, 40);
+  const posts = onePerKey(saved.filter((p) => p.savedAt >= since && p.platform !== "reddit")).slice(0, 40);
   if (!posts.length) return { error: "No saved LinkedIn posts in that window yet. Scroll your feed first." };
   const r = await openrouter(digestMessages(posts), 1000);
   if (r.error) return r;
@@ -397,7 +403,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await scheduleReminder();
   const { saved = [], lastDigestAt = 0 } = await chrome.storage.local.get(["saved", "lastDigestAt"]);
   const since = Math.max(lastDigestAt, Date.now() - 864e5);
-  const fresh = saved.filter((p) => p.savedAt > since);
+  const fresh = onePerKey(saved.filter((p) => p.savedAt > since));
   if (!fresh.length) return; // nothing new, stay quiet
   const people = [...new Set(fresh.map((p) => p.authorName).filter(Boolean))].slice(0, 3).join(", ");
   chrome.notifications.create(ALARM, {
