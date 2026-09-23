@@ -64,6 +64,21 @@ export function hidesCharacters(s) {
 // One definition for briefMessages and aiDirected, so the backstop always checks what the model reads.
 const authorOf = (post) => post?.authorName || post?.author;
 
+// A run of marks is cut to 30 before NFKC (the stream-safe limit in UAX #15): putting a long run in
+// canonical order takes quadratic time, and 100,000 marks took 8.6 s in node. No phrase the patterns
+// look for carries a run that long. The halfwidth katakana voiced sound marks (U+FF9E, U+FF9F) aren't
+// marks but become marks under NFKC, so they count too, as in the iPhone app: 33,333 of them each
+// followed by a Tibetan vowel sign still took 5.6 s with marks alone counted.
+// The app counts what has a non-zero canonical combining class, plus those two and three Tibetan vowel
+// signs (U+0F73, U+0F75, U+0F81). JavaScript's regexes have no combining-class property, so marks
+// (\p{M}) stand in. Every character with a non-zero class is a mark, and so are the three Tibetan signs
+// (checked against node's Unicode 17 data), so this cuts every run the app cuts. Where they differ: a
+// mark of class 0 continues a run here and resets it in the app. That's 1,572 of node's 2,543 marks,
+// among them Devanagari vowel signs (U+093E), enclosing marks (U+20DD) and the emoji variation selector
+// (U+FE0F). So in a run of more than 30 marks that mixes those in, the extension drops marks the app
+// keeps. Ordinary text, Devanagari included, has no run that long.
+const MARK_RUN = /([\p{M}\uFF9E\uFF9F]{30})[\p{M}\uFF9E\uFF9F]+/gu;
+
 // A post -> a warning Sieve can stand behind without a model, or "" when nothing blatant shows.
 // Checks the author as well as the title and text: a display name reaches the model too.
 export function aiDirected(post = {}) {
@@ -71,7 +86,7 @@ export function aiDirected(post = {}) {
   if (hidesCharacters(raw)) return HIDDEN_WARNING;
   // NFKC folds the "bold" and fullwidth letters LinkedIn posts use for styling into plain ones, so
   // styling can't hide a phrase from the patterns below.
-  const visible = stripInvisible(raw).normalize("NFKC");
+  const visible = stripInvisible(raw).replace(MARK_RUN, "$1").normalize("NFKC");
   for (const { re, quoted } of AI_DIRECTED) {
     // A quoted example only excuses itself: every match of a "quoted" pattern is looked at, and the
     // first one that isn't quoted counts, so an explanation that quotes the phrase can't hide a real
