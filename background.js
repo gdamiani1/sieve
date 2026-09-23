@@ -443,7 +443,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   // note's rules, so a name Sieve won't vouch for is counted but never shown.
   const fresh = onePerKey(savedPosts(saved).filter((p) => p.savedAt > since)).filter((p) => !leftOutOfDigest(p));
   if (!fresh.length) return; // nothing new worth reading, stay quiet
-  const people = [...new Set(fresh.map(noteName).filter((n) => n.safe).map((n) => n.shown))].slice(0, 3).join(", ");
+  const people = [...new Set(fresh.map((p) => noteName(p)).filter((n) => n.safe).map((n) => n.shown))].slice(0, 3).join(", ");
   chrome.notifications.create(ALARM, {
     type: "basic",
     iconUrl: "icons/icon128.png",

@@ -46,7 +46,7 @@ export function onePerKey(posts) {
 
 // Whether a digest leaves a saved post out: Sieve's own check flags it. Never a Reddit thread, which
 // doesn't go into a digest at all (the page lists those on their own). The digest and the daily
-// reminder both use this one rule.
+// reminder both use this one rule, both after onePerKey, so they agree about a cross-posted post.
 export function leftOutOfDigest(p) {
   return !!p && typeof p === "object" && platformOf(p.platform) !== "reddit" && flagged(p);
 }
@@ -111,15 +111,17 @@ Rules:
 const NOT_A_NAME = /[()[\]:]|\bwww\.|\bsieve\b/i;
 
 // A post's name as Sieve writes it into its own text (the Left out note, the daily reminder), and
-// whether it may be written out at all. Cleaned and capped at NOTE_NAME_CAP; one trailing group like
-// "(she/her)", "[Hiring]" or a Reddit "(r/...)" goes, so the person is still named, while any other
+// whether it may be written out at all. Only the display name, as the page and the export show it:
+// never the fuller author line, which on LinkedIn is the card header ("Sam Lee reposted this ...").
+// Cleaned; one trailing group like "(she/her)", "[Hiring]" or a Reddit "(r/...)" goes first, so the
+// person is still named, then it's capped at NOTE_NAME_CAP with no space left at the end. Any other
 // bracket keeps the name out (NOT_A_NAME). `safe` is also false with no name at all, or when Sieve's
-// check flags the name in any form: raw catches hidden characters, the 40-cut form a match the cut
+// check flags the name in any form: raw catches hidden characters, the shown form a match the cut
 // creates, and the full cleaned form a match past the cut (the first 40 code points may look harmless,
 // but the name as a whole isn't one Sieve should vouch for).
 export function noteName(p) {
-  const raw = rawName(p);
-  const shown = cap(cleanText(raw), NOTE_NAME_CAP).replace(/\s*[([][^()[\]]*[)\]]$/, "");
+  const raw = str(p?.authorName);
+  const shown = cap(cleanText(raw).replace(/\s*[([][^()[\]]*[)\]]$/, ""), NOTE_NAME_CAP).trim();
   return { shown, safe: !!shown && !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown.normalize("NFKC")) };
 }
 
