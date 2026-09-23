@@ -2,7 +2,7 @@ import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdic
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
-import { briefPrompt, addBrief, videoBriefRecord, normalizeBrief, cleanText } from "./brief.js";
+import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
@@ -183,10 +183,9 @@ async function watch(req) {
   // Watching again replaces the video's brief, or removes it if this time there is none.
   const vr = videoBriefRecord(out);
   await update("briefs", ({ briefs = {} }) => {
-    const key = `yt-${req.id}`;
-    if (!vr && !Object.hasOwn(briefs, key)) return null; // nothing to replace or remove
-    const { [key]: _replaced, ...others } = briefs;
-    return { briefs: vr ? addBrief(others, vr) : others };
+    if (vr) return { briefs: addBrief(briefs, vr) };
+    if (!findBrief(briefs, "youtube", `yt-${req.id}`)) return null; // nothing to remove
+    return { briefs: removeBrief(briefs, "youtube", `yt-${req.id}`) };
   });
   if (vr) await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
   await save({
@@ -223,9 +222,8 @@ async function brief(req) {
   const { orKey, model = DEFAULT_MODEL, briefs = {} } = await chrome.storage.local.get(["orKey", "model", "briefs"]);
   // A record already in storage but that no longer normalizes (an older shape, or corrupted) doesn't
   // count as cached: fall through and brief the post again rather than hand back nothing useful.
-  // A key can collide across platforms (LinkedIn and X both use small numeric-looking ids), so a
-  // cached record only counts when it was briefed for this same platform.
-  const cachedRaw = Object.hasOwn(briefs, p.key) && briefs[p.key]?.platform === platform ? briefs[p.key] : null;
+  // Looked up by platform as well as key: a post cross-posted to LinkedIn and X has the same key on both.
+  const cachedRaw = findBrief(briefs, platform, p.key);
   const cached = cachedRaw ? briefReply(cachedRaw) : null;
   if (cached && !req.again) return cached;
   if (!orKey) return { error: "Briefs need an OpenRouter key. Add one in Sieve's settings." };
@@ -356,7 +354,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "brief") {
-    once(`brief:${msg.post?.key}`, () => brief(msg)).then(reply, () => reply({ error: "Sieve couldn't store the brief. Try again, and if it keeps failing, reload the extension." }));
+    once(`brief:${msg.post?.platform}:${msg.post?.key}`, () => brief(msg)).then(reply, () => reply({ error: "Sieve couldn't store the brief. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
   if (msg.type === "digest") {

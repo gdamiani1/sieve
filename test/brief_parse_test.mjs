@@ -1,6 +1,6 @@
 // Offline: the technique brief shape, safety header, markdown and prompt. No keys, no network.
 import assert from "node:assert/strict";
-import { normalizeBrief, safetyHeader, briefMarkdown, briefPrompt, addBrief, videoBriefRecord, recentBriefs, AGENT_INSTRUCTION, WARNED_INSTRUCTION, CHECK_SOURCE, END_OF_BRIEF, quote } from "../brief.js";
+import { normalizeBrief, safetyHeader, briefMarkdown, briefPrompt, addBrief, briefId, findBrief, removeBrief, videoBriefRecord, recentBriefs, AGENT_INSTRUCTION, WARNED_INSTRUCTION, CHECK_SOURCE, END_OF_BRIEF, quote } from "../brief.js";
 
 // normalizeBrief: whatever a model sends back becomes one shape
 const raw = {
@@ -229,15 +229,52 @@ assert.equal(briefPrompt({ key: "x" }), "", "nothing to copy without a brief");
 
 // addBrief: keeps the newest by date. LinkedIn keys look like numbers, so key order can't be trusted.
 let briefs = {};
-for (let i = 0; i < 5; i++) briefs = addBrief(briefs, { key: String(100 + i), at: i, what: "w" }, 3);
-assert.deepEqual(Object.keys(briefs).sort(), ["102", "103", "104"], "keeps the newest 3");
-briefs = addBrief(briefs, { key: "102", at: 9, what: "again" }, 3);
-assert.equal(briefs["102"].what, "again", "writing it again replaces it");
-assert.deepEqual(Object.keys(addBrief(briefs, { key: "yt-z", at: 10, what: "w" }, 3)).sort(), ["102", "104", "yt-z"], "the oldest goes");
+for (let i = 0; i < 5; i++) briefs = addBrief(briefs, { key: String(100 + i), platform: "linkedin", at: i, what: "w" }, 3);
+assert.deepEqual(Object.keys(briefs).sort(), ["linkedin:102", "linkedin:103", "linkedin:104"], "keeps the newest 3");
+briefs = addBrief(briefs, { key: "102", platform: "linkedin", at: 9, what: "again" }, 3);
+assert.equal(briefs["linkedin:102"].what, "again", "writing it again replaces it");
+assert.deepEqual(Object.keys(addBrief(briefs, { key: "yt-z", platform: "youtube", at: 10, what: "w" }, 3)).sort(), ["linkedin:102", "linkedin:104", "youtube:yt-z"], "the oldest goes");
 assert.doesNotThrow(
-  () => addBrief({ bad: null, good: { key: "good", at: 5, what: "w" } }, { key: "new", at: 1, what: "w" }, 5),
+  () => addBrief({ bad: null, good: { key: "good", platform: "x", at: 5, what: "w" } }, { key: "new", platform: "x", at: 1, what: "w" }, 5),
   "a null entry already in storage doesn't crash the sort",
 );
+
+// addBrief: LinkedIn and X both key a post by a hash of its text, so a post cross-posted to both has
+// the same key on each. Briefing one never replaces the other's brief.
+{
+  const li = { key: "42", platform: "linkedin", at: 1, what: "LinkedIn brief" };
+  const x = { key: "42", platform: "x", at: 2, what: "X brief" };
+  const both = addBrief(addBrief({}, li), x);
+  assert.equal(briefId("linkedin", "42"), "linkedin:42");
+  assert.deepEqual(both, { "x:42": x, "linkedin:42": li }, "both survive, each under its own id");
+  assert.equal(findBrief(both, "linkedin", "42"), li, "the LinkedIn post finds the LinkedIn brief");
+  assert.equal(findBrief(both, "x", "42"), x, "the X post finds the X brief");
+  assert.equal(findBrief(both, "reddit", "42"), null, "no brief for a platform that wasn't briefed");
+  assert.equal(findBrief(null, "x", "42"), null, "no briefs map at all");
+  assert.deepEqual(removeBrief(both, "x", "42"), { "linkedin:42": li }, "removing one leaves the other");
+}
+
+// Records an older Sieve stored under the bare post key: found for their own platform only, and moved
+// to their own id by the next write, so briefing the post again leaves one record, not two.
+{
+  const old = { key: "42", platform: "linkedin", at: 1, what: "old" };
+  const legacy = { 42: old, "yt-abc": { key: "yt-abc", platform: "youtube", at: 3, what: "video" } };
+  assert.equal(findBrief(legacy, "linkedin", "42"), old, "an old record is still found");
+  assert.equal(findBrief(legacy, "x", "42"), null, "but never for another platform");
+  assert.equal(findBrief(legacy, "youtube", "yt-abc").what, "video");
+  const x = { key: "42", platform: "x", at: 2, what: "X brief" };
+  assert.deepEqual(Object.keys(addBrief(legacy, x)).sort(), ["linkedin:42", "x:42", "youtube:yt-abc"], "every record moves to its own id");
+  const again = addBrief(legacy, { key: "42", platform: "linkedin", at: 5, what: "new" });
+  assert.deepEqual(Object.keys(again).sort(), ["linkedin:42", "youtube:yt-abc"], "briefing again leaves no duplicate");
+  assert.equal(again["linkedin:42"].what, "new", "and the new brief wins");
+  assert.deepEqual(removeBrief(legacy, "youtube", "yt-abc"), { "linkedin:42": old }, "an old record can be removed too");
+  // Both an old and a new record for the same post (can't happen through Sieve, but storage is storage):
+  // the newer one wins when they meet.
+  const newer = { key: "42", platform: "linkedin", at: 9, what: "newer" };
+  assert.equal(addBrief({ 42: old, "linkedin:42": newer }, x)["linkedin:42"], newer, "the newer of two records for one post is kept");
+  // A record with no platform can't be given an id, so it stays where it is.
+  assert.deepEqual(Object.keys(addBrief({ 9: { key: "9", at: 1, what: "w" } }, x)).sort(), ["9", "x:42"], "a record with no platform stays put");
+}
 
 // recentBriefs: age-filters and normalizes a stored briefs map for display, newest first. A fixed
 // "now" keeps the day math deterministic.

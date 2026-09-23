@@ -185,13 +185,50 @@ export function briefPrompt(rec) {
   return `${md}\n\n${b.warning ? WARNED_INSTRUCTION : AGENT_INSTRUCTION}`;
 }
 
+// Where a brief lives in the stored `briefs` map. LinkedIn and X both key a post by a hash of its text,
+// so a post cross-posted to both has the same key on each: the platform keeps their briefs apart.
+// `rec.key` stays the post's own key; only the map is namespaced.
+export const briefId = (platform, key) => `${platform}:${key}`;
+
+// A record's id, or `fallback` when it has no platform or key to build one from.
+const recordId = (b, fallback) =>
+  b && typeof b === "object" && typeof b.platform === "string" && b.platform && b.key != null && b.key !== "" ? briefId(b.platform, b.key) : fallback;
+
+// Every record under its own id, including one an older Sieve stored under the bare post key. When
+// two records meet on one id the newer wins. A Map, so no stored key can reach Object.prototype.
+function byId(briefs) {
+  const out = new Map();
+  for (const [k, b] of Object.entries(briefs && typeof briefs === "object" ? briefs : {})) {
+    const id = recordId(b, k);
+    if (!out.has(id) || (b?.at || 0) > (out.get(id)?.at || 0)) out.set(id, b);
+  }
+  return out;
+}
+
+// The stored brief for one post on one platform, or null. Also finds a record an older Sieve stored
+// under the bare post key, but only when it was briefed for this same platform.
+export function findBrief(briefs, platform, key) {
+  if (!briefs || typeof briefs !== "object") return null;
+  const id = briefId(platform, key);
+  if (Object.hasOwn(briefs, id)) return briefs[id] ?? null;
+  return Object.hasOwn(briefs, key) && briefs[key]?.platform === platform ? briefs[key] : null;
+}
+
 // Keeps the newest `max` records by `at`. Key order in the object isn't reliable (LinkedIn keys look
 // like numbers), so anything that lists briefs sorts by `at` itself. Tolerates a null entry already
-// sitting in storage.
+// sitting in storage. `rec` replaces whatever was stored for the same post on the same platform, and
+// older records move to their own id on the way through.
 export function addBrief(briefs, rec, max = 300) {
-  return Object.fromEntries(
-    Object.entries({ ...briefs, [rec.key]: rec }).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, max),
-  );
+  const all = byId(briefs);
+  all.set(recordId(rec, rec.key), rec);
+  return Object.fromEntries([...all].sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, max));
+}
+
+// The map without the brief for one post on one platform, wherever it was stored.
+export function removeBrief(briefs, platform, key) {
+  const all = byId(briefs);
+  all.delete(briefId(platform, key));
+  return Object.fromEntries(all);
 }
 
 // A Watch it for me result that carries a brief -> the stored brief record. Null without a brief.
