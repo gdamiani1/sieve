@@ -7,7 +7,7 @@ or runs anything: a brief is text you copy.
 
 It is built on [Jev](https://typesafe.ai), TypeSafe's decision model (Sieve is an independent project, not made by TypeSafe): a model that doesn't generate text,
 it picks from answers you define and returns a probability. Jev makes the narrow calls (is this worth
-reading? could I answer this?), plain code handles the rules, and you do the part that needs judgement.
+reading? could I answer this? which of my facts is about this post?), plain code handles the rules, and you do the part that needs judgement.
 
 ## What it does
 
@@ -16,7 +16,8 @@ reading? could I answer this?), plain code handles the rules, and you do the par
   with the kind of post, the topic and a suggested move. 0.4 to 0.7 gets a light bar. Below 0.4 fades
   (hover to read; can be turned off). Promoted posts are skipped. Reshares include the shared post.
 - **Comment angles**: three one-line ideas (Ask / Push back / Build on it / Your angle), not a comment.
-  You pick one and write it yourself. Technique posts also show a Brief button.
+  You pick one and write it yourself. Before the angles are written, Jev picks which of your facts, if any,
+  is about the post, and only that one reaches the angle model. Technique posts also show a Brief button.
 
 **Reddit** (www and old.reddit)
 - Different question: is this someone asking for help that *you* could answer from first-hand experience?
@@ -86,22 +87,26 @@ word for word under the idea. Lines that talk about "me" anywhere else are dropp
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
-   - **TypeSafe API key** (for Jev scoring). Checked against the API before it's saved.
+   - **TypeSafe API key** (for Jev: scoring posts, and picking which of your facts fits a post for angles). Checked against the API before it's saved.
    - **OpenRouter API key** (for angles, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`.
    - **Your facts** for LinkedIn and for Reddit. Only true, first-hand things. Angles can only point to these.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
 
 Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services and nowhere
-else. TypeSafe gets what it scores: a post's text (for YouTube, the title, channel, length and any snippet),
-your role and topics, and on Reddit your Reddit facts. OpenRouter gets a post's text when you ask for angles
-(with your facts) or a brief (with your role and topics), your saved posts when you ask for a digest, and a
-video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
+else. TypeSafe gets what Jev scores: a post's text (for YouTube, the title, channel, length and any snippet),
+your role and topics, and on Reddit your Reddit facts. When you ask for angles on LinkedIn or X, TypeSafe also
+gets the post's text and your LinkedIn facts, so Jev can pick which fact, if any, fits. OpenRouter gets a post's
+text when you ask for angles (with the one fact Jev picked, if any; on Reddit, your Reddit facts) or a brief
+(with your role and topics), your saved posts when you ask for a digest, and a video's link, title and channel
+(with your role and topics) when you have it watched. OpenRouter passes each
 request to the model you picked.
 
 ## Cost (September 2026 prices)
 
 - Jev scoring: about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
-- Angles: about $0.00005 per request with DeepSeek V4 Flash. A digest of a day's posts: well under a cent.
+- Angles: about $0.00005 per request with DeepSeek V4 Flash. On LinkedIn and X, each request also asks Jev
+  which fact fits: the post plus about 140 input tokens per fact, so roughly 1,000 tokens and $0.00004 with
+  five facts (estimated from the request's size, not measured). A digest of a day's posts: well under a cent.
 - A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
 
 ## Tests
@@ -145,7 +150,7 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 ## Files
 
 - `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
-- `draft.js`: the angle prompts and parser. `digest-prompt.js`: the digest prompt.
+- `draft.js`: the angle prompts and parser, and the Jev question that picks which fact fits a post. `digest-prompt.js`: the digest prompt.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
   `linkedin-post-id.js`: runs in LinkedIn's own page and finds a feed post's id, so briefs link to the post. Reads only.
 - `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser. `json.js`: tolerant parsing of model JSON.
