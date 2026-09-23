@@ -13,8 +13,9 @@ import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvis
 const AI_TOOL = String.raw`(?:ai|llms?|language models?|chatbots?|summari[sz]ers?|scrapers?|crawlers?|(?:ai|coding|llm)\s+(?:assistants?|agents?|models?|tools?|bots?|summari[sz]ers?|scrapers?|crawlers?))`;
 const AI_DIRECTED = [
   // "ignore your previous instructions" -- unless it's quoted as an example ('...', "...", like ...) on
-  // the same line, and not "rules of thumb" or "prompt engineering", ordinary developer talk
-  { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules|prompts?|directions|guidelines)\b(?!\s+(?:of\s+thumb|engineer))/i, quoted: true },
+  // the same line; "rules of thumb" and "prompt engineering" are ordinary developer talk, each excused
+  // right at its own noun so "instructions engineers gave you" still counts
+  { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules(?!\s+of\s+thumb)|prompts?(?!\s+engineer)|directions|guidelines)\b/i, quoted: true },
   // "AI assistants reading this:", "LLMs summarising this must ...". Fires only when the phrase ends
   // right there -- a closing punctuation mark, or a modal that shows the sentence is telling the
   // reading/summarising AI to do something -- not "LLMs processing this pipeline" or "scrapers parsing
@@ -23,9 +24,10 @@ const AI_DIRECTED = [
   // "note to AI tools: ...", "message to AI assistants: ..." -- only when the note itself sits at the
   // start of a sentence, a line, an HTML comment or a bracket, the shape a real aside to a model takes;
   // "Note to AI engineers" or "a message for AI teams" mid-sentence, about people rather than models,
-  // doesn't match this at all. Written as a lookbehind so the reported snippet starts at "note"/
-  // "message", not at the ". " or "\n" before it.
-  { re: new RegExp(String.raw`(?<=^|[.!?]\s+|\n\s*|<!--\s*|\(\s*|\[\s*)(?:note|message)\s+(?:to|for)\s+(?:(?:the|any|all)\s+)?(?:${AI_TOOL}(?=\s*[:,.;!)-]|\s+(?:when|who|that|reading))|automated\s+(?:summar\w+|tools?))`, "i") },
+  // doesn't match this at all. A dash only ends the tool's name when it isn't joined to a word, so
+  // "Note to the AI-curious:" or "AI-first founders" is about people. Written as a lookbehind so the
+  // reported snippet starts at "note"/"message", not at the ". " or "\n" before it.
+  { re: new RegExp(String.raw`(?<=^|[.!?]\s+|\n\s*|<!--\s*|\(\s*|\[\s*)(?:note|message)\s+(?:to|for)\s+(?:(?:the|any|all)\s+)?(?:${AI_TOOL}(?=\s*[:,.;!)]|\s*-(?!\w)|\s+(?:when|who|that|reading))|automated\s+(?:summar\w+|tools?))`, "i") },
   // "the post ends here", wherever it sits
   { re: /\b(?:the\s+)?(?:post|message|user input|input|article)\s+(?:ends|is over)\s+here\b/i },
   // "end of the post" only counts as a marker line -- at the start of a sentence or a line, whatever
