@@ -132,7 +132,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/reddit_test.mjs       # Reddit scoring + reply angles
     node test/angles_test.mjs       # comment angles never borrow your facts for the author
     node test/compare_drafts.mjs    # the same angles from several models, with cost
-    node test/digest_test.mjs       # daily learnings digest
+    node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
 
 On the invented set, LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
