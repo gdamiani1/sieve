@@ -299,7 +299,7 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   reset();
   calls = 0;
   answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
-  const r = await send({ type: "watch", id: "constructor", url: "https://www.youtube.com/watch?v=constructor", title: "T", channel: "C", seconds: 60 });
+  const r = await send({ type: "watch", id: "__proto__", url: "https://www.youtube.com/watch?v=__proto__", title: "T", channel: "C", seconds: 60 });
   assert.equal(r.verdict, "skim");
   assert.equal(calls, 1, "a 'constructor' id makes a real call");
   answer = postAnswer;
@@ -329,7 +329,7 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   status = 200;
 }
 
-// A null or otherwise broken cached entry counts as absent, not as a cached answer: today it would
+// A null or otherwise broken cached entry counts as absent, not as a cached answer: without this it would
 // reply with a bare null, which the pages show as "No answer from the extension."
 {
   reset({ watched: { abc: null } });
@@ -342,6 +342,17 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   answer = postAnswer;
 }
 
+// An array cached entry counts as absent too, agreeing with the non-object filter used before the
+// newest-300 sort: a `[]` sitting under a key is never handed back as a cached answer.
+{
+  reset({ watched: { abc: [] } });
+  calls = 0;
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
+  await send({ type: "watch", id: "abc", url: "https://www.youtube.com/watch?v=abc", title: "T", channel: "C", seconds: 60 });
+  assert.equal(calls, 1, "an array cache entry makes a real call");
+  answer = postAnswer;
+}
+
 // A non-object entry already sitting in `watched` (a null, from some earlier bug) doesn't stop a new
 // watch from being stored: it's dropped when the newest-300 map is rebuilt, the way a junk saved post
 // is dropped, rather than crashing the sort.
@@ -351,6 +362,31 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   const r = await send({ type: "watch", id: "xyz98765432", url: "https://www.youtube.com/watch?v=xyz98765432", title: "T", channel: "C", seconds: 60 });
   assert.equal(r.verdict, "skim", "the watch still replies normally");
   assert.ok(store.watched.xyz98765432, "and its record is stored");
+  answer = postAnswer;
+}
+
+// The checked, cleaned links are the ones sent to the model and stored, not the request's raw, padded
+// ones; a malformed, too-long, or credentialed link is refused outright, and links exactly at the caps
+// still go through.
+{
+  const LINK_ERROR = "Sieve couldn't read this video's link. Reload the page and try again.";
+  const reel = (extra = {}) => send({ type: "watch", platform: "example", id: "Abc_1234567", url: "https://example.com/reel/Abc_1234567/", video: "https://cdn.example.com/v.mp4?sig=1", title: "T", channel: "@ana", caption: "c", ...extra });
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: true, brief: { what: "x", try: ["t"] } });
+  reset();
+  await reel({ url: " HTTPS://Example.com/reel/Abc_1234567/ ", video: " https://cdn.example.com/v.mp4?sig=1 " });
+  assert.equal(lastBody.messages[1].content[1].video_url.url, "https://cdn.example.com/v.mp4?sig=1", "the checked video link is sent");
+  assert.equal(store.watched["example:Abc_1234567"].url, "https://example.com/reel/Abc_1234567/", "the checked page link is stored");
+  assert.equal(store.briefs["example:Abc_1234567"].url, "https://example.com/reel/Abc_1234567/");
+  calls = 0;
+  for (const bad of [
+    { id: ["Abc_1234567"] },
+    { url: "https://example.com/" + "a".repeat(2029) },
+    { video: "https://cdn.example.com/" + "a".repeat(8169) },
+    { url: "https://u:p@example.com/reel/x/" },
+    { video: "https://u:p@cdn.example.com/v.mp4" },
+  ]) assert.equal((await reel({ ...bad, again: true })).error, LINK_ERROR, JSON.stringify(bad).slice(0, 60));
+  assert.equal((await reel({ url: "https://example.com/" + "a".repeat(2028), video: "https://cdn.example.com/" + "a".repeat(8168), again: true })).verdict, "skim", "links at the caps are fine");
+  assert.equal(calls, 1);
   answer = postAnswer;
 }
 

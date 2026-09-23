@@ -175,7 +175,7 @@ async function watch(req) {
   // A null or otherwise broken entry (an old bug, corrupted storage) counts as absent, not as a cached
   // answer: withPrompt(null) would hand the page back a bare null, which reads as no reply at all.
   const cached = watched && typeof watched === "object" && Object.hasOwn(watched, key) ? watched[key] : null;
-  if (cached && typeof cached === "object" && !req.again) return withPrompt(cached);
+  if (cached && typeof cached === "object" && !Array.isArray(cached) && !req.again) return withPrompt(cached);
   if (!orKey) return { error: "Add an OpenRouter key in Sieve's settings." };
   if (req.seconds && req.seconds / 60 > MAX_MINUTES) return { error: `Videos over ${MAX_MINUTES} minutes are too long to watch in one go.` };
   const prefs = await loadPrefs();
