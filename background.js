@@ -1,7 +1,7 @@
 import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
-import { digestMessages } from "./digest-prompt.js";
+import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
 
@@ -356,21 +356,18 @@ async function openrouter(messages, maxTokens) {
   return { text: body.choices?.[0]?.message?.content || "", cost: body.usage?.cost || 0 };
 }
 
-// A post cross-posted to LinkedIn and X has the same key on both, and both copies are saved: the digest
-// and the reminder count it once. `saved` is newest first, so the newest copy stands for both.
-const onePerKey = (posts) => {
-  const seen = new Set();
-  return posts.filter((p) => !seen.has(p.key) && seen.add(p.key));
-};
-
+// The daily digest. Which posts go in (one copy of a cross-posted post), how they're sent and the "Left
+// out" note all live in digest-prompt.js; a post Sieve's own check flags never reaches the model, and
+// when every post in the window is flagged there is no call and no charge.
 async function digest(since) {
   const { saved, digests = [] } = await chrome.storage.local.get(["saved", "digests"]);
-  const posts = onePerKey(savedPosts(saved).filter((p) => p.savedAt >= since && p.platform !== "reddit")).slice(0, 40);
-  if (!posts.length) return { error: "No saved LinkedIn posts in that window yet. Scroll your feed first." };
+  const { posts, left } = pickDigestPosts(savedPosts(saved), since);
+  if (!posts.length) return { error: left.length ? allLeftOutError(left.length) : "No saved posts in that window yet. Scroll your feed first." };
   const r = await openrouter(digestMessages(posts), 1000);
   if (r.error) return r;
-  if (!r.text.trim()) return { error: "The model returned an empty digest. Try again." };
-  const d = { at: Date.now(), since, count: posts.length, text: r.text.replace(/\s*[—–]\s*/g, ", "), cost: r.cost };
+  const text = digestText(r.text, left);
+  if (!text) return { error: "The model returned an empty digest. Try again." };
+  const d = { at: Date.now(), since, count: posts.length, text, cost: r.cost };
   await chrome.storage.local.set({ digests: [d, ...digests].slice(0, 60), lastDigestAt: d.at });
   return d;
 }
