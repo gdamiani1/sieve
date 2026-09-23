@@ -64,7 +64,4 @@ mkdirSync(outDir, { recursive: true });
 const zip = join(outDir, `sieve-${version}.zip`);
 if (existsSync(zip) && !force) fail(`${zip} already exists; pass --force to replace it`);
 git("archive", "--format=zip", "-o", zip, ref, "--", ...files);
-// git archive always adds a directory entry for every folder a listed file sits in, even when the
-// folder itself was never asked for. Strip those so the zip holds exactly the package's files.
-if (files.some((f) => f.includes("/"))) execFileSync("zip", ["-d", zip, "*/"], { maxBuffer: 64 * 1024 * 1024 });
 console.log(`store-zip: ${zip} (${files.length} files from ${git("rev-parse", "--short", ref).toString().trim()})`);

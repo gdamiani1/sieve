@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("../tools/store-zip.mjs", import.meta.url));
 const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
-const unzipList = (zip) => execFileSync("unzip", ["-Z1", zip], { encoding: "utf8" }).split("\n").filter(Boolean).sort();
+// git archive writes directory entries, which the package doesn't need to list.
+const unzipList = (zip) => execFileSync("unzip", ["-Z1", zip], { encoding: "utf8" }).split("\n").filter((f) => f && !f.endsWith("/")).sort();
 
 const tmp = mkdtempSync(join(tmpdir(), "sieve-store-zip-"));
 const repo = join(tmp, "repo");
