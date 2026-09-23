@@ -249,8 +249,19 @@ export function videoBriefRecord(w) {
   return { ...b, key: `yt-${w.id}`, platform: "youtube", title: w.title || "", author: w.channel || "", url: w.url || "", at: w.at || Date.now(), cost: w.cost || 0 };
 }
 
+// Every kind of line break, including the separators a post can use to fake a new line.
+const LINE_BREAK = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u{2028}\u{2029}]/u;
+
 // Source text as quoted lines: split on every kind of line break, cleaned, blanks dropped, each line
 // prefixed with "> " so none can pass for one of Sieve's own lines.
 export function quote(s) {
-  return text(s).split(/\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/).map(clean).filter(Boolean).map((l) => `> ${l}`).join("\n");
+  return text(s).split(LINE_BREAK).map(clean).filter(Boolean).map((l) => `> ${l}`).join("\n");
+}
+
+// A post's first non-blank line, cleaned, cut to `max` characters and marked "..." when longer. It
+// stands in as the title of a post that has none (LinkedIn, X), so a brief's source line says which
+// post it came from, not only who wrote it.
+export function firstLine(s, max = 80) {
+  const line = Array.from(text(s).split(LINE_BREAK).map(clean).find(Boolean) || "");
+  return line.length > max ? `${line.slice(0, max).join("").trimEnd()}...` : line.join("");
 }

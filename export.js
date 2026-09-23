@@ -11,10 +11,13 @@
 //       platform  a lowercase platform name, usually linkedin, x, reddit or youtube (old posts
 //                 without one, and any value that isn't a plain lowercase word, are linkedin).
 //       kind      string, e.g. "technique", "video"; "" when unknown.
-//       title     "" for LinkedIn and X posts; the post title on Reddit, the video title on YouTube.
+//       title     the post title on Reddit, the video title on YouTube. LinkedIn and X posts have
+//                 none of their own: a briefed one carries its brief's title (the post's first
+//                 line), any other "".
 //       author    string, the author or channel name.
-//       url       string. The author's profile on LinkedIn, the post on X and Reddit, the video
-//                 on YouTube. Only a real http(s) link ever leaves the extension; "" otherwise.
+//       url       string. The post on X and Reddit, the video on YouTube. On LinkedIn, the post when
+//                 Sieve kept its link, else the author's profile (posts saved before Sieve kept the
+//                 link). Only a real http(s) link ever leaves the extension; "" otherwise.
 //       savedAt   ISO string or null: when Sieve kept the item (saved, watched or briefed).
 //       text      string, raw third-party text (a post body or a video summary), uncleaned.
 //       worth     number or null.
@@ -69,7 +72,7 @@ export function buildExport(data = {}, now = Date.now()) {
     const id = itemId(platform, p.key);
     if (!id || items.has(id)) continue;
     items.set(id, blank(id, {
-      platform, kind: str(p.kind), title: str(p.title), author: str(p.authorName), url: webUrl(p.authorUrl),
+      platform, kind: str(p.kind), title: str(p.title), author: str(p.authorName), url: webUrl(p.postUrl) || webUrl(p.authorUrl),
       savedAt: iso(p.savedAt), text: str(p.text), worth: num(p.worth), topic: str(p.topic),
     }));
   }
@@ -101,6 +104,8 @@ export function buildExport(data = {}, now = Date.now()) {
     if (!id) continue;
     const it = items.get(id) || blank(id, { platform, title: str(b.title), author: str(b.author), url: webUrl(b.url), savedAt: iso(b.at) });
     it.brief = { ...nb, at: iso(b.at) };
+    // A LinkedIn or X post has no title of its own; its brief names it by its first line.
+    if (!it.title) it.title = str(b.title);
     items.set(id, it);
   }
 

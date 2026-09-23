@@ -80,6 +80,18 @@
     return { key: hash(text), state: { author: header.slice(0, 400), post: text.slice(0, MAX_CHARS) } };
   }
 
+  // The post's own link, or "" when LinkedIn doesn't give its id. The 2026 feed keeps that id only in
+  // the page's own data, out of this script's reach, so linkedin-post-id.js (running in the page)
+  // writes it on the card when asked; dispatchEvent runs its listener before returning. Only the exact
+  // shape of a post id is used, since anything on the page can set an attribute.
+  function postLink(card) {
+    card.removeAttribute("data-sieve-urn");
+    card.dispatchEvent(new CustomEvent("sieve-post-id", { bubbles: true }));
+    const urn = card.getAttribute("data-sieve-urn") || "";
+    card.removeAttribute("data-sieve-urn");
+    return /^urn:li:(?:activity|ugcPost|share):\d{6,25}$/.test(urn) ? `https://www.linkedin.com/feed/update/${urn}/` : "";
+  }
+
   // What gets saved, and briefed, for a post: the same record the digest page reads.
   function postRecord(card, key, r) {
     // Best guess at the real author against 2026 LinkedIn markup: a card can list a reactor's
@@ -93,7 +105,7 @@
     const name = links.filter((a) => a.href.split("?")[0] === url).map((a) => a.innerText.trim().split("\n")[0].replace(/\s*•.*$/, "").trim()).find(Boolean);
     const state = states.get(key) || {};
     return {
-      key, platform: "linkedin", author: state.author || "", authorName: name || "", authorUrl: url,
+      key, platform: "linkedin", author: state.author || "", authorName: name || "", authorUrl: url, postUrl: postLink(card),
       text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth,
     };
   }

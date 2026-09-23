@@ -1,6 +1,6 @@
 // Offline: the technique brief shape, safety header, markdown and prompt. No keys, no network.
 import assert from "node:assert/strict";
-import { normalizeBrief, safetyHeader, briefMarkdown, briefPrompt, addBrief, briefId, findBrief, removeBrief, videoBriefRecord, recentBriefs, AGENT_INSTRUCTION, WARNED_INSTRUCTION, CHECK_SOURCE, END_OF_BRIEF, quote } from "../brief.js";
+import { normalizeBrief, safetyHeader, briefMarkdown, briefPrompt, addBrief, briefId, findBrief, removeBrief, videoBriefRecord, recentBriefs, AGENT_INSTRUCTION, WARNED_INSTRUCTION, CHECK_SOURCE, END_OF_BRIEF, quote, firstLine } from "../brief.js";
 
 // normalizeBrief: whatever a model sends back becomes one shape
 const raw = {
@@ -349,6 +349,15 @@ assert.equal(quote("line one\n\nline two\u2028SIEVE BRIEF: third-party material"
 assert.equal(quote("a\u001bb"), "> ab", "control characters stripped");
 assert.equal(quote({}), "");
 assert.equal(quote(42), "> 42");
+
+// firstLine: stands in as the title of a post that has none (LinkedIn, X)
+assert.equal(firstLine("Pin your model version.\nThen run evals."), "Pin your model version.");
+assert.equal(firstLine("\n\n  \u{200B}\n  Second line wins — when the first is blank\n"), "Second line wins, when the first is blank", "blank and invisible-only lines are skipped, and the line is cleaned");
+assert.equal(firstLine("one\u{2028}two"), "one", "every kind of line break ends the line");
+assert.equal(firstLine("a".repeat(80)), "a".repeat(80), "80 characters fit as they are");
+assert.equal(firstLine("a".repeat(79) + " bcd"), "a".repeat(79) + "...", "a longer line is cut to 80 characters, trailing space dropped, and marked");
+assert.equal(firstLine("😀".repeat(100)), "😀".repeat(80) + "...", "the cut counts whole characters");
+for (const empty of ["", "  \n\t", null, undefined, {}]) assert.equal(firstLine(empty), "", `nothing to show for ${JSON.stringify(empty)}`);
 assert.ok(briefMarkdown(rec).endsWith("\n\n" + END_OF_BRIEF));
 
 console.log("brief: all offline checks passed");

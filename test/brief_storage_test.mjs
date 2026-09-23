@@ -152,6 +152,38 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   assert.equal(notes[0]?.message, "Including Kim. Click to open your daily learnings.");
 }
 
+// A brief links to the post itself, not to the author's profile. A LinkedIn post supplies its own link
+// (postUrl), which the brief and the saved post keep; without one, or with one that isn't a web link,
+// the brief falls back to the author's link, as before. A post with no title of its own (LinkedIn, X)
+// gets its first line as the title, so the copied prompt's source line says which post it was.
+{
+  const profile = "https://www.linkedin.com/in/ana/";
+  const postLink = "https://www.linkedin.com/feed/update/urn:li:activity:7300000000000000001/";
+  const liPost = (key, extra = {}) => ({ key, platform: "linkedin", authorName: "Ana Horvat", authorUrl: profile, text: "Pin your model version in CI.\nThen run evals on every change.", ...extra });
+
+  reset();
+  const got = await send({ type: "brief", post: liPost("50", { postUrl: postLink }) });
+  assert.equal(store.briefs["linkedin:50"].url, postLink, "the brief keeps the post's own link");
+  assert.equal(store.briefs["linkedin:50"].title, "Pin your model version in CI.", "and the post's first line as its title");
+  assert.ok(got.prompt.includes(`\nSource: Ana Horvat, "Pin your model version in CI.", ${postLink} (LinkedIn)\n`), "the copied prompt's source line names the post and links to it");
+  assert.equal(store.saved[0].postUrl, postLink, "the saved post keeps the post's link");
+  assert.equal(store.saved[0].authorUrl, profile, "next to the author's");
+
+  reset();
+  await send({ type: "brief", post: liPost("51") });
+  assert.equal(store.briefs["linkedin:51"].url, profile, "no post link: the brief falls back to the author's");
+
+  reset();
+  await send({ type: "brief", post: liPost("52", { postUrl: "javascript:alert(1)" }) });
+  assert.equal(store.briefs["linkedin:52"].url, profile, "a post link that isn't a web link is dropped for the author's");
+  assert.equal(store.saved[0].postUrl, "", "and never stored with the saved post");
+
+  reset();
+  await send({ type: "brief", post: { key: "53", platform: "reddit", authorName: "u/a (r/b)", authorUrl: "https://www.reddit.com/r/b/comments/1/x/", title: "Evals in CI", text: "First line.\nMore." } });
+  assert.equal(store.briefs["reddit:53"].title, "Evals in CI", "a post with a title of its own keeps it");
+  assert.equal(store.briefs["reddit:53"].url, "https://www.reddit.com/r/b/comments/1/x/", "and its link");
+}
+
 // Watch it for me: watching again replaces the video's brief, or removes it when there is none this
 // time, including one an older Sieve stored under the bare "yt-" key. A post's brief is never touched.
 {

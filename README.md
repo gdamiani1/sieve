@@ -115,6 +115,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
     node test/export_test.mjs       # the library export (offline)
     node test/brief_storage_test.mjs # briefs and saved posts kept apart per platform, a cross-post digested once, through the real worker (offline)
+    node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring + reply angles
@@ -133,6 +134,8 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 - **LinkedIn and Reddit markup changes break it.** LinkedIn (2026) has no stable class names; the hooks are
   `[role=listitem][componentkey^="update-card-"]` and `[data-testid="expandable-text-box"]`. Reddit uses
   `<shreddit-post>` attributes. If badges stop appearing, those changed. Reddit shows a note if it can't find posts.
+  A LinkedIn post's own link comes from the page's React data (`linkedin-post-id.js`); if briefs start linking
+  to the author's profile instead of the post, that changed.
 - **Personal use.** It only reads what you scroll past in your own browser and never acts on the page.
   LinkedIn and Reddit both restrict automated activity; don't turn this into something that does.
 - **Scores, angles and briefs are suggestions from cheap models.** Check any number before you repeat it.
@@ -144,6 +147,7 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 - `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
 - `draft.js`: the angle prompts and parser. `digest-prompt.js`: the digest prompt.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
+  `linkedin-post-id.js`: runs in LinkedIn's own page and finds a feed post's id, so briefs link to the post. Reads only.
 - `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser. `json.js`: tolerant parsing of model JSON.
 - `brief.js`: the technique brief (shape, safety header, markdown, Copy as prompt, the rules for warned briefs).
   `brief-prompt.js`: the prompt that briefs one post, and its parser.

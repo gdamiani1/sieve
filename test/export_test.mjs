@@ -208,6 +208,33 @@ const rec = (key, platform, what, at) => ({ key, platform, author: `${platform} 
   }, 6);
   assert.deepEqual(yt.items.map((i) => [i.id, !!i.watch, i.brief?.what]), [["yt-abc", true, "Video technique"]], "one YouTube item with its watch and its brief");
 }
+{
+  // A LinkedIn post saved with its own link exports that link, not the author's profile; one saved
+  // without it (by an older Sieve), or with a link that isn't a web link, keeps the profile. A briefed
+  // post with no title of its own (LinkedIn, X) takes the brief's title, the post's first line; an item
+  // that has a title keeps it.
+  const profile = "https://www.linkedin.com/in/ana/";
+  const postLink = "https://www.linkedin.com/feed/update/urn:li:activity:7300000000000000001/";
+  const links = buildExport({
+    saved: [
+      { key: "p1", platform: "linkedin", authorName: "Ana", authorUrl: profile, postUrl: postLink, text: "Pin your model.\nMore.", savedAt: 5 },
+      { key: "p2", platform: "linkedin", authorName: "Ana", authorUrl: profile, text: "Older save", savedAt: 4 },
+      { key: "p3", platform: "linkedin", authorName: "Ana", authorUrl: profile, postUrl: "javascript:alert(1)", text: "Odd link", savedAt: 3 },
+      { key: "p4", platform: "reddit", authorName: "u/a (r/b)", authorUrl: "https://www.reddit.com/r/b/comments/4/x/", title: "Own title", text: "t", savedAt: 2 },
+    ],
+    briefs: {
+      "linkedin:p1": { ...rec("p1", "linkedin", "Pinning", 6), title: "Pin your model.", url: postLink },
+      "reddit:p4": { ...rec("p4", "reddit", "Reddit technique", 6), title: "Something else" },
+    },
+  }, 10);
+  const by = (id) => links.items.find((i) => i.id === id);
+  assert.equal(by("p1").url, postLink, "the post's own link");
+  assert.equal(by("p1").title, "Pin your model.", "a briefed LinkedIn post takes the brief's title");
+  assert.equal(by("p2").url, profile, "no post link: the author's profile, as before");
+  assert.equal(by("p2").title, "", "an unbriefed LinkedIn post still has no title");
+  assert.equal(by("p3").url, profile, "a post link that isn't a web link falls back to the profile");
+  assert.equal(by("reddit:p4").title, "Own title", "an item's own title wins over the brief's");
+}
 // A platform that isn't a plain lowercase word never reaches an id: it's LinkedIn, as brief() treats it.
 assert.deepEqual(
   buildExport({ saved: [{ key: "9", platform: "x|\nfake", text: "t", savedAt: 1 }] }, 2).items.map((i) => [i.id, i.platform]),

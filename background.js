@@ -2,7 +2,7 @@ import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdic
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
-import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf } from "./brief.js";
+import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
@@ -298,7 +298,10 @@ async function brief(req) {
     if (parsed.warning) parts.push(`Warning: the post contains text aimed at AI agents: ${cap200(parsed.warning)}`);
     return { error: parts.join(" ") };
   }
-  const rec = { key: p.key, platform, title: p.title || "", author: p.authorName || "", url: webUrl(p.authorUrl), at: Date.now(), cost, ...parsed.brief };
+  // The post's own link when the page gave one (LinkedIn's postUrl; on X and Reddit authorUrl already is
+  // the post), the author's otherwise. A post with no title of its own is named by its first line, so
+  // the brief's source line says which post it was, not only who wrote it.
+  const rec = { key: p.key, platform, title: p.title || firstLine(p.text), author: p.authorName || "", url: webUrl(p.postUrl) || webUrl(p.authorUrl), at: Date.now(), cost, ...parsed.brief };
   await update("briefs", ({ briefs: latest = {} }) => ({ briefs: addBrief(latest, rec) }));
   // The brief is what the user asked for; a storage hiccup on the post copy shouldn't lose it. save()
   // does its own field cleanup now, the same for every route that calls it.
@@ -322,7 +325,7 @@ const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => 
 // A post is the same post only on the same platform: LinkedIn and X both key a post by a hash of its
 // text, so a cross-posted post has the same key on each.
 function save(post) {
-  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
+  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
   return update("saved", ({ saved: stored }) => {
     const saved = savedPosts(stored);
     if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;

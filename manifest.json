@@ -32,6 +32,16 @@
     },
     {
       "matches": [
+        "https://www.linkedin.com/feed/*"
+      ],
+      "js": [
+        "linkedin-post-id.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
         "https://www.reddit.com/*",
         "https://old.reddit.com/*"
       ],
