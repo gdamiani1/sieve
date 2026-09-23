@@ -55,9 +55,14 @@ export function hidesCharacters(s) {
   return HIDDEN.test(String(s ?? "").replace(RGI_TAG_FLAGS, ""));
 }
 
+// The author as the model is shown it: the display name, or the raw author line when there is none.
+// One definition for briefMessages and aiDirected, so the backstop always checks what the model reads.
+const authorOf = (post) => post?.authorName || post?.author;
+
 // A post -> a warning Sieve can stand behind without a model, or "" when nothing blatant shows.
+// Checks the author as well as the title and text: a display name reaches the model too.
 export function aiDirected(post = {}) {
-  const raw = [post?.title, post?.text].map((s) => (typeof s === "string" ? s : "")).join("\n");
+  const raw = [authorOf(post), post?.title, post?.text].map((s) => (typeof s === "string" ? s : "")).join("\n");
   if (hidesCharacters(raw)) return HIDDEN_WARNING;
   const visible = stripInvisible(raw);
   for (const { re, quoted } of AI_DIRECTED) {
@@ -135,7 +140,7 @@ Rules:
   const cut6000 = (s) => Array.from(stripInvisible(s)).slice(0, 6000).join("");
   const p = {
     platform: Object.hasOwn(PLATFORM_NAMES, post.platform ?? "") ? PLATFORM_NAMES[post.platform] : "a social network",
-    author: cap150(post.authorName || post.author || "unknown"),
+    author: cap150(authorOf(post) || "unknown"),
     title: cap150(post.title || ""),
     text: cut6000(post.text || ""),
   };
