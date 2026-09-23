@@ -241,4 +241,28 @@ assert.deepEqual(
   [["9", "linkedin"]],
 );
 
+// A watched video from another platform: one item joining the watch, the saved post and the brief under
+// "<platform>:<id>"; a YouTube video with the same id stays its own "yt-" item; a record whose platform
+// isn't a plain word is left out.
+{
+  const out = buildExport({
+    saved: [{ key: "Abc_1234567", platform: "example", authorName: "@ana", authorUrl: "https://example.com/reel/Abc_1234567/", title: "Reel title", text: "t", kind: "video", worth: 1, savedAt: 3 }],
+    watched: {
+      "example:Abc_1234567": { platform: "example", id: "Abc_1234567", url: "https://example.com/reel/Abc_1234567/", title: "Reel title", channel: "@ana", verdict: "skim", why: "w", summary: "s", points: [], best: null, learnings: [], checks: [], seconds: null, at: 3 },
+      Abc_1234567: { id: "Abc_1234567", url: "https://www.youtube.com/watch?v=Abc_1234567", title: "YT", channel: "C", verdict: "watch", why: "w", summary: "s", points: [], best: null, learnings: [], checks: [], seconds: 60, at: 2 },
+      "bad:x": { platform: "Not Valid", id: "x", at: 1 },
+    },
+    briefs: { "example:Abc_1234567": { key: "Abc_1234567", platform: "example", what: "Reel technique", try: ["t"], at: 3 } },
+  }, 10);
+  const byId = Object.fromEntries(out.items.map((it) => [it.id, it]));
+  assert.deepEqual(Object.keys(byId).sort(), ["example:Abc_1234567", "yt-Abc_1234567"]);
+  const reel = byId["example:Abc_1234567"];
+  assert.equal(reel.platform, "example");
+  assert.equal(reel.url, "https://example.com/reel/Abc_1234567/");
+  assert.equal(reel.watch.verdict, "skim");
+  assert.equal(reel.brief.what, "Reel technique");
+  assert.equal(byId["yt-Abc_1234567"].platform, "youtube");
+  assert.equal(byId["yt-Abc_1234567"].watch.verdict, "watch");
+}
+
 console.log("export: all offline checks passed");

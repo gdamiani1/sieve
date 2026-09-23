@@ -1,4 +1,4 @@
-import { briefPrompt, PLATFORM_NAMES, cleanText, recentBriefs } from "./brief.js";
+import { briefPrompt, platformName, cleanText, recentBriefs } from "./brief.js";
 import { buildExport, exportFilename } from "./export.js";
 
 const $ = (id) => document.getElementById(id);
@@ -71,10 +71,10 @@ function videoList(watched) {
     div.className = "post";
     const a = document.createElement("a");
     a.href = w.url; a.target = "_blank"; a.rel = "noopener";
-    a.textContent = w.title;
+    a.textContent = w.title || w.channel || "Untitled video"; // a reel's caption may give no title
     const m = document.createElement("div");
     m.className = "m";
-    m.textContent = `${w.channel} · ${{ watch: "worth watching", skim: "skim it", skip: "skip it" }[w.verdict]} · ${new Date(w.at).toLocaleDateString()}`;
+    m.textContent = [w.platform ? platformName(w.platform) : "", w.channel, { watch: "worth watching", skim: "skim it", skip: "skip it" }[w.verdict], new Date(w.at).toLocaleDateString()].filter(Boolean).join(" · ");
     const t = document.createElement("div");
     t.className = "t";
     t.style.maxHeight = "none";
@@ -178,7 +178,7 @@ function briefList(briefs) {
     a.textContent = cleanText(b.title) || cleanText(b.author) || "Untitled";
     const m = document.createElement("div");
     m.className = "m";
-    const platform = Object.hasOwn(PLATFORM_NAMES, b.platform) ? PLATFORM_NAMES[b.platform] : "";
+    const platform = platformName(b.platform);
     m.textContent = [platform, b.title ? cleanText(b.author) : "", new Date(b.at).toLocaleDateString(), nb.skill?.worth ? "worth a skill" : ""].filter(Boolean).join(" · ");
     div.append(a, m);
     if (nb.warning) {

@@ -11,11 +11,13 @@
 //       platform  a lowercase platform name, usually linkedin, x, reddit or youtube (old posts
 //                 without one, and any value that isn't a plain lowercase word, are linkedin).
 //       kind      string, e.g. "technique", "video"; "" when unknown.
-//       title     the post title on Reddit, the video title on YouTube. LinkedIn and X posts have
+//       title     the post title on Reddit, the video title on YouTube (on another video platform, the
+//                 first line of its caption). LinkedIn and X posts have
 //                 none of their own: a briefed one carries its brief's title (the post's first
 //                 line), any other "".
 //       author    string, the author or channel name.
-//       url       string. The post on X and Reddit, the video on YouTube. On LinkedIn, the post when
+//       url       string. The post on X and Reddit, the video's page on YouTube and other video
+//                 platforms. On LinkedIn, the post when
 //                 Sieve kept its link, else the author's profile (posts saved before Sieve kept the
 //                 link). Only a real http(s) link ever leaves the extension; "" otherwise.
 //       savedAt   ISO string or null: when Sieve kept the item (saved, watched or briefed).
@@ -32,7 +34,7 @@
 //   text or model output derived from it; consumers treat it as data and clean it for display.
 //   New fields may appear within version 1; a consumer ignores fields it doesn't recognise. Only
 //   renaming or removing a field, or changing what a field means, bumps the version.
-import { normalizeBrief, platformOf } from "./brief.js";
+import { normalizeBrief, platformOf, videoPlatform } from "./brief.js";
 
 const iso = (ms) => { const d = new Date(typeof ms === "number" && ms > 0 ? ms : NaN); return Number.isNaN(d.getTime()) ? null : d.toISOString(); };
 const arr = (a) => (Array.isArray(a) ? a : []);
@@ -79,8 +81,13 @@ export function buildExport(data = {}, now = Date.now()) {
 
   for (const [k, w] of Object.entries(watchedObj)) {
     if (!isRec(w)) continue;
-    const id = `yt-${idOf(w.id) || k}`;
-    const it = items.get(id) || blank(id, { platform: "youtube", kind: "video", title: str(w.title), author: str(w.channel), url: webUrl(w.url), savedAt: iso(w.at), text: str(w.summary) });
+    // YouTube records (no platform) keep their "yt-<id>" item, as in every earlier export. A video from
+    // another platform joins its saved post and brief under "<platform>:<id>".
+    const platform = videoPlatform(w.platform);
+    if (!platform) continue;
+    const id = platform === "youtube" ? `yt-${idOf(w.id) || k}` : itemId(platform, idOf(w.id));
+    if (!id) continue;
+    const it = items.get(id) || blank(id, { platform, kind: "video", title: str(w.title), author: str(w.channel), url: webUrl(w.url), savedAt: iso(w.at), text: str(w.summary) });
     it.watch = {
       verdict: str(w.verdict), why: str(w.why), summary: str(w.summary), points: arr(w.points), best: isRec(w.best) ? w.best : null,
       learnings: arr(w.learnings), checks: arr(w.checks), seconds: num(w.seconds),
