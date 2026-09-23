@@ -3,6 +3,11 @@
 
 export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
 
+// Providers OpenRouter must not route Sieve's text calls to. Venice, measured 2026-09-23 on the default
+// model: 7 of 8 brief answers either rambled until they were cut off or read Sieve's own instructions as
+// part of the post and flagged them; the other providers gave 11 clean answers out of 12.
+export const PROVIDER_PREFS = { ignore: ["Venice"] };
+
 // Facts the draft may use about you. Everything here must be true and first-hand.
 // Edit in the extension options. The model is told never to claim anything not on this list.
 export const DEFAULT_ABOUT = `- Replace these with true, first-hand facts about you. The angles may only point to facts listed here.

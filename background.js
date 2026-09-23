@@ -1,6 +1,6 @@
 import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
-import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
 import { digestMessages } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
@@ -125,7 +125,7 @@ async function draft(req) {
       res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-        body: JSON.stringify({ model, messages: build(req, about), max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: req.again ? 0.9 : 0.5 }),
+        body: JSON.stringify({ model, provider: PROVIDER_PREFS, messages: build(req, about), max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: req.again ? 0.9 : 0.5 }),
       });
     } catch {
       return { error: "Network error reaching OpenRouter." };
@@ -258,7 +258,7 @@ async function brief(req) {
         res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-          body: JSON.stringify({ model, messages: briefMessages(p, prefs), max_tokens: maxTokens, temperature: req.again ? 0.5 : 0.2, response_format: { type: "json_object" }, reasoning: { enabled: false }, usage: { include: true } }),
+          body: JSON.stringify({ model, provider: PROVIDER_PREFS, messages: briefMessages(p, prefs), max_tokens: maxTokens, temperature: req.again ? 0.5 : 0.2, response_format: { type: "json_object" }, reasoning: { enabled: false }, usage: { include: true } }),
         });
       } catch {
         return { error: "Network error reaching OpenRouter. Check your connection, then try again." };
@@ -340,7 +340,7 @@ async function openrouter(messages, maxTokens) {
     res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: 0.3 }),
+      body: JSON.stringify({ model, provider: PROVIDER_PREFS, messages, max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: 0.3 }),
     });
   } catch {
     return { error: "Network error reaching OpenRouter." };

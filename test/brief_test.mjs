@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { briefMessages, parseBrief } from "../brief-prompt.js";
 import { briefMarkdown } from "../brief.js";
-import { DEFAULT_MODEL } from "../draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS } from "../draft.js";
 import { DEFAULT_PREFS } from "../prefs.js";
 import { openrouterKey } from "./keys.mjs";
 
@@ -45,7 +45,7 @@ for (const p of posts) {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: DEFAULT_MODEL, messages, max_tokens: 900, temperature: 0.2, response_format: { type: "json_object" }, reasoning: { enabled: false }, usage: { include: true } }),
+      body: JSON.stringify({ model: DEFAULT_MODEL, provider: PROVIDER_PREFS, messages, max_tokens: 900, temperature: 0.2, response_format: { type: "json_object" }, reasoning: { enabled: false }, usage: { include: true } }),
     });
     body = await r.json();
     if (!r.ok) { check(label, false, `HTTP ${r.status} ${JSON.stringify(body).slice(0, 200)}`); continue; }
