@@ -17,8 +17,10 @@ const NOTE_NAMES = 5;
 const str = (s) => (typeof s === "string" ? s : "");
 // The first n code points, so a cut never splits a code point in half.
 const cap = (s, n) => Array.from(s).slice(0, n).join("");
-// The name a post goes by, as stored: the display name, else the fuller author line, else "".
-const rawName = (p) => [p?.authorName, p?.author].map(str).find((s) => cleanText(s)) ?? "";
+// The name a post goes by, as stored: its display name, as the page and the export show it, else "".
+// Never the fuller author line, which on LinkedIn is the card header ("Sam Lee reposted this ..."): the
+// model would credit a bullet to it. It isn't sent, shown or checked anywhere in the digest.
+const rawName = (p) => str(p?.authorName);
 // The name and the text exactly as the model gets them.
 const sentName = (p) => cap(cleanText(rawName(p)), AUTHOR_CAP);
 const sentText = (p) => cap(stripInvisible(str(p?.text)), TEXT_CAP);
@@ -120,7 +122,7 @@ const NOT_A_NAME = /[()[\]:]|\bwww\.|\bsieve\b/i;
 // creates, and the full cleaned form a match past the cut (the first 40 code points may look harmless,
 // but the name as a whole isn't one Sieve should vouch for).
 export function noteName(p) {
-  const raw = str(p?.authorName);
+  const raw = rawName(p);
   const shown = cap(cleanText(raw).replace(/\s*[([][^()[\]]*[)\]]$/, ""), NOTE_NAME_CAP).trim();
   return { shown, safe: !!shown && !anyFlagged(raw, cleanText(raw), shown) && !NOT_A_NAME.test(shown.normalize("NFKC")) };
 }
