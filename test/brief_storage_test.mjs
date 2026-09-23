@@ -115,6 +115,16 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   await save({ ...post("linkedin", "45"), platform: "" });
   assert.deepEqual(store.saved.map((p) => p.platform), ["linkedin"], "saved once, as LinkedIn");
 
+  // A saved entry that isn't a post (a null, a stray number) doesn't stop every later save: the worker
+  // skips it, as the export does, and the next save drops it.
+  const kept = { key: "47", platform: "linkedin", authorName: "Kim", text: "Kept post", worth: 1, savedAt: Date.now() };
+  reset({ saved: [null, 7, kept] });
+  assert.deepEqual(await save(post("linkedin", "48")), { ok: true }, "the save goes through");
+  assert.deepEqual(store.saved.map((p) => p.key), ["48", "47"], "the new post is saved and the real one kept, the junk dropped");
+  reset({ saved: [null, kept] });
+  await save({ ...kept, text: "Kept post again" });
+  assert.deepEqual(store.saved, [null, kept], "a post already saved behind the junk is still found, not saved twice");
+
   // Both copies of a cross-posted post are saved, but it's one post for the daily digest and the
   // daily reminder: the same text isn't summarised twice or counted twice.
   const crossPosted = () => reset({ saved: [
@@ -129,6 +139,17 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   notes.length = 0;
   await alarm({ name: "daily-digest" });
   assert.equal(notes[0]?.title, "1 post worth reading today", "the reminder counts it once");
+
+  // The digest and the reminder skip a saved entry that isn't a post, too.
+  answer = () => "## Built\n- x";
+  reset({ saved: [null, 7, kept] });
+  assert.equal((await send({ type: "digest", since: 0 })).count, 1, "the digest reads the real post");
+  answer = postAnswer;
+  reset({ saved: [null, 7, kept] });
+  notes.length = 0;
+  await alarm({ name: "daily-digest" });
+  assert.equal(notes[0]?.title, "1 post worth reading today", "the reminder counts the real post");
+  assert.equal(notes[0]?.message, "Including Kim. Click to open your daily learnings.");
 }
 
 // Watch it for me: watching again replaces the video's brief, or removes it when there is none this

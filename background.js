@@ -291,6 +291,10 @@ async function brief(req) {
 const KEEP_DAYS = 30;
 const MAX_SAVED = 400;
 
+// The stored saved posts, skipping any entry that isn't one (a null, a stray value), as export.js does:
+// one bad entry mustn't break every later save, the digest and the reminder.
+const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => !!p && typeof p === "object" && !Array.isArray(p));
+
 // Same race as classify()'s saves and everything else here: read-modify-write goes through the queue.
 // The field cleanup lives here, not in brief(), so every route that saves a post gets it: the old
 // "save" message from the content scripts, watch()'s video record, and brief()'s post copy alike.
@@ -298,7 +302,8 @@ const MAX_SAVED = 400;
 // text, so a cross-posted post has the same key on each.
 function save(post) {
   const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
-  return update("saved", ({ saved = [] }) => {
+  return update("saved", ({ saved: stored }) => {
+    const saved = savedPosts(stored);
     if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;
     const cutoff = Date.now() - KEEP_DAYS * 864e5;
     const next = [{ ...clean, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
@@ -335,8 +340,8 @@ const onePerKey = (posts) => {
 };
 
 async function digest(since) {
-  const { saved = [], digests = [] } = await chrome.storage.local.get(["saved", "digests"]);
-  const posts = onePerKey(saved.filter((p) => p.savedAt >= since && p.platform !== "reddit")).slice(0, 40);
+  const { saved, digests = [] } = await chrome.storage.local.get(["saved", "digests"]);
+  const posts = onePerKey(savedPosts(saved).filter((p) => p.savedAt >= since && p.platform !== "reddit")).slice(0, 40);
   if (!posts.length) return { error: "No saved LinkedIn posts in that window yet. Scroll your feed first." };
   const r = await openrouter(digestMessages(posts), 1000);
   if (r.error) return r;
@@ -401,9 +406,9 @@ chrome.storage.onChanged.addListener((changes) => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM) return;
   await scheduleReminder();
-  const { saved = [], lastDigestAt = 0 } = await chrome.storage.local.get(["saved", "lastDigestAt"]);
+  const { saved, lastDigestAt = 0 } = await chrome.storage.local.get(["saved", "lastDigestAt"]);
   const since = Math.max(lastDigestAt, Date.now() - 864e5);
-  const fresh = onePerKey(saved.filter((p) => p.savedAt > since));
+  const fresh = onePerKey(savedPosts(saved).filter((p) => p.savedAt > since));
   if (!fresh.length) return; // nothing new, stay quiet
   const people = [...new Set(fresh.map((p) => p.authorName).filter(Boolean))].slice(0, 3).join(", ");
   chrome.notifications.create(ALARM, {
