@@ -10,7 +10,7 @@ import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvis
 // needs to catch what a model sometimes lets through. No bare "you are now" (everyday English) and no
 // bare "SYSTEM:" line (developers legitimately share prompts written that way). Runs on
 // stripInvisible() text, so a zero-width space can't split "ignore" to slip past.
-const AI_TOOL = String.raw`(?:ai|llms?|language models?|chatbots?|summari[sz]ers?|scrapers?|crawlers?|(?:ai|coding|llm)\s+(?:assistants?|agents?|models?|tools?|bots?))`;
+const AI_TOOL = String.raw`(?:ai|llms?|language models?|chatbots?|summari[sz]ers?|scrapers?|crawlers?|(?:ai|coding|llm)\s+(?:assistants?|agents?|models?|tools?|bots?|summari[sz]ers?|scrapers?|crawlers?))`;
 const AI_DIRECTED = [
   // "ignore your previous instructions" -- unless it's quoted as an example ('...', "...", like ...)
   { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules|prompts?|directions|guidelines)\b/i, quoted: true },
@@ -66,8 +66,13 @@ export function aiDirected(post = {}) {
   if (hidesCharacters(raw)) return HIDDEN_WARNING;
   const visible = stripInvisible(raw);
   for (const { re, quoted } of AI_DIRECTED) {
-    const m = visible.match(re);
-    if (!m || (quoted && QUOTED_BEFORE.test(visible.slice(Math.max(0, m.index - 12), m.index)))) continue;
+    // A quoted example only excuses itself: every match of a "quoted" pattern is looked at, and the
+    // first one that isn't quoted counts, so an explanation that quotes the phrase can't hide a real
+    // instruction later in the same post.
+    const m = quoted
+      ? [...visible.matchAll(new RegExp(re.source, `${re.flags}g`))].find((x) => !QUOTED_BEFORE.test(visible.slice(Math.max(0, x.index - 12), x.index)))
+      : visible.match(re);
+    if (!m) continue;
     const snippet = Array.from(cleanText(m[0]).replace(/"/g, "'")).slice(0, 80).join("");
     return `Sieve's own check found text that looks aimed at AI tools: "${snippet}". It may only be quoting an example.`;
   }
