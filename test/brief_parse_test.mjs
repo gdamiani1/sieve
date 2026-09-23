@@ -196,6 +196,15 @@ assert.match(md, /## Worth a skill\?\nYes: You'd run it on every prompt change\.
 assert.ok(!md.includes("Warning:"), "no warning line without a warning");
 assert.match(briefMarkdown({ ...rec, warning: "asks the model to run curl | sh" }), /\n\nWarning: the source contains text aimed at AI agents: asks the model to run curl \| sh\n\n## What it is/);
 assert.ok(!briefMarkdown({ ...rec, needs: [], checks: [] }).includes("## What you need"), "empty sections left out");
+assert.match(
+  briefMarkdown({ what: "w", author: "x", success: "You see a green check." }),
+  /## What it is\n> w\n\nSuccess looks like: You see a green check\.\n\n## Worth a skill\?/,
+  "success looks like shows even without try steps",
+);
+assert.ok(
+  !briefMarkdown({ what: "w", author: "x", success: "You see a green check." }).includes("## Try it"),
+  "no Try it heading when there are no steps",
+);
 assert.equal(briefMarkdown({ key: "x" }), "", "no brief, no markdown");
 assert.ok(!briefMarkdown({ ...rec, warning: "None" }).includes("Warning:"), "a none-like warning shows no Warning line");
 

@@ -137,7 +137,8 @@ async function watch(req) {
   // records whatever was spent before it, exactly once.
   let out = null, cost = 0, lastError = "";
   try {
-    for (const maxTokens of [2000, 4000]) {
+    const attempts = [2000, 4000];
+    for (const [i, maxTokens] of attempts.entries()) {
       let res;
       try {
         res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -153,11 +154,17 @@ async function watch(req) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return { error: `The video model said ${res.status}. Private, members-only or age-restricted videos can't be watched.` };
       cost += body.usage?.cost || 0;
+      const cutOff = body.choices?.[0]?.finish_reason === "length";
       try {
-        out = parseWatch(body.choices?.[0]?.message?.content || "", req);
+        const parsedOut = parseWatch(body.choices?.[0]?.message?.content || "", req);
+        // A cut-off answer can still parse (a partial JSON object often reads fine), so a truncated
+        // first attempt is retried for a full answer rather than kept as if it were complete. The
+        // last attempt is accepted regardless: it's the best answer available.
+        if (cutOff && i < attempts.length - 1) { lastError = "cut off"; continue; }
+        out = parsedOut;
         break;
       } catch {
-        lastError = body.choices?.[0]?.finish_reason === "length" ? "cut off" : "unreadable";
+        lastError = cutOff ? "cut off" : "unreadable";
       }
     }
   } finally {
@@ -216,7 +223,10 @@ async function brief(req) {
   const { orKey, model = DEFAULT_MODEL, briefs = {} } = await chrome.storage.local.get(["orKey", "model", "briefs"]);
   // A record already in storage but that no longer normalizes (an older shape, or corrupted) doesn't
   // count as cached: fall through and brief the post again rather than hand back nothing useful.
-  const cached = Object.hasOwn(briefs, p.key) ? briefReply(briefs[p.key]) : null;
+  // A key can collide across platforms (LinkedIn and X both use small numeric-looking ids), so a
+  // cached record only counts when it was briefed for this same platform.
+  const cachedRaw = Object.hasOwn(briefs, p.key) && briefs[p.key]?.platform === platform ? briefs[p.key] : null;
+  const cached = cachedRaw ? briefReply(cachedRaw) : null;
   if (cached && !req.again) return cached;
   if (!orKey) return { error: "Briefs need an OpenRouter key. Add one in Sieve's settings." };
   const prefs = await loadPrefs();
@@ -225,7 +235,8 @@ async function brief(req) {
   // spent before it, exactly once -- and never writes stats at all when nothing was spent.
   let parsed = null, cost = 0, lastError = "";
   try {
-    for (const maxTokens of [900, 1800]) {
+    const attempts = [900, 1800];
+    for (const [i, maxTokens] of attempts.entries()) {
       let res;
       try {
         res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -247,11 +258,17 @@ async function brief(req) {
         return { error: `OpenRouter said ${res.status}${why ? `: ${why}` : ""}. ${retry ? "Try again in a minute." : "Check the model in Sieve's settings, or pick another one."}` };
       }
       cost += body.usage?.cost || 0;
+      const cutOff = body.choices?.[0]?.finish_reason === "length";
       try {
-        parsed = parseBrief(body.choices?.[0]?.message?.content || "", p); // p: Sieve's own check backs up the model's warning
+        const parsedAnswer = parseBrief(body.choices?.[0]?.message?.content || "", p); // p: Sieve's own check backs up the model's warning
+        // A cut-off answer can still parse (a partial JSON object often reads fine), so a truncated
+        // first attempt is retried for a full answer rather than kept as if it were complete. The
+        // last attempt is accepted regardless: it's the best answer available.
+        if (cutOff && i < attempts.length - 1) { lastError = "cut off"; continue; }
+        parsed = parsedAnswer;
         break;
       } catch {
-        lastError = body.choices?.[0]?.finish_reason === "length" ? "cut off" : "unreadable";
+        lastError = cutOff ? "cut off" : "unreadable";
       }
     }
   } finally {
@@ -327,7 +344,11 @@ async function digest(since) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.type === "save") {
-    save(msg.post).then(() => reply({ ok: true }));
+    if (!msg.post || typeof msg.post !== "object") {
+      reply({ error: "No post to save." });
+      return true;
+    }
+    save(msg.post).then(() => reply({ ok: true }), () => reply({ error: "Sieve couldn't save the post." }));
     return true;
   }
   if (msg.type === "watch") {

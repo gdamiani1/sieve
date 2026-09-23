@@ -169,11 +169,9 @@ export function briefMarkdown(rec) {
   section("The author says", b.says.map((s) => (s.t ? `[${s.t}] ` : "") + s.text));
   section("Claims to check", b.checks);
   section("What you need", b.needs);
-  if (b.try.length) {
-    out.push("## Try it", ...b.try.map((step, i) => `${i + 1}. ${step}`));
-    if (b.success) out.push(`Success looks like: ${b.success}`);
-    out.push("");
-  }
+  if (b.try.length) out.push("## Try it", ...b.try.map((step, i) => `${i + 1}. ${step}`));
+  if (b.success) out.push(`Success looks like: ${b.success}`);
+  if (b.try.length || b.success) out.push("");
   out.push("## Worth a skill?", `${b.skill.worth ? "Yes" : "Probably not"}${b.skill.why ? `: ${b.skill.why}` : ""}`, "", END_OF_BRIEF);
   return out.join("\n");
 }

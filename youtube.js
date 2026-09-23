@@ -27,14 +27,14 @@
     document.body.append(n);
   }
   function send(msg, cb) {
-    if (retired) return;
-    if (!alive()) return retire();
+    if (retired) return cb?.(undefined);
+    if (!alive()) { retire(); return cb?.(undefined); }
     try {
       chrome.runtime.sendMessage(msg, (r) => {
-        if (chrome.runtime.lastError) { if (!alive()) { retire(); return; } return cb?.(undefined); }
+        if (chrome.runtime.lastError) { if (!alive()) retire(); return cb?.(undefined); }
         cb?.(r);
       });
-    } catch { retire(); }
+    } catch { retire(); return cb?.(undefined); }
   }
 
   const TILE = "ytd-video-renderer, ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model";
@@ -178,7 +178,9 @@
       return;
     }
     const verdict = el("div", `sieve-d-verdict sieve-v-${r.verdict}`, { watch: "Worth watching", skim: "Skim it", skip: "Skip it" }[r.verdict]);
-    d.append(verdict, el("p", "sieve-d-why", r.why), el("p", "", r.summary));
+    d.append(verdict, el("p", "sieve-d-why", r.why));
+    if (r.brief?.warning) d.append(el("div", "sieve-b-warn", `Warning: the source contains text aimed at AI agents: ${r.brief.warning}`));
+    d.append(el("p", "", r.summary));
     if (r.best) {
       const best = el("div", "sieve-d-best");
       best.append(el("b", "", "Best moment "), stamp(v, r.best.t), document.createTextNode(" " + r.best.text));
@@ -199,7 +201,11 @@
     if (r.brief && r.prompt) {
       d.append(el("h4", "sieve-d-brief-h", "Technique brief"));
       const box = el("div", "sieve-d-brief");
-      globalThis.SieveBriefPanel.fill(box, { ...r.brief, prompt: r.prompt }, { compact: true, level: 5 }); // its labels sit under this h4
+      if (globalThis.SieveBriefPanel?.fill) {
+        globalThis.SieveBriefPanel.fill(box, { ...r.brief, prompt: r.prompt }, { compact: true, level: 5 }); // its labels sit under this h4
+      } else {
+        box.append(el("p", "", "Sieve couldn't show the brief. Reload the page and try again."));
+      }
       d.append(box);
     }
     const foot = el("div", "sieve-d-foot", `Saved to your daily learnings. These are the creator's claims, not verified facts.${r.cost ? ` Cost $${r.cost.toFixed(4)}.` : ""}`);

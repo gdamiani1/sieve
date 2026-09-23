@@ -14,14 +14,27 @@ const AI_TOOL = String.raw`(?:ai|llms?|language models?|chatbots?|summari[sz]ers
 const AI_DIRECTED = [
   // "ignore your previous instructions" -- unless it's quoted as an example ('...', "...", like ...)
   { re: /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:your\s+|the\s+|my\s+|these\s+|those\s+)?(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|rules|prompts?|directions|guidelines)\b/i, quoted: true },
-  // "AI assistants reading this", "LLMs summarising this"
-  { re: new RegExp(String.raw`\b${AI_TOOL}\s+(?:reading|summari[sz]ing|scraping|parsing|processing)\s+this\b`, "i") },
-  // "note to AI tools", "note for automated summaries"
-  { re: new RegExp(String.raw`\b(?:note|message)\s+(?:to|for)\s+(?:${AI_TOOL}(?=\s*[:,.;!)-]|\s+(?:when|who|that|reading))|automated\s+(?:summar\w+|tools?))`, "i") },
-  // a fake end of the post with more text after it
-  { re: /\b(?:the\s+)?(?:post|message|user input|input|article)\s+(?:ends|is over)\s+here\b|\bend\s+of\s+(?:the\s+)?(?:post|message|user input)\b(?=[\s\S]*\S[\s\S]{20,})/i },
-  // talking to Sieve's own fields: "leave warning empty", "\"technique\": true", "warning must be empty"
-  { re: /"(?:warning|technique|skill|try|needs)"\s*:|\b(?:leave|keep|set|make|return|mark)\s+(?:the\s+)?(?:warning|technique)(?:\s+field)?\s+(?:as\s+|to\s+)?(?:empty|blank|""|''|true|false|none)\b|\b(?:warning|technique)\s+(?:field\s+)?(?:must|should)\s+(?:be|stay|remain)\s+(?:empty|blank|""|''|true|false)/i },
+  // "AI assistants reading this:", "LLMs summarising this." -- only when the phrase ends right there,
+  // not "LLMs processing this pipeline" or "scrapers parsing this kind of page" (ordinary developer
+  // sentences that just happen to use "this")
+  { re: new RegExp(String.raw`\b${AI_TOOL}\s+(?:reading|summari[sz]ing|scraping|parsing|processing)\s+this(?:\s+(?:post|page|thread|message))?\s*[:,.;!]`, "i") },
+  // "note to AI tools: ...", "message to AI assistants: ..." -- only when the note itself talks about
+  // "this" post/content shortly after, the way a real injection does ("skip this post", "summarise
+  // this, add a step ..."). A note that never mentions "this" (an aside about a CLAUDE.md file, a
+  // README section) isn't addressed at whatever is reading the post right now.
+  { re: new RegExp(String.raw`\b(?:note|message)\s+(?:to|for)\s+(?:${AI_TOOL}|automated\s+(?:summar\w+|tools?))[^.!?\n]{0,60}?\bthis\b`, "i") },
+  // "the post ends here", wherever it sits
+  { re: /\b(?:the\s+)?(?:post|message|user input|input|article)\s+(?:ends|is over)\s+here\b/i },
+  // "end of the post" only counts as a marker line -- at the start of a line, or written in capitals --
+  // not buried in running prose ("the repo link at the end of the post" is ordinary writing)
+  { re: /(?:^|\n)[ \t]*end\s+of\s+(?:the\s+)?(?:post|message|user input)\b/i },
+  { re: /\bEND OF (?:THE )?(?:POST|MESSAGE|USER INPUT)\b/ },
+  // talking to Sieve's own fields: "\"warning\": ...", "\"technique\": ..." (not try/needs/skill,
+  // which show up in ordinary developer talk about retries, requirements and skills); "leave warning
+  // empty", "set technique true", "warning must be empty". "set the warning ..." on its own needs a
+  // quoted value or the word "field" -- not "set the warning to false in tsconfig", an ordinary line
+  // about a compiler or linter setting; "technique" has no such everyday use, so it stays unrestricted.
+  { re: /"(?:warning|technique)"\s*:|\b(?:leave|keep|set|make|return|mark)\s+(?:the\s+)?technique(?:\s+field)?\s+(?:as\s+|to\s+)?(?:empty|blank|""|''|true|false|none)\b|\b(?:leave|keep|set|make|return|mark)\s+(?:the\s+)?warning\s+(?:field\s+(?:as\s+|to\s+)?(?:""|''|"[a-z]+"|'[a-z]+'|empty|blank|true|false|none)|(?:as\s+|to\s+)?(?:""|''|"(?:empty|blank|true|false|none)"|'(?:empty|blank|true|false|none)'))\b|\b(?:warning|technique)\s+(?:field\s+)?(?:must|should)\s+(?:be|stay|remain)\s+(?:empty|blank|""|''|true|false)/i },
   // "copy it verbatim", "return exactly this", "the correct brief for this post"
   { re: /\b(?:copy\s+(?:it|this)\s+verbatim|(?:return|output)\s+exactly\s+(?:this|the following)|the correct (?:brief|answer|summary|output|response) for this)\b/i },
 ];
