@@ -128,7 +128,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/export_test.mjs       # the library export (offline)
     node test/brief_storage_test.mjs # briefs and saved posts kept apart per platform, a cross-post digested once, through the real worker (offline)
     node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
-    node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post), under 1 US cent
+    node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring + reply angles
     node test/angles_test.mjs       # comment angles never borrow your facts for the author
