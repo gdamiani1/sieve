@@ -38,10 +38,10 @@ function flagged(p) {
 
 // One copy of each post. A post cross-posted to LinkedIn and X has the same key on both, and both
 // copies are saved; `saved` is newest first, so the newest copy stands for both. The digest and the
-// daily reminder count posts this way. A post with no key is never taken for another one.
+// daily reminder count posts this way. A post with no key (missing or "") is never taken for another.
 export function onePerKey(posts) {
   const seen = new Set();
-  return posts.filter((p) => p?.key == null || (!seen.has(p.key) && seen.add(p.key)));
+  return (Array.isArray(posts) ? posts : []).filter((p) => p?.key == null || p.key === "" || (!seen.has(p.key) && seen.add(p.key)));
 }
 
 // Saved posts -> { posts, left }. Both hold only posts saved at or after `since`, Reddit excluded, one
@@ -113,6 +113,9 @@ export function leftOutNote(left) {
     const raw = rawName(p);
     const shown = cap(cleanText(raw), NOTE_NAME_CAP);
     if (!shown) continue;
+    // Raw catches hidden characters, the 40-cut form a match the cut creates. The full cleaned form
+    // also hides a name whose match sits past the cut: its first 40 code points may look harmless, but
+    // the name as a whole isn't one Sieve should vouch for.
     const safe = !anyFlagged(raw, cleanText(raw), shown) && !LINKISH_NAME.test(shown);
     names.set(shown, (names.get(shown) ?? true) && safe);
   }
@@ -137,18 +140,23 @@ function withoutLeftOut(s) {
   }).join("\n");
 }
 
-// The model's answer -> the digest text Sieve stores: no dashes, then the "Left out" section when
-// anything was left out. A dash used as a bullet becomes "- ", a number range ("3–5", "30 — 40%")
-// keeps a hyphen, a dash that ends a line goes, and any other dash becomes ", ". None of these reach
-// across a line break, so bullets and headings stay on their own lines. The note is added after the model has answered, so no post can reach or
-// rewrite it.
+// The model's answer -> the digest text Sieve stores, or "" when nothing of the model's own text is
+// left. No dashes: a dash used as a bullet becomes "- "; a range keeps a hyphen ("3–5", "30%–40%",
+// "$5–$10", "Q1–Q3", "2019 – 2020", "3—5"); a dash that ends a line goes; any other dash becomes ", ",
+// including a spaced em dash between numbers, which is usually a clause break ("in 2025 — 12 failed").
+// None of these reach across a line break, so bullets and headings stay on their own lines. Then the
+// "Left out" section when anything was left out, added after the model has answered, so no post can
+// reach or rewrite it.
 export function digestText(modelText, left) {
   const body = withoutLeftOut(str(modelText))
     .replace(/^[ \t]*[—–][ \t]*/gm, "- ")
-    .replace(/(\d)[ \t]*[—–][ \t]*(\d)/g, "$1-$2")
+    .replace(/(\S)–(?=\S)/g, "$1-")
+    .replace(/(\d%?)[ \t]*–[ \t]*(?=[$€£]?\d)/g, "$1-")
+    .replace(/(\d)—(?=\d)/g, "$1-")
     .replace(/[ \t]*[—–][ \t]*$/gm, "")
     .replace(/[ \t]*[—–][ \t]*/g, ", ")
-    .trimEnd();
+    .trim();
+  if (!body) return "";
   const note = leftOutNote(left);
   return note ? `${body}\n\n${note}` : body;
 }

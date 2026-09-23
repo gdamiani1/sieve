@@ -126,6 +126,8 @@ for (const name of ["Things I like", 'Sam "The Builder"', "Mia e.g."]) {
   assert.deepEqual(posts.map((p) => p.authorName), ["On X", "Author undefined", "Author undefined"]);
 }
 assert.deepEqual(onePerKey([{ key: "a", n: 1 }, { key: "a", n: 2 }, { key: "b", n: 3 }]).map((p) => p.n), [1, 3]);
+assert.deepEqual(onePerKey([{ key: "", n: 1 }, { key: "", n: 2 }, { n: 3 }, { n: 4 }]).map((p) => p.n), [1, 2, 3, 4], "an empty key is no key");
+assert.deepEqual(onePerKey(undefined), [], "not an array: nothing, no throw");
 
 // pickDigestPosts: the 40-post cap counts only the posts that are kept
 {
@@ -207,7 +209,16 @@ assert.equal(
 // joins two lines), the note added last
 assert.equal(digestText("## Patterns\n- Evals first — then prompts [Jane Doe]\n- 3–5 cases [Sam Lee]\n\n", []), "## Patterns\n- Evals first, then prompts [Jane Doe]\n- 3-5 cases [Sam Lee]");
 assert.equal(digestText("## Patterns\n— one [A]\n – two [B]", []), "## Patterns\n- one [A]\n- two [B]", "dash bullets stay bullets");
-assert.equal(digestText("## Numbers worth remembering\n- 30 — 40% faster, 2019 – 2020 [A]", []), "## Numbers worth remembering\n- 30-40% faster, 2019-2020 [A]");
+assert.equal(
+  digestText("## Numbers worth remembering\n- 30%–40% faster, $5–$10 a month, Q1–Q3, 3—5 runs, 2019 – 2020 [A]", []),
+  "## Numbers worth remembering\n- 30%-40% faster, $5-$10 a month, Q1-Q3, 3-5 runs, 2019-2020 [A]",
+  "ranges keep a hyphen, with or without units",
+);
+assert.equal(
+  digestText("- Ran it on 40 repos in 2025 — 12 of them failed [A]\n- 30 — 40 people replied [B]", []),
+  "- Ran it on 40 repos in 2025, 12 of them failed [A]\n- 30, 40 people replied [B]",
+  "a spaced em dash is a clause break, not a range",
+);
 assert.equal(digestText("- a line that ends in a dash —\n- the next line [A]", []), "- a line that ends in a dash\n- the next line [A]", "a dash that ends a line goes, and never joins two lines");
 
 // digestText: a "Left out" section the model wrote itself is dropped; only Sieve's own note survives
@@ -224,6 +235,8 @@ assert.equal(
   "## Patterns\n- x [Jane Doe]\n\n## Left out\n- 1 post wasn't summarised because it contains text aimed at AI tools (Sam Lee). It's under Saved posts if you want to read it yourself.",
 );
 assert.equal(digestText(undefined, []), "");
+assert.equal(digestText("## Left out\n- nothing to see", []), "", "only a model-written Left out: nothing left");
+assert.equal(digestText("  \n## Left out\n- x", [post("a", "x", { authorName: "Sam Lee" })]), "", "and no note on an empty digest");
 
 // allLeftOutError: what the page shows when nothing is left to summarise
 assert.equal(allLeftOutError(1), "The only saved post in that window contains text aimed at AI tools, so Sieve left it out. It's under Saved posts.");
