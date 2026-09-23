@@ -128,6 +128,12 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/export_test.mjs       # the library export (offline)
     node test/brief_storage_test.mjs # briefs and saved posts kept apart per platform, a cross-post digested once, through the real worker (offline)
     node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
+    node test/watch_drawer_test.mjs # the "watched for you" drawer, built line by line like youtube.js used to (offline)
+    node test/video_platform_test.mjs # Watch it for me on a platform other than YouTube (offline)
+    node test/store_zip_test.mjs    # the store package: leaves out tests and tools, refuses forbidden words and missing loads (offline)
+    node test/fake_dom_test.mjs     # the fake DOM test helper itself (offline)
+    node test/angles_parse_test.mjs # what the angle parser keeps (offline)
+    node test/facts_test.mjs        # which of the reader's facts reaches the angle prompt (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring + reply angles
@@ -135,6 +141,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/compare_drafts.mjs    # the same angles from several models, with cost
     node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
+    node test/facts_live_test.mjs   # Jev decides which of the reader's facts, if any, reaches the angle prompt (live, uses keys)
 
 On the invented set, LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
 scored high where it was labelled maybe) and Reddit on 5 of 6 (the shared-inbox question scored 0.52, maybe
@@ -171,7 +178,8 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 ## Building the store package
 
 `node tools/store-zip.mjs` writes `~/Downloads/sieve-store/sieve-<version>.zip` from the current commit
-(`--ref main` for another commit). It packages committed files only, leaving out `test/`, `tools/`,
+(`--ref main` for another commit, `--out <folder>` for another output folder). It won't overwrite an
+existing zip unless you pass `--force`. It packages committed files only, leaving out `test/`, `tools/`,
 `README.md` and `.gitignore`. Before writing anything it checks the package and refuses, naming the
 problem, when a packaged file's name or bytes mention a word it must never contain, when it loads a file
 that's missing from the package, when a `.gitattributes` file exists anywhere the commit or the repo could

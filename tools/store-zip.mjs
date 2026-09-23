@@ -5,8 +5,9 @@
 // The package is every file in the commit except test/, tools/, README.md and .gitignore. Before writing
 // anything it checks the package, and refuses, naming the problem, when a packaged file's name or its raw
 // bytes mention a word that must never reach the store build, when the commit has a .gitattributes file
-// anywhere, when manifest.json uses a key store-zip doesn't check yet, or when manifest.json, an HTML page
-// or a script loads a file the package doesn't have.
+// anywhere, when a repo-local .git/info/attributes file exists (a global or system attributes file is
+// ignored instead), when manifest.json uses a key store-zip doesn't check yet, or when manifest.json, an
+// HTML page or a script loads a file the package doesn't have.
 //
 // The word check is a tripwire against committing the owner's personal copy by mistake, not a guarantee:
 // it reads raw bytes and paths, so a word that's encoded (say, as UTF-16), spelled with an escaped
@@ -99,12 +100,19 @@ for (const f of files) {
   if (!f.endsWith(".html") && !f.endsWith(".js")) continue;
   const text = read(f).toString("utf8");
   const refs = f.endsWith(".html")
-    ? [...text.matchAll(/<(?:script|link)\b[^>]*\b(?:src|href)="([^"]+)"/g)].map((m) => m[1])
+    ? [...text.matchAll(/<(?:script|link|img)\b[^>]*\b(?:src|href)="([^"]+)"/g)].map((m) => m[1])
     : [...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}\/[^"']+)["']/g)].map((m) => m[1]);
   for (const r of refs) {
     if (/^[a-z]+:|^\/\//i.test(r)) continue;
     const clean = r.replace(/[?#].*$/, "");
     need(f, posix.join(posix.dirname(f), clean));
+  }
+  if (f.endsWith(".js")) {
+    // chrome.runtime.getURL() takes an extension-root-relative path, not one relative to the calling file.
+    for (const m of text.matchAll(/getURL\(\s*["']([^"']+)["']\s*\)/g)) {
+      const clean = m[1].replace(/[?#].*$/, "");
+      need(f, posix.normalize(clean));
+    }
   }
 }
 if (problems.length) fail(`refusing to build:\n  ${problems.join("\n  ")}`);

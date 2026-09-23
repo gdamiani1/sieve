@@ -225,9 +225,9 @@ export const videoPlatform = (p) =>
 
 // The key a watched video's saved post and brief are stored under. YouTube keeps "yt-<id>", as every
 // earlier Sieve did; any other platform uses the id itself with the platform beside it, the way a
-// LinkedIn or X post is keyed. A reel code and a YouTube id are both 11 characters: this keeps them
-// apart. A video on another platform shares the brief id of a post with the same key on that platform,
-// so a platform's post briefs and its watched videos must not share keys.
+// LinkedIn or X post is keyed. Another platform's short-video code and a YouTube id can both be 11
+// characters: this keeps them apart. A video on another platform shares the brief id of a post with
+// the same key on that platform, so a platform's post briefs and its watched videos must not share keys.
 export const videoRecordKey = (platform, id) => (videoPlatform(platform) === "youtube" ? `yt-${id}` : String(id));
 
 // Where a watched video lives in the stored `watched` map: YouTube by its bare id, as before; any other

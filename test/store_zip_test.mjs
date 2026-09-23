@@ -102,6 +102,8 @@ try {
     ["manifest.json", JSON.stringify({ ...goodManifestObj, action: { default_popup: "gone-popup.html" } }), "gone-popup.html"],
     ["manifest.json", JSON.stringify({ ...goodManifestObj, options_ui: { page: "gone-options.html" } }), "gone-options.html"],
     ["manifest.json", JSON.stringify({ ...goodManifestObj, action: { default_icon: "gone-di.png" } }), "gone-di.png"],
+    ["popup.html", '<img src="gone-img.png">', "gone-img.png"],
+    ["a.js", 'chrome.runtime.getURL("gone-page.html");\n', "gone-page.html"],
   ];
   for (const [file, content, missing] of missingFileCases) {
     write(file, content);
@@ -118,6 +120,16 @@ try {
   write("popup.html", '<script src="popup.js?v=2"></script>');
   git("commit", "-qam", "query string on a script src");
   r = run("--repo", repo, "--out", join(tmp, "query-string"));
+  assert.equal(r.status, 0, r.stderr);
+  git("revert", "--no-edit", "HEAD");
+
+  // chrome.runtime.getURL() takes a path from the package root, not one relative to the calling file:
+  // a subfolder script naming a real root file builds cleanly instead of being refused as missing.
+  mkdirSync(join(repo, "sub"), { recursive: true });
+  write("sub/inner.js", 'chrome.runtime.getURL("popup.html");\n');
+  git("add", "-A");
+  git("commit", "-qm", "getURL from a subfolder resolves from the package root");
+  r = run("--repo", repo, "--out", join(tmp, "geturl-root-relative"));
   assert.equal(r.status, 0, r.stderr);
   git("revert", "--no-edit", "HEAD");
 
@@ -236,6 +248,20 @@ try {
   const real = unzipList(r.stdout.match(/store-zip: (\S+\.zip)/)[1]);
   assert.ok(real.includes("manifest.json") && real.includes("background.js") && real.includes("watch-drawer.js"));
   assert.ok(!real.some((f) => f.startsWith("test/") || f.startsWith("tools/") || f === "README.md" || f === ".gitignore"));
+
+  // Tripwire over the whole public repo, not just the store package: the platform name must never sit
+  // committed anywhere in this tree, in code, docs or anything else. tools/store-zip.mjs and this test
+  // are the only two files that get to name it, since the checks above need it as literal text. git grep
+  // exits 1 for "no match", which here means the tree is clean; 0 means it found the word and names the
+  // files; anything else is a git grep failure worth surfacing rather than swallowing as a pass.
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+  const tripwire = spawnSync(
+    "git",
+    ["grep", "-ilE", "instagram|fbcdn", "HEAD", "--", ".", ":!tools/store-zip.mjs", ":!test/store_zip_test.mjs"],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+  assert.notEqual(tripwire.status, 0, `forbidden word committed outside the store package:\n${tripwire.stdout}`);
+  assert.equal(tripwire.status, 1, `git grep did not run cleanly (status ${tripwire.status}): ${tripwire.stderr}`);
 
   console.log("store zip: all checks passed");
 } finally {

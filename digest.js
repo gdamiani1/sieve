@@ -71,7 +71,7 @@ function videoList(watched) {
     div.className = "post";
     const a = document.createElement("a");
     a.href = w.url; a.target = "_blank"; a.rel = "noopener";
-    a.textContent = cleanText(w.title) || cleanText(w.channel) || "Untitled video"; // a reel's caption may give no title
+    a.textContent = cleanText(w.title) || cleanText(w.channel) || "Untitled video"; // a short video's caption may give no title
     const m = document.createElement("div");
     m.className = "m";
     m.textContent = [platformName(w.platform), cleanText(w.title) ? cleanText(w.channel) : "", { watch: "worth watching", skim: "skim it", skip: "skip it" }[w.verdict], new Date(w.at).toLocaleDateString()].filter(Boolean).join(" · ");

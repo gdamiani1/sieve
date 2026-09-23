@@ -101,7 +101,7 @@ article.sieve-x-maybe { box-shadow: inset 4px 0 0 #9aa2ff; }
 html.sieve-dark .jev-strong > .jev-badge, html.sieve-dark .sieve-yt-chip-strong, html.sieve-dark .sieve-x-wrap.jev-strong .jev-badge,
 html.sieve-dark .jev-r-wrap.jev-strong .jev-badge { background: #3d4bff; }
 
-/* ---- technique briefs (LinkedIn and X panels, YouTube drawer) ---- */
+/* ---- technique briefs (LinkedIn and X panels, watch drawer) ---- */
 .sieve-b { overflow-wrap: anywhere; }
 .jev-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
 .jev-actions .jev-suggest { margin-left: 0; }
