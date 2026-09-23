@@ -171,3 +171,10 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 ## License
 
 MIT
+
+## Building the store package
+
+`node tools/store-zip.mjs` writes `~/Downloads/sieve-store/sieve-<version>.zip` from the current commit
+(`--ref main` for another). It packages committed files only, leaves out `test/`, `tools/`, `README.md`
+and `.gitignore`, and refuses to build, naming the file, when the package mentions a word it must never
+contain or loads a file it doesn't have. Commit first, then build.
