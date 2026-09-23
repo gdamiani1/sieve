@@ -5,6 +5,17 @@
 
 export const PLATFORM_NAMES = { linkedin: "LinkedIn", x: "X", reddit: "Reddit", youtube: "YouTube" };
 
+// A plain platform key: 1-20 lowercase ASCII letters, nothing else. The one rule platformOf,
+// platformName and videoPlatform all test a value against.
+const isPlatformKey = (p) => typeof p === "string" && /^[a-z]{1,20}$/.test(p);
+
+// A platform's name for people: the known ones as they spell themselves, any other plain lowercase key
+// with a capital letter ("example" -> "Example"), and "" for anything else, including a value that
+// isn't a plain platform key at all (an array, a plain object, the wrong shape of string). A platform
+// the public code doesn't list still reads as a name in a brief's source line and on the digest page.
+export const platformName = (p) =>
+  !isPlatformKey(p) ? "" : Object.hasOwn(PLATFORM_NAMES, p) ? PLATFORM_NAMES[p] : p[0].toUpperCase() + p.slice(1);
+
 export const AGENT_INSTRUCTION =
   "Try this in the current repo. Ask before running any command. If it works, offer to save it as a skill in SKILL.md format.";
 
@@ -197,28 +208,30 @@ export const briefId = (platform, key) => `${platform}:${key}`;
 // doesn't know yet) is linkedin rather than reaching a header, a stored record or an export id as-is;
 // posts saved before Sieve recorded a platform are LinkedIn too. Briefs, saved posts and the export
 // all use this one rule, so they agree on which post a record is.
-export const platformOf = (p) => (typeof p === "string" && /^[a-z]{1,20}$/.test(p) ? p : "linkedin");
+export const platformOf = (p) => (isPlatformKey(p) ? p : "linkedin");
 
-// A platform's name for people: the known ones as they spell themselves, any other plain lowercase key
-// with a capital letter ("example" -> "Example"), and "" for anything else. A platform the public code
-// doesn't list still reads as a name in a brief's source line and on the digest page.
-export const platformName = (p) =>
-  Object.hasOwn(PLATFORM_NAMES, p ?? "") ? PLATFORM_NAMES[p] : typeof p === "string" && /^[a-z]{1,20}$/.test(p) ? p[0].toUpperCase() + p.slice(1) : "";
-
-// Watch it for me can take a video from any platform the request names. Missing or "youtube" is
-// YouTube, as before; any other plain lowercase word is that platform; anything else is null, and the
-// worker refuses the request rather than guess.
+// Watch it for me can take a video from any platform the request names. Chrome's messaging drops an
+// undefined field, and every YouTube record made before this had no platform field at all, so a missing
+// platform is the only real case for YouTube; an explicit "" or null is refused, not treated as
+// YouTube. "youtube" itself still means YouTube; any other plain lowercase word is that platform;
+// anything else is null, and the worker refuses the request rather than guess.
 export const videoPlatform = (p) =>
-  p === undefined || p === null || p === "" || p === "youtube" ? "youtube" : typeof p === "string" && /^[a-z]{1,20}$/.test(p) ? p : null;
+  p === undefined || p === "youtube" ? "youtube" : isPlatformKey(p) ? p : null;
+
+// Both trust their id: it has passed the worker's check in watch() (background.js), which only lets
+// through a plain code (letters, digits, - and _), so no id can contain the ":" these keys use.
+// `platform` may be the request's own field: a missing one keys as YouTube.
 
 // The key a watched video's saved post and brief are stored under. YouTube keeps "yt-<id>", as every
 // earlier Sieve did; any other platform uses the id itself with the platform beside it, the way a
-// LinkedIn or X post is keyed. A reel code and a YouTube id are both 11 characters: this keeps them apart.
-export const videoRecordKey = (platform, id) => (platform === "youtube" ? `yt-${id}` : String(id));
+// LinkedIn or X post is keyed. A reel code and a YouTube id are both 11 characters: this keeps them
+// apart. A video on another platform shares the brief id of a post with the same key on that platform,
+// so a platform's post briefs and its watched videos must not share keys.
+export const videoRecordKey = (platform, id) => (videoPlatform(platform) === "youtube" ? `yt-${id}` : String(id));
 
 // Where a watched video lives in the stored `watched` map: YouTube by its bare id, as before; any other
 // platform as "<platform>:<id>".
-export const watchedKey = (platform, id) => (platform === "youtube" ? String(id) : `${platform}:${id}`);
+export const watchedKey = (platform, id) => (videoPlatform(platform) === "youtube" ? String(id) : `${platform}:${id}`);
 
 // A record's id, or `fallback` when it has no platform or key to build one from.
 const recordId = (b, fallback) =>
