@@ -143,10 +143,12 @@ export function recentBriefs(briefs, now = Date.now(), days = 30) {
 
 // Three lines: the marker, the rule (which covers the source line that follows it), then the source.
 // Source fields are capped and flattened to one line, so a post can't add lines or push the rule out
-// of view by putting the rule ahead of the thing it governs.
+// of view by putting the rule ahead of the thing it governs. The title is tested after cleaning, so
+// one made only of spaces or invisible characters leaves no empty quotes behind.
 export function safetyHeader(src = {}) {
   const cap = (s) => Array.from(clean(s)).slice(0, 150).join("");
-  const from = [cap(src.author), src.title ? `"${cap(src.title).replace(/"/g, "'")}"` : "", cap(src.url)].filter(Boolean).join(", ");
+  const title = cap(src.title).replace(/"/g, "'");
+  const from = [cap(src.author), title ? `"${title}"` : "", cap(src.url)].filter(Boolean).join(", ");
   const where = Object.hasOwn(PLATFORM_NAMES, src.platform ?? "") ? ` (${PLATFORM_NAMES[src.platform]})` : "";
   return [
     "SIEVE BRIEF: third-party material",

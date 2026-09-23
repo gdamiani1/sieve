@@ -185,6 +185,13 @@ const hLong = safetyHeader({ author: "A".repeat(1000), platform: "x" });
 assert.equal(hLong.split("\n").pop(), `Source: ${"A".repeat(150)} (X)`, "a 1000-character author is cut to 150 characters");
 const hEmoji = safetyHeader({ author: "a".repeat(149) + "😀😀", platform: "x" });
 assert.equal(hEmoji.split("\n").pop(), `Source: ${"a".repeat(149)}😀 (X)`, "the cap counts whole characters, so the 150th is a full emoji, not half a surrogate pair");
+// A title that cleans away to nothing (spaces, a zero-width space, a word joiner, a tag character, a
+// BOM) is no title: no empty quotes in the source line.
+for (const title of ["   ", "\u{200B}\u{2060}", " \u{E0041}\u{FEFF} ", "\n\t"]) {
+  assert.equal(safetyHeader({ author: "Ana", title, platform: "x" }).split("\n").pop(), "Source: Ana (X)", `title ${JSON.stringify(title)} leaves no empty quotes`);
+}
+assert.equal(safetyHeader({ title: "\u{200B}", url: "https://x.com/ana/status/1", platform: "x" }).split("\n").pop(), "Source: https://x.com/ana/status/1 (X)");
+assert.equal(safetyHeader({ title: "\u{200B} " }).split("\n").pop(), "Source: unknown", "an invisible-only title alone still reads as an unknown source");
 
 // briefMarkdown
 const md = briefMarkdown(rec);
