@@ -35,11 +35,17 @@ const postAnswer = (body) => {
 };
 let answer = postAnswer;
 let lastBody = null;
+// A test can set this to make the stub answer with a non-OK status instead of a model answer, then
+// must reset it to 200.
+let status = 200;
 globalThis.fetch = async (_url, init) => {
   calls++;
   lastBody = JSON.parse(init.body);
-  const content = JSON.stringify(answer(JSON.parse(init.body)));
-  return { status: 200, ok: true, json: async () => ({ choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0 } }) };
+  const ok = status >= 200 && status < 300;
+  // answer() is only asked to shape a body when there's a body to shape: a non-OK status never calls
+  // it, so a test that sets `status` doesn't also need an `answer` that understands the request.
+  const content = ok ? JSON.stringify(answer(JSON.parse(init.body))) : null;
+  return { status, ok, json: async () => (ok ? { choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0 } } : { error: { message: "Bad request" } }) };
 };
 
 await import("../background.js");
@@ -241,17 +247,110 @@ assert.equal(Object.values(store.briefs).filter((r) => r.platform === "linkedin"
   assert.equal((await reel()).verdict, "skim");
   assert.equal(calls, 0);
 
-  // Refused before any call: a platform that isn't a plain word (an empty one too), no video link, an
-  // http video link, an id that isn't a plain code, a page link that isn't a web link.
-  for (const bad of [{ platform: "Not Valid" }, { platform: "" }, { video: "" }, { video: "http://cdn.example.com/v.mp4" }, { id: "../x" }, { url: "javascript:alert(1)" }]) {
-    const r = await reel({ ...bad, again: true });
-    assert.ok(r.error, `refused: ${JSON.stringify(bad)}`);
+  // Refused before any call, each with its own exact message, not just some error: a platform that
+  // isn't a plain word (an empty one too) gets the platform error; a broken link -- no video link, an
+  // http video link, an id that isn't a plain code, a page link that isn't a web link -- gets the link
+  // error. Checking the exact text catches a guard quietly falling through to a different error, not
+  // just being removed outright.
+  const PLATFORM_ERROR = "Sieve can't watch videos from this page.";
+  const LINK_ERROR = "Sieve couldn't read this video's link. Reload the page and try again.";
+  for (const [bad, expected] of [
+    [{ platform: "Not Valid" }, PLATFORM_ERROR],
+    [{ platform: "" }, PLATFORM_ERROR],
+    [{ video: "" }, LINK_ERROR],
+    [{ video: "http://cdn.example.com/v.mp4" }, LINK_ERROR],
+    [{ id: "../x" }, LINK_ERROR],
+    [{ url: "javascript:alert(1)" }, LINK_ERROR],
+  ]) {
+    assert.equal((await reel({ ...bad, again: true })).error, expected, JSON.stringify(bad));
   }
+  assert.equal(calls, 0, "nothing refused reached the model");
   // A YouTube id is checked too: one carrying ":" could otherwise meet another platform's key.
   const yt = await send({ type: "watch", id: "example:Abc_1234567", url: "https://www.youtube.com/watch?v=x", title: "T", channel: "C", seconds: 60, again: true });
-  assert.ok(yt.error, "a YouTube id that isn't a plain code is refused");
+  assert.equal(yt.error, LINK_ERROR, "a YouTube id that isn't a plain code is refused");
   assert.equal(store.watched["example:Abc_1234567"].platform, "example", "and the reel's record is untouched");
   assert.equal(calls, 0, "nothing refused reached the model");
+  answer = postAnswer;
+}
+
+// The same 11-character id watched on two platforms at once: the in-flight key carries the platform,
+// so a YouTube watch and an "example" watch for "Abc_1234567" don't join each other's request. Each
+// gets its own model call, its own answer, and its own stored record.
+{
+  reset();
+  calls = 0;
+  answer = (b) => ({
+    verdict: /YouTube video/.test(b.messages[0].content) ? "watch" : "skip",
+    why: "w", summary: "s", learnings: ["l"], technique: false,
+  });
+  const [yt, reel] = await Promise.all([
+    send({ type: "watch", id: "Abc_1234567", url: "https://www.youtube.com/watch?v=Abc_1234567", title: "YT", channel: "C", seconds: 60, again: true }),
+    send({ type: "watch", platform: "example", id: "Abc_1234567", url: "https://example.com/reel/Abc_1234567/", video: "https://cdn.example.com/v.mp4?sig=1", title: "T", channel: "@ana", caption: "c", again: true }),
+  ]);
+  assert.equal(calls, 2, "each platform makes its own model call");
+  assert.deepEqual([yt.verdict, reel.verdict], ["watch", "skip"], "each request gets its own answer");
+  assert.deepEqual(Object.keys(store.watched).sort(), ["Abc_1234567", "example:Abc_1234567"], "both records are stored");
+  answer = postAnswer;
+}
+
+// The cache lookup uses Object.hasOwn, not a plain truthy read: a "constructor" id is watched for
+// real, never read off Object.prototype.
+{
+  reset();
+  calls = 0;
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
+  const r = await send({ type: "watch", id: "constructor", url: "https://www.youtube.com/watch?v=constructor", title: "T", channel: "C", seconds: 60 });
+  assert.equal(r.verdict, "skim");
+  assert.equal(calls, 1, "a 'constructor' id makes a real call");
+  answer = postAnswer;
+}
+
+// Watching a reel again with no technique removes its brief, looked up under that platform's own key,
+// not YouTube's.
+{
+  reset();
+  const reel = (extra = {}) => send({ type: "watch", platform: "example", id: "Abc_1234567", url: "https://example.com/reel/Abc_1234567/", video: "https://cdn.example.com/v.mp4?sig=1", title: "T", channel: "@ana", caption: "c", ...extra });
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: true, brief: { what: "Reel technique", try: ["t"] } });
+  await reel();
+  assert.ok(store.briefs["example:Abc_1234567"], "the brief is stored first");
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
+  await reel({ again: true });
+  assert.deepEqual(Object.keys(store.briefs), [], "watching again with no technique removes it");
+  answer = postAnswer;
+}
+
+// A bad status from the video model carries the platform-aware error text, exactly -- not the YouTube
+// wording for a non-YouTube video.
+{
+  reset();
+  status = 400;
+  const r = await send({ type: "watch", platform: "example", id: "Abc_1234567", url: "https://example.com/reel/Abc_1234567/", video: "https://cdn.example.com/v.mp4?sig=1", title: "T", channel: "@ana", caption: "c" });
+  assert.equal(r.error, "The video model said 400. Private or removed videos can't be watched.");
+  status = 200;
+}
+
+// A null or otherwise broken cached entry counts as absent, not as a cached answer: today it would
+// reply with a bare null, which the pages show as "No answer from the extension."
+{
+  reset({ watched: { abc: null } });
+  calls = 0;
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
+  const r = await send({ type: "watch", id: "abc", url: "https://www.youtube.com/watch?v=abc", title: "T", channel: "C", seconds: 60 });
+  assert.equal(r.verdict, "skim", "a real answer, not the broken cached entry");
+  assert.equal(calls, 1, "and a real call was made");
+  assert.equal(store.watched.abc.verdict, "skim", "a real record replaces the broken one");
+  answer = postAnswer;
+}
+
+// A non-object entry already sitting in `watched` (a null, from some earlier bug) doesn't stop a new
+// watch from being stored: it's dropped when the newest-300 map is rebuilt, the way a junk saved post
+// is dropped, rather than crashing the sort.
+{
+  reset({ watched: { junk: null } });
+  answer = () => ({ verdict: "skim", why: "w", summary: "s", learnings: ["l"], technique: false });
+  const r = await send({ type: "watch", id: "xyz98765432", url: "https://www.youtube.com/watch?v=xyz98765432", title: "T", channel: "C", seconds: 60 });
+  assert.equal(r.verdict, "skim", "the watch still replies normally");
+  assert.ok(store.watched.xyz98765432, "and its record is stored");
   answer = postAnswer;
 }
 

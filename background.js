@@ -153,23 +153,35 @@ async function draft(req) {
 // stored and shown) and its video link (`video`, https, for the model only: it's signed and expires, so
 // it's never stored).
 async function watch(req) {
+  // Written once: both the id check and the non-YouTube link checks below refuse with this same text.
+  const LINK_ERROR = "Sieve couldn't read this video's link. Reload the page and try again.";
   const platform = videoPlatform(req.platform);
   if (!platform) return { error: "Sieve can't watch videos from this page." };
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(req.id ?? ""))) return { error: "Sieve couldn't read this video's link. Reload the page and try again." };
-  if (platform !== "youtube" && (!webUrl(req.url) || !webUrl(req.video).startsWith("https://"))) {
-    return { error: "Sieve couldn't read this video's link. Reload the page and try again." };
+  if (typeof req.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(req.id)) return { error: LINK_ERROR };
+  // Computed once and reused below (the message sent to the model, the stored record, the brief, the
+  // saved post): a page or video link is checked here and only here, so everything downstream uses the
+  // same, already-validated value rather than the request's raw fields.
+  let page = "", video = "";
+  if (platform !== "youtube") {
+    page = webUrl(req.url);
+    video = webUrl(req.video);
+    if (!page || !video.startsWith("https://")) return { error: LINK_ERROR };
+    // Refused, not truncated: a cut signed link is broken, not merely long.
+    if (page.length > 2048 || video.length > 8192) return { error: LINK_ERROR };
+    if (hasCredentials(page) || hasCredentials(video)) return { error: LINK_ERROR };
   }
   const key = watchedKey(platform, req.id);
   const { orKey, videoModel = DEFAULT_VIDEO_MODEL, watched = {} } = await chrome.storage.local.get(["orKey", "videoModel", "watched"]);
-  if (Object.hasOwn(watched, key) && !req.again) return withPrompt(watched[key]);
+  // A null or otherwise broken entry (an old bug, corrupted storage) counts as absent, not as a cached
+  // answer: withPrompt(null) would hand the page back a bare null, which reads as no reply at all.
+  const cached = watched && typeof watched === "object" && Object.hasOwn(watched, key) ? watched[key] : null;
+  if (cached && typeof cached === "object" && !req.again) return withPrompt(cached);
   if (!orKey) return { error: "Add an OpenRouter key in Sieve's settings." };
   if (req.seconds && req.seconds / 60 > MAX_MINUTES) return { error: `Videos over ${MAX_MINUTES} minutes are too long to watch in one go.` };
   const prefs = await loadPrefs();
-  // Built once, outside the attempt loop and its try/catch: watchMessages throws for an invalid request
-  // (a non-YouTube video with no video link), and the checks above already ruled that out, so this never
-  // throws here. Building it inside the loop's try/catch would otherwise turn a genuine throw into a
-  // misleading "Network error reaching OpenRouter."
-  const messages = watchMessages(req, prefs);
+  // Built once, outside the fetch try, so a mistake in building it can't be reported as a network error.
+  // The checks above mean that can't happen for a valid request.
+  const messages = watchMessages(platform === "youtube" ? req : { ...req, url: page, video }, prefs);
   // One retry with more room: an unreadable answer is usually a cut-off or a stray quote. The whole
   // attempt loop runs inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still
   // records whatever was spent before it, exactly once.
@@ -211,12 +223,21 @@ async function watch(req) {
   if (!out) {
     return { error: `The video model's answer was ${lastError} twice. Try again, or try a shorter video.` };
   }
-  out = { ...out, ...(platform === "youtube" ? {} : { platform }), id: req.id, url: req.url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost, at: Date.now() };
+  // YouTube's own url is stored as given, as before; another platform's is the checked, cleaned page
+  // link (page), never the request's raw one.
+  const url = platform === "youtube" ? req.url : page;
+  out = { ...out, ...(platform === "youtube" ? {} : { platform }), id: req.id, url, title: req.title, channel: req.channel, seconds: req.seconds || null, cost, at: Date.now() };
   await stats((s) => { s.watched = (s.watched || 0) + 1; });
   // The newest 300, same as before, now on the queue: two videos landing together can no longer drop
-  // each other's record.
+  // each other's record. A non-object entry already in storage (an old bug, corrupted data) is dropped
+  // first, the way savedPosts drops junk: sorting by its .at would otherwise throw.
   await update("watched", ({ watched: w = {} }) => ({
-    watched: Object.fromEntries(Object.entries({ ...w, [key]: out }).sort((a, b) => b[1].at - a[1].at).slice(0, 300)),
+    watched: Object.fromEntries(
+      Object.entries({ ...w, [key]: out })
+        .filter(([, v]) => v && typeof v === "object" && !Array.isArray(v))
+        .sort((a, b) => b[1].at - a[1].at)
+        .slice(0, 300),
+    ),
   }));
   // Watching again replaces the video's brief, or removes it if this time there is none.
   const vr = videoBriefRecord(out);
@@ -228,7 +249,7 @@ async function watch(req) {
   });
   if (vr) await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
   await save({
-    key: recKey, platform, authorName: req.channel, authorUrl: req.url, title: req.title,
+    key: recKey, platform, authorName: req.channel, authorUrl: url, title: req.title,
     text: `${req.title}\n\n${out.summary}\n\nLearnings:\n${out.learnings.map((l) => "- " + l).join("\n")}`,
     topic: "", kind: "video", worth: 1,
   });
@@ -243,6 +264,17 @@ const webUrl = (u) => {
     return /^https?:$/.test(x.protocol) ? x.href : "";
   } catch {
     return "";
+  }
+};
+
+// A web link that carries a username or password (https://user:pass@host/...): watch() refuses one
+// rather than store or send it, even when the rest of the link is a valid https URL.
+const hasCredentials = (u) => {
+  try {
+    const x = new URL(u);
+    return !!(x.username || x.password);
+  } catch {
+    return true;
   }
 };
 
@@ -407,6 +439,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "watch") {
+    // The platform is part of the key: a video on another platform and a YouTube video can share an
+    // 11-character id.
     once(`watch:${videoPlatform(msg.platform)}:${msg.id}`, () => watch(msg)).then(reply, () => reply({ error: "Sieve couldn't store the video notes. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
