@@ -88,6 +88,7 @@ $("saveAll").onclick = async () => {
 function showJev(on, hasKey) {
   $("useJev").checked = on;
   $("jevKey").hidden = !on;
+  $("useJev").setAttribute("aria-expanded", String(on));
   $("jevNote").textContent = on && !hasKey ? "Until a TypeSafe key is saved, your OpenRouter key keeps scoring." : "";
 }
 $("useJev").onchange = async () => {
@@ -95,7 +96,9 @@ $("useJev").onchange = async () => {
   await chrome.storage.local.set({ useJev: on });
   const { apiKey } = await chrome.storage.local.get("apiKey");
   showJev(on, Boolean(apiKey));
-  $("keyMsg").textContent = on ? (apiKey ? "Jev scores your posts." : "") : "Your OpenRouter key scores your posts. A saved TypeSafe key is kept, unused.";
+  const { orKey } = await chrome.storage.local.get("orKey");
+  const kept = apiKey ? " A saved TypeSafe key is kept, unused." : "";
+  $("keyMsg").textContent = on ? (apiKey ? "Jev scores your posts." : "") : (orKey ? `Your OpenRouter key scores your posts.${kept}` : `Add an OpenRouter key above and it scores your posts.${kept}`);
 };
 
 $("saveKeys").onclick = async () => {

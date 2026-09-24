@@ -44,7 +44,7 @@
     ask_failures: "ask about failures and limits", ask_how: "ask how it works", share_result: "share a related result",
     answer_question: "answer their question", disagree: "respectful counterpoint", none: "",
   };
-  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key", or_no_credit: "Sieve: out of OpenRouter credit", key_rejected: "Sieve: key rejected", no_credit: "Sieve: out of TypeSafe credit" };
+  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. It retries next time the post is on screen", key_rejected: "Sieve: key rejected", no_credit: "Sieve: out of TypeSafe credit" };
 
   let enabled = true;
   const results = new Map();
@@ -70,7 +70,7 @@
   // What gets saved, and briefed, for a post: the same record the digest page reads.
   function postRecord(key, r) {
     const state = states.get(key) || {};
-    return { key, platform: "x", authorName: (state.author || "").split(" @")[0], authorUrl: urls.get(key) || "", text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth };
+    return { key, platform: "x", authorName: (state.author || "").split(" @")[0], authorUrl: urls.get(key) || "", text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth, scorer: r.scorer };
   }
 
   // Badges sit just above the post, outside X's own layout.
@@ -93,7 +93,7 @@
     post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
     const badge = document.createElement("div");
     badge.className = "jev-badge";
-    if (r.error) { badge.classList.add("jev-error"); badge.textContent = ERRORS[r.error] || `Sieve: ${r.error}`; wrap.append(badge); return; }
+    if (r.error) { badge.classList.add("jev-error"); badge.textContent = ERRORS[r.error] || (r.error.startsWith("http_") ? `Sieve: the scoring service answered ${r.error.slice(5)}. It retries next time the post is on screen` : `Sieve: ${r.error}`); wrap.append(badge); return; }
     if (r.tier === "low" && r.lowMode === "hide") { post.classList.add("jev-hidden"); return; }
     if (r.tier === "low" && r.lowMode === "fade") post.classList.add("jev-low");
     if (r.tier !== "low") { post.classList.add(`sieve-x-${r.tier}`); wrap.classList.add(`jev-${r.tier}`); }

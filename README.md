@@ -95,7 +95,7 @@ word for word under the idea. Lines that talk about "me" anywhere else are dropp
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
-   - **OpenRouter API key** (scoring posts, angles, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`, which also always does the scoring: about 6 US cents per 1,000 posts. Checked against the API before it's saved.
+   - **OpenRouter API key** (scoring posts, angles, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`, which also always does the scoring: about 5 to 9 US cents per 1,000 posts. Checked against the API before it's saved.
    - **Score posts with Jev** (optional): turn it on and add a **TypeSafe API key**, and Jev scores posts and picks which of your facts fits a post for angles instead, for about 4 US cents per 1,000 posts. If you saved a TypeSafe key before this switch existed, it starts on.
    - **Your facts** for LinkedIn and for Reddit. Only true, first-hand things. Angles can only point to these.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
@@ -108,12 +108,13 @@ it can pick which fact, if any, fits. OpenRouter gets a post's
 text when you ask for angles (with the one fact the scorer picked, if any; on Reddit, your Reddit facts) or a brief
 (with your role and topics), your saved posts (except any Sieve left out) when you ask for a digest, and a
 video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
-request to the model you picked.
+request to the model you picked, except scoring, which always uses DeepSeek V4 Flash to keep a feed cheap.
 
 ## Cost (September 2026 prices)
 
-- Scoring through OpenRouter (the default): roughly 6 US cents per 1,000 posts with DeepSeek V4 Flash, measured on
-  the invented set with `test/compare_scorers.mjs` on 24 Sep 2026.
+- Scoring through OpenRouter (the default): about 6 US cents per 1,000 LinkedIn and X posts, 9 on Reddit (your
+  Reddit facts go with each post) and 5 on YouTube, with DeepSeek V4 Flash, measured on the invented sets with
+  `test/compare_scorers.mjs` on 24 Sep 2026.
 - Scoring with Jev (optional): about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
 - Angles: about $0.00005 per request with DeepSeek V4 Flash. On LinkedIn and X, each request also asks the scorer
   which fact fits: the post plus about 140 input tokens per fact, so roughly 1,000 tokens and $0.00004 with

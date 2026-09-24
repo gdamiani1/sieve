@@ -63,35 +63,44 @@ async function scorer() {
   return {};
 }
 
-// Scoring always uses the default model, not the one chosen for briefs and angles: a feed is hundreds
-// of posts a day, and an expensive briefs model would be billed for every one of them. Measured on the
-// labelled sample (test/compare_scorers.mjs, 24 Sep 2026): 10 of 11 at Jev's own 0.7/0.4 thresholds,
-// the same as Jev, at about 6 US cents per 1,000 posts against Jev's 4.
-const SCORE_MODEL = DEFAULT_MODEL;
+// Scoring always uses this model, not the one chosen for briefs and angles: a feed is hundreds of posts a
+// day, and an expensive briefs model would be billed for every one of them. Its own constant, so changing
+// the briefs default for quality can't change what a feed costs without anyone noticing. Measured with
+// test/compare_scorers.mjs on 24 Sep 2026, at Jev's own 0.7/0.4 thresholds: LinkedIn 10 of 11 (Jev 10),
+// Reddit 6 of 6 (Jev 5), YouTube 6 of 6 (Jev 6), at about 5 to 9 US cents per 1,000 posts against Jev's
+// 3 to 4. test/facts_live_test.mjs with SCORER=openrouter: 9 of 10, and no fact reached a post it wasn't
+// about. Change it only after running both again.
+const SCORE_MODEL = "deepseek/deepseek-v4-flash";
 
 // One scoring call through OpenRouter, answering `questions` in Jev's shape (score-prompt.js).
 async function scoreViaOpenRouter(orKey, questions, state) {
-  let res;
-  try {
-    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-      body: JSON.stringify({ model: SCORE_MODEL, provider: PROVIDER_PREFS, messages: scoreMessages(questions, state), max_tokens: 300, usage: { include: true }, reasoning: { enabled: false }, temperature: 0, response_format: { type: "json_object" } }),
-    });
-  } catch {
-    return { error: "network" };
+  let cost = 0;
+  // A second, longer try only when the first answer was cut off: some providers think before answering
+  // even with reasoning off, and run out of room the way draft() found at 300 tokens.
+  for (const maxTokens of [300, 800]) {
+    let res;
+    try {
+      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
+        body: JSON.stringify({ model: SCORE_MODEL, provider: PROVIDER_PREFS, messages: scoreMessages(questions, state), max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: 0, response_format: { type: "json_object" } }),
+      });
+    } catch {
+      return { error: "network", cost };
+    }
+    if (res.status === 401) return { error: "or_key_rejected", cost };
+    if (res.status === 402) return { error: "or_no_credit", cost };
+    if (res.status === 429) return { error: "rate_limited", cost };
+    if (!res.ok) return { error: `http_${res.status}`, cost };
+    const body = await res.json();
+    cost += body.usage?.cost || 0;
+    try {
+      return { ...parseScore(body.choices?.[0]?.message?.content || "", questions, state), cost };
+    } catch {
+      if (body.choices?.[0]?.finish_reason !== "length") return { error: "unreadable", cost };
+    }
   }
-  if (res.status === 401) return { error: "or_key_rejected" };
-  if (res.status === 402) return { error: "or_no_credit" };
-  if (res.status === 429) return { error: "rate_limited" };
-  if (!res.ok) return { error: `http_${res.status}` };
-  const body = await res.json();
-  const cost = body.usage?.cost || 0;
-  try {
-    return { ...parseScore(body.choices?.[0]?.message?.content || "", questions, state), cost };
-  } catch {
-    return { error: "unreadable", cost };
-  }
+  return { error: "unreadable", cost };
 }
 
 async function classify(state, platform) {
@@ -445,7 +454,7 @@ const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => 
 // A post is the same post only on the same platform: LinkedIn and X both key a post by a hash of its
 // text, so a cross-posted post has the same key on each.
 function save(post) {
-  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0 };
+  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0, scorer: post.scorer === "openrouter" ? "openrouter" : "jev" };
   return update("saved", ({ saved: stored }) => {
     const saved = savedPosts(stored);
     if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;

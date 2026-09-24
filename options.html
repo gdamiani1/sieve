@@ -29,14 +29,14 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <p class="hint">Stored only in this browser. Each key is checked before it's saved.</p>
 <label class="f" for="orkey">OpenRouter API key (scores posts, and writes reply angles, briefs, digests and Watch it for me)</label>
 <input id="orkey" type="password" autocomplete="off">
-<div class="inline" style="margin-top:16px"><label><input id="useJev" type="checkbox"> Score posts with Jev (optional)</label></div>
-<p class="hint" style="margin-top:4px">Jev is TypeSafe's decision model, made for this kind of yes or no call. With a TypeSafe key, it scores your feed and picks which of your facts fits a post, instead of your OpenRouter key.</p>
+<div class="inline" style="margin-top:16px"><label><input id="useJev" type="checkbox" aria-controls="jevKey" aria-expanded="false" aria-describedby="jevHint"> Score posts with Jev (optional)</label></div>
+<p class="hint" style="margin-top:4px" id="jevHint">Jev is TypeSafe's decision model, made for this kind of yes or no call. With a TypeSafe key, it scores your feed and picks which of your facts fits a post, instead of your OpenRouter key. Scoring costs about 4 US cents per 1,000 posts with Jev, and 5 to 9 with your OpenRouter key.</p>
 <div id="jevKey" hidden>
 <label class="f" for="key">TypeSafe API key</label>
 <input id="key" type="password" autocomplete="off">
-<p class="hint" style="margin-top:6px" id="jevNote"></p>
+<p class="hint" style="margin-top:6px" id="jevNote" aria-live="polite"></p>
 </div>
-<div style="margin-top:10px"><button id="saveKeys">Check and save keys</button> <span class="msg" id="keyMsg"></span></div>
+<div style="margin-top:10px"><button id="saveKeys">Check and save keys</button> <span class="msg" id="keyMsg" aria-live="polite"></span></div>
 </section>
 
 <section>

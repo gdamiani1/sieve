@@ -49,7 +49,7 @@
     disagree: "respectful counterpoint", none: "",
   };
   const ERRORS = {
-    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key", or_no_credit: "Sieve: out of OpenRouter credit",
+    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. It retries next time the post is on screen",
     key_rejected: "Jev: key rejected",
     no_credit: "Jev: out of credit, check TypeSafe billing",
     rate_limited: "Sieve: rate limited, will retry on next view",
@@ -106,7 +106,7 @@
     const state = states.get(key) || {};
     return {
       key, platform: "linkedin", author: state.author || "", authorName: name || "", authorUrl: url, postUrl: postLink(card),
-      text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth,
+      text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth, scorer: r.scorer,
     };
   }
 
@@ -139,7 +139,7 @@
     badge.className = "jev-badge";
     if (r.error) {
       badge.classList.add("jev-error");
-      badge.textContent = ERRORS[r.error] || `Sieve: ${r.error}`;
+      badge.textContent = ERRORS[r.error] || (r.error.startsWith("http_") ? `Sieve: the scoring service answered ${r.error.slice(5)}. It retries next time the post is on screen` : `Sieve: ${r.error}`);
       if (r.error === "rate_limited" || r.error === "network") results.delete(card.dataset.jevKey);
     } else {
       const tier = r.tier;
@@ -149,7 +149,7 @@
       const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
       const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
       badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
-      badge.title = "Jev's read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.";
+      badge.title = `${r.scorer === "jev" ? "Jev's" : "Sieve's"} read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.`;
       if (tier !== "low") {
         const actions = document.createElement("span");
         actions.className = "jev-actions";

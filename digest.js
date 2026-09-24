@@ -238,7 +238,8 @@ async function load() {
       a.textContent = (p.platform === "reddit" ? "Reddit · " : "") + (p.authorName || "Unknown author");
       const m = document.createElement("div");
       m.className = "m";
-      m.textContent = `${new Date(p.savedAt).toLocaleString()} · ${p.kind} · ${p.topic} · Jev ${p.worth.toFixed(2)}`;
+      // Posts saved before OpenRouter could score carry no `scorer`, and Jev scored every one of them.
+      m.textContent = `${new Date(p.savedAt).toLocaleString()} · ${p.kind} · ${p.topic} · ${(p.scorer ?? "jev") === "jev" ? "Jev" : "Sieve"} ${p.worth.toFixed(2)}`;
       const t = document.createElement("div");
       t.className = "t";
       t.textContent = p.text;

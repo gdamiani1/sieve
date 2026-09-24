@@ -1,8 +1,11 @@
 // Live: Jev decides which of the reader's facts, if any, may reach the angle prompt (draft.js pickFact).
 // Invented facts and posts. Posts that only share a broad field with a fact must get no fact.
 //   node test/facts_live_test.mjs
-import { factQuestions, pickFact, FACT_MIN } from "../draft.js";
-import { typesafeKey } from "./keys.mjs";
+//   SCORER=openrouter node test/facts_live_test.mjs   (the same cases through the OpenRouter path, for
+//                                                     people without a TypeSafe key: score-prompt.js)
+import { factQuestions, pickFact, FACT_MIN, DEFAULT_MODEL, PROVIDER_PREFS } from "../draft.js";
+import { scoreMessages, parseScore } from "../score-prompt.js";
+import { typesafeKey, openrouterKey } from "./keys.mjs";
 
 const FACTS = [
   "I run a two-person agency that builds internal tools for accountants.",
@@ -25,16 +28,29 @@ const CASES = [
   [1, "Accountants: which internal tools did you have built for your firm, and which ones does the team still use a year later?"],
 ];
 
-const key = typesafeKey();
+const viaOpenRouter = process.env.SCORER === "openrouter";
+const key = viaOpenRouter ? openrouterKey() : typesafeKey();
 let failed = 0;
 for (const [want, post] of CASES) {
-  const res = await fetch("https://api.typesafe.ai/v1/systemone", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: "jev-latest", state: { post }, questions: factQuestions(FACTS) }),
-  });
-  if (!res.ok) { console.log(`Jev said ${res.status}`); process.exit(1); }
-  const { answers } = await res.json();
+  let answers;
+  if (viaOpenRouter) {
+    const questions = factQuestions(FACTS);
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "X-Title": "Sieve" },
+      body: JSON.stringify({ model: DEFAULT_MODEL, provider: PROVIDER_PREFS, messages: scoreMessages(questions, { post }), max_tokens: 300, reasoning: { enabled: false }, temperature: 0, response_format: { type: "json_object" } }),
+    });
+    if (!res.ok) { console.log(`OpenRouter said ${res.status}`); process.exit(1); }
+    answers = parseScore((await res.json()).choices[0].message.content, questions, { post }).answers;
+  } else {
+    const res = await fetch("https://api.typesafe.ai/v1/systemone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: "jev-latest", state: { post }, questions: factQuestions(FACTS) }),
+    });
+    if (!res.ok) { console.log(`Jev said ${res.status}`); process.exit(1); }
+    ({ answers } = await res.json());
+  }
   const got = pickFact(answers, FACTS.length) + 1;
   const ps = FACTS.map((_, i) => answers[`f${i + 1}`].noul.toFixed(2)).join(" ");
   const ok = got === want;

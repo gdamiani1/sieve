@@ -7,31 +7,57 @@
 // the cost per post. It spends real money on both keys: a few cents.
 //
 //   node test/compare_scorers.mjs [model ...]
+//   SET=reddit node test/compare_scorers.mjs     (the invented Reddit posts from reddit_test.mjs)
+//   SET=youtube node test/compare_scorers.mjs    (invented video tiles, labelled for the default reader)
 import { readFileSync } from "node:fs";
-import { DEFAULT_PREFS, linkedinQuestions } from "../prefs.js";
+import { DEFAULT_PREFS, linkedinQuestions, redditQuestions, youtubeQuestions } from "../prefs.js";
 import { scoreMessages, parseScore } from "../score-prompt.js";
-import { DEFAULT_MODEL, PROVIDER_PREFS } from "../draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_REDDIT_ABOUT } from "../draft.js";
 import { typesafeKey, openrouterKey } from "./keys.mjs";
 
 const models = process.argv.slice(2).length ? process.argv.slice(2) : [DEFAULT_MODEL, "google/gemini-2.5-flash-lite"];
 const prefs = DEFAULT_PREFS;
-const questions = linkedinQuestions(prefs);
-const posts = JSON.parse(readFileSync(new URL("./sample.json", import.meta.url)));
+const SET = process.env.SET || "linkedin";
+
+// Invented, like everything in test/. Labelled for DEFAULT_PREFS: someone who uses AI and automation in
+// their work, with topics AI in practice, automating everyday work, and running a small business.
+const REDDIT = [
+  { id: "vat-ids", want: "high", state: { subreddit: "r/smallbusiness", title: "How do you catch wrong customer tax IDs before invoicing?", body: "Twice this year I sent invoices with a typo in the client's VAT number and had to cancel and reissue. Is there a simple way to validate these before sending? I'm a one person shop, no accounting software yet." } },
+  { id: "inbox", want: "high", state: { subreddit: "r/automation", title: "Sorting a shared inbox automatically, is an LLM overkill?", body: "We get ~300 emails a day into info@. I want to auto-tag them as order, complaint, invoice, spam. GPT works but it's slow and I worry about cost. Anyone done this with something lighter?" } },
+  { id: "pausal", want: "high", state: { subreddit: "r/croatia", title: "Paušalni obrt: tko vodi evidenciju sam?", body: "Otvaram paušalni obrt i pitam se isplati li se knjigovođa ili mogu sam voditi KPR i izdavati račune. Kakva su vaša iskustva?" } },
+  { id: "40k", want: "low", state: { subreddit: "r/Entrepreneur", title: "I made $40k in 30 days with this one trick", body: "DM me for my course. Link in bio." } },
+  { id: "leak", want: "low", state: { subreddit: "r/LocalLLaMA", title: "New 400B model weights leaked?", body: "Anyone seen the torrent going around?" } },
+  { id: "10-years", want: "low", state: { subreddit: "r/smallbusiness", title: "Just hit 10 years in business!", body: "Wanted to share this milestone with you all. Thanks for the support." } },
+].map((p) => ({ ...p, state: { ...p.state, reader_experience: DEFAULT_REDDIT_ABOUT } }));
+
+const YOUTUBE = [
+  { id: "n8n-inbox", want: "high", state: { title: "I automated my invoice inbox with n8n and a small model (full build, costs included)", channel: "Ops Notes", length: "18 min" } },
+  { id: "evals", want: "high", state: { title: "How we test LLM prompts before shipping: golden sets in CI", channel: "Applied ML Weekly", length: "24 min" } },
+  { id: "agent-demo", want: "high", state: { title: "Building a coding agent that fixes its own failing tests, step by step", channel: "Build With Agents", length: "31 min" } },
+  { id: "reaction", want: "low", state: { title: "Reacting to the WILDEST AI news this week!!", channel: "Hype Central", length: "12 min" } },
+  { id: "prank", want: "low", state: { title: "Funniest office pranks compilation 2026", channel: "LOL Daily", length: "9 min" } },
+  { id: "course", want: "low", state: { title: "Get rich with AI: my $997 course is finally open", channel: "Passive Income Pro", length: "5 min" } },
+];
+
+const questions = SET === "reddit" ? redditQuestions(prefs) : SET === "youtube" ? youtubeQuestions(prefs) : linkedinQuestions(prefs);
+const posts = SET === "reddit" ? REDDIT : SET === "youtube" ? YOUTUBE
+  : JSON.parse(readFileSync(new URL("./sample.json", import.meta.url))).map((p) => ({ ...p, state: { author: p.author, post: p.post } }));
+const WORTH = SET === "reddit" ? "answerable" : "worth";
 const TIERS = ["low", "maybe", "high"];
 
 async function jev(p) {
   const r = await fetch("https://api.typesafe.ai/v1/systemone", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${typesafeKey()}` },
-    body: JSON.stringify({ model: "jev-latest", state: { author: p.author, post: p.post }, questions }),
+    body: JSON.stringify({ model: "jev-latest", state: p.state, questions }),
   });
   const b = await r.json();
   if (!r.ok) throw new Error(`Jev ${r.status}`);
-  return { worth: b.answers.worth.noul, kind: b.answers.kind.choice, cost: ((b.usage?.input_tokens || 0) * 0.042) / 1e6 };
+  return { worth: b.answers[WORTH].noul, kind: b.answers.kind.choice, cost: ((b.usage?.input_tokens || 0) * 0.042) / 1e6 };
 }
 
 async function openrouter(model, p) {
-  const state = { author: p.author, post: p.post };
+  const state = p.state;
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${openrouterKey()}`, "X-Title": "Sieve" },
@@ -40,7 +66,7 @@ async function openrouter(model, p) {
   const b = await r.json();
   if (!r.ok) throw new Error(`OpenRouter ${r.status} ${JSON.stringify(b).slice(0, 160)}`);
   const { answers } = parseScore(b.choices[0].message.content, questions, state);
-  return { worth: answers.worth.noul, kind: answers.kind.choice, cost: b.usage?.cost || 0 };
+  return { worth: answers[WORTH].noul, kind: answers.kind.choice, cost: b.usage?.cost || 0 };
 }
 
 // The pair of thresholds (high, low) that gets the most labels right, searched on a 0.05 grid.

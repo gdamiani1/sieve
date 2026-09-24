@@ -45,7 +45,7 @@
     share_mistake: "warn about a pitfall", none: "",
   };
   const ERRORS = {
-    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key", or_no_credit: "Sieve: out of OpenRouter credit",
+    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. It retries next time the post is on screen",
     key_rejected: "Jev: key rejected",
     no_credit: "Jev: out of credit, check TypeSafe billing",
     rate_limited: "Sieve: rate limited, will retry on next view",
@@ -116,7 +116,7 @@
     badge.className = "jev-badge";
     if (r.error) {
       badge.classList.add("jev-error");
-      badge.textContent = ERRORS[r.error] || `Sieve: ${r.error}`;
+      badge.textContent = ERRORS[r.error] || (r.error.startsWith("http_") ? `Sieve: the scoring service answered ${r.error.slice(5)}. It retries next time the post is on screen` : `Sieve: ${r.error}`);
       if (r.error === "rate_limited" || r.error === "network") results.delete(info.key);
       wrap.append(badge);
       return;
@@ -132,7 +132,7 @@
     const bits = [LABEL[r.kind], r.topic, age && `${age}, ${info.comments} comments`, tier !== "low" && fresh, r.reason].filter(Boolean).join(" · ");
     const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
     badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
-    badge.title = "Jev's read: could you answer this from your own experience? It writes nothing. Replying is up to you.";
+    badge.title = `${r.scorer === "jev" ? "Jev's" : "Sieve's"} read: could you answer this from your own experience? It writes nothing. Replying is up to you.`;
     if (tier === "low") { if (r.lowMode === "fade") badge.classList.add("jev-quiet"); wrap.append(badge); return; }
     const btn = document.createElement("button");
     btn.className = "jev-suggest";
@@ -190,7 +190,7 @@
       if (!r.error && r.tier === "strong") {
         send({ type: "save", post: {
           key: info.key, platform: "reddit", authorName: `u/${info.author} (${info.subreddit})`, authorUrl: info.permalink,
-          title: info.title, text: `${info.title}\n\n${info.body}`, topic: r.topic, kind: r.kind, worth: r.worth,
+          title: info.title, text: `${info.title}\n\n${info.body}`, topic: r.topic, kind: r.kind, worth: r.worth, scorer: r.scorer,
           fresh: info.fresh, createdAt: info.created || null, comments: info.comments,
         } });
       }
