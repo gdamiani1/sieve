@@ -189,7 +189,8 @@ async function relevantFact(post, list) {
       body: JSON.stringify({ model: "jev-latest", state: { post }, questions: factQuestions(list) }),
     });
     if (!res.ok) return "";
-    const body = await res.json();
+    const body = await res.json().catch(() => null);
+    if (!body?.answers) return "";
     await stats((s) => { s.tokens += body.usage?.input_tokens || 0; });
     const i = pickFact(body.answers, list.length);
     return i < 0 ? "" : `- ${list[i]}`;

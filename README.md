@@ -75,6 +75,11 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
 - **Kinds of posts** to show on LinkedIn and X (technique to try, built something, opinions, questions, news,
   promotion, personal) and on Reddit (asking for help, discussions, showcases, rants, news, promotion); YouTube
   has its own list.
+- **Text aimed at AI tools:** a post that talks to whatever scores it (asks to be rated highly, fakes a
+  scoring field, tells a model what to answer) lands low with the reason "text aimed at AI tools", whichever
+  scorer read it. Plain code catches the forms that can't be anything else, and without Jev the model also
+  reports any passage aimed at it. The trade-off, chosen on purpose: a post about prompt injection that
+  quotes a payload without quote marks can land low too.
 - **Rules** that always win over the score: words that always show a post (a person, your company) and words that
   never do (crypto, webinar, "we're hiring").
 - **Scores:** where highlighting starts, what counts as low, and whether low posts fade, hide or stay.
