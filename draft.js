@@ -95,7 +95,7 @@ ${post}
 
 ${mine}
 
-Jev's suggested move, as one of the three if it fits: ${move}`;
+The scorer's suggested move, as one of the three if it fits: ${move}`;
   return [{ role: "system", content: system }, { role: "user", content: user }];
 }
 
@@ -126,7 +126,7 @@ ${post}
 MY FACTS (mine, not the poster's)
 ${list}
 
-Jev's suggested move, as one of the three if it fits: ${ANGLES[angle] || ANGLES.none}`;
+The scorer's suggested move, as one of the three if it fits: ${ANGLES[angle] || ANGLES.none}`;
   return [{ role: "system", content: system }, { role: "user", content: user }];
 }
 

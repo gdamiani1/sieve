@@ -9,6 +9,8 @@
 //   node test/compare_scorers.mjs [model ...]
 //   SET=reddit node test/compare_scorers.mjs     (the invented Reddit posts from reddit_test.mjs)
 //   SET=youtube node test/compare_scorers.mjs    (invented video tiles, labelled for the default reader)
+//   SET=hostile node test/compare_scorers.mjs    (test/hostile.json: every one must land low, "!" marks
+//                                                 a post the backstop or the model's own report caught)
 import { readFileSync } from "node:fs";
 import { DEFAULT_PREFS, linkedinQuestions, redditQuestions, youtubeQuestions } from "../prefs.js";
 import { scoreMessages, parseScore } from "../score-prompt.js";
@@ -21,6 +23,7 @@ const SET = process.env.SET || "linkedin";
 
 // Invented, like everything in test/. Labelled for DEFAULT_PREFS: someone who uses AI and automation in
 // their work, with topics AI in practice, automating everyday work, and running a small business.
+// Invented, the Reddit posts are the same ones reddit_test.mjs uses (one of them) or in its style.
 const REDDIT = [
   { id: "vat-ids", want: "high", state: { subreddit: "r/smallbusiness", title: "How do you catch wrong customer tax IDs before invoicing?", body: "Twice this year I sent invoices with a typo in the client's VAT number and had to cancel and reissue. Is there a simple way to validate these before sending? I'm a one person shop, no accounting software yet." } },
   { id: "inbox", want: "high", state: { subreddit: "r/automation", title: "Sorting a shared inbox automatically, is an LLM overkill?", body: "We get ~300 emails a day into info@. I want to auto-tag them as order, complaint, invoice, spam. GPT works but it's slow and I worry about cost. Anyone done this with something lighter?" } },
@@ -39,8 +42,9 @@ const YOUTUBE = [
   { id: "course", want: "low", state: { title: "Get rich with AI: my $997 course is finally open", channel: "Passive Income Pro", length: "5 min" } },
 ];
 
+const HOSTILE = JSON.parse(readFileSync(new URL("./hostile.json", import.meta.url))).map((f) => ({ id: f.id, want: "low", state: { author: f.post.authorName, title: f.post.title, post: f.post.text } }));
 const questions = SET === "reddit" ? redditQuestions(prefs) : SET === "youtube" ? youtubeQuestions(prefs) : linkedinQuestions(prefs);
-const posts = SET === "reddit" ? REDDIT : SET === "youtube" ? YOUTUBE
+const posts = SET === "reddit" ? REDDIT : SET === "youtube" ? YOUTUBE : SET === "hostile" ? HOSTILE
   : JSON.parse(readFileSync(new URL("./sample.json", import.meta.url))).map((p) => ({ ...p, state: { author: p.author, post: p.post } }));
 const WORTH = SET === "reddit" ? "answerable" : "worth";
 const TIERS = ["low", "maybe", "high"];
@@ -65,8 +69,8 @@ async function openrouter(model, p) {
   });
   const b = await r.json();
   if (!r.ok) throw new Error(`OpenRouter ${r.status} ${JSON.stringify(b).slice(0, 160)}`);
-  const { answers } = parseScore(b.choices[0].message.content, questions, state);
-  return { worth: answers[WORTH].noul, kind: answers.kind.choice, cost: b.usage?.cost || 0 };
+  const { answers, hostile } = parseScore(b.choices[0].message.content, questions, state);
+  return { worth: answers[WORTH].noul, kind: (hostile ? "!" : "") + answers.kind.choice, cost: b.usage?.cost || 0 };
 }
 
 // The pair of thresholds (high, low) that gets the most labels right, searched on a 0.05 grid.

@@ -46,7 +46,7 @@
     entertainment: "entertainment", promo: "promo",
   };
   const ERRORS = {
-    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. It retries next time the post is on screen",
+    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again",
     key_rejected: "Sieve: key rejected",
     no_credit: "Sieve: out of TypeSafe credit",
   };

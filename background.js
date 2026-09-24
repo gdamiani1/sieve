@@ -4,7 +4,7 @@ import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, bui
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
-import { scoreMessages, parseScore } from "./score-prompt.js";
+import { scoreMessages, parseScore, postDirected } from "./score-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -92,7 +92,7 @@ async function scoreViaOpenRouter(orKey, questions, state) {
     if (res.status === 402) return { error: "or_no_credit", cost };
     if (res.status === 429) return { error: "rate_limited", cost };
     if (!res.ok) return { error: `http_${res.status}`, cost };
-    const body = await res.json();
+    const body = await res.json().catch(() => ({}));
     cost += body.usage?.cost || 0;
     try {
       return { ...parseScore(body.choices?.[0]?.message?.content || "", questions, state), cost };
@@ -148,8 +148,15 @@ async function classify(state, platform) {
     if (res.status === 401) return { error: "key_rejected" };
     if (res.status === 402 || res.status === 403) return { error: "no_credit" };
     if (!res.ok) return { error: `http_${res.status}` };
-    const body = await res.json();
-    const out = { ...verdict(body.answers, prefs, platform, text), scorer: "jev" };
+    const body = await res.json().catch(() => null);
+    if (!body?.answers) return { error: "unreadable" };
+    // The same plain-code check the OpenRouter path runs. Jev had none, and on test/hostile.json it rated
+    // one post that talks to the scorer 0.77 ("strong") and three more "maybe" (compare_scorers.mjs,
+    // SET=hostile, 24 Sep 2026). A post that does that lands low, whichever scorer read it.
+    const hostile = postDirected(jevState);
+    const answers = hostile ? Object.fromEntries(Object.entries(body.answers).map(([k, v]) => [k, typeof v?.noul === "number" ? { ...v, noul: 0 } : v])) : body.answers;
+    const out = { ...verdict(answers, prefs, platform, text), scorer: "jev" };
+    if (hostile && out.tier === "low" && !out.reason) out.reason = "text aimed at AI tools";
     await stats((s) => {
       s.posts += 1;
       s.tokens += body.usage?.input_tokens || 0;
@@ -454,7 +461,7 @@ const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => 
 // A post is the same post only on the same platform: LinkedIn and X both key a post by a hash of its
 // text, so a cross-posted post has the same key on each.
 function save(post) {
-  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0, scorer: post.scorer === "openrouter" ? "openrouter" : "jev" };
+  const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0, scorer: post.scorer === "jev" || post.scorer === "openrouter" ? post.scorer : undefined };
   return update("saved", ({ saved: stored }) => {
     const saved = savedPosts(stored);
     if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;

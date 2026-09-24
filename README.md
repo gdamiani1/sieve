@@ -149,10 +149,10 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/compare_drafts.mjs    # the same angles from several models, with cost
     node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
-    node test/facts_live_test.mjs   # Jev decides which of the reader's facts, if any, reaches the angle prompt (live, uses keys)
-    node test/compare_scorers.mjs   # the invented set scored by Jev and by OpenRouter models side by side, with cost (live, a few cents)
+    node test/facts_live_test.mjs   # which of the reader's facts, if any, reaches the angle prompt, decided by Jev (SCORER=openrouter for the OpenRouter path) (live, uses keys)
+    node test/compare_scorers.mjs   # the invented sets scored by Jev and by OpenRouter side by side, with cost; SET=reddit, youtube or hostile (live, a few cents)
 
-On the invented set, LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
+On the invented set, Jev's LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
 scored high where it was labelled maybe) and Reddit on 5 of 6 (the shared-inbox question scored 0.52, maybe
 instead of high). The angle-model bake-off (Mistral Small 3.2, DeepSeek V4 Flash, Qwen 3.7 Flash,
 Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's numbers, or cost 18x more.
