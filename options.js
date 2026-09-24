@@ -18,9 +18,12 @@ const readChecks = (container) => Object.fromEntries([...$(container).querySelec
 
 async function load() {
   const p = await loadPrefs();
-  const s = await chrome.storage.local.get(["apiKey", "orKey", "model", "about", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
+  const s = await chrome.storage.local.get(["apiKey", "orKey", "useJev", "model", "about", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Paste your TypeSafe key";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
+  // Unset for everyone who installed before the switch: a saved TypeSafe key means they already score
+  // with Jev, and an update doesn't move them off it (background.js scorer() reads it the same way).
+  showJev(s.useJev ?? Boolean(s.apiKey), Boolean(s.apiKey));
   $("role").value = p.role;
   $("topics").value = p.topics.join("\n");
   $("linkedinOn").checked = p.linkedinOn;
@@ -79,6 +82,20 @@ $("saveAll").onclick = async () => {
   });
   $("saveMsg").textContent = "Saved. Open tabs re-score what's on screen.";
   load();
+};
+
+// The switch shows the TypeSafe field, and says what happens with the switch on and no key yet.
+function showJev(on, hasKey) {
+  $("useJev").checked = on;
+  $("jevKey").hidden = !on;
+  $("jevNote").textContent = on && !hasKey ? "Until a TypeSafe key is saved, your OpenRouter key keeps scoring." : "";
+}
+$("useJev").onchange = async () => {
+  const on = $("useJev").checked;
+  await chrome.storage.local.set({ useJev: on });
+  const { apiKey } = await chrome.storage.local.get("apiKey");
+  showJev(on, Boolean(apiKey));
+  $("keyMsg").textContent = on ? (apiKey ? "Jev scores your posts." : "") : "Your OpenRouter key scores your posts. A saved TypeSafe key is kept, unused.";
 };
 
 $("saveKeys").onclick = async () => {

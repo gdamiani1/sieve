@@ -22,21 +22,26 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 .msg{font-size:13px;color:var(--accent)}
 </style></head><body><main>
 <h1>Sieve settings</h1>
-<p class="lede">Tell Sieve who you are and what you want to see. Jev scores each post against this; the rules at the bottom always win.</p>
+<p class="lede">Tell Sieve who you are and what you want to see. Each post is scored against this; the rules at the bottom always win.</p>
 
 <section>
 <h2>Keys</h2>
 <p class="hint">Stored only in this browser. Each key is checked before it's saved.</p>
-<label class="f" for="key">TypeSafe API key (scores posts, and picks which of your facts fits a post for angles)</label>
-<input id="key" type="password" autocomplete="off">
-<label class="f" for="orkey">OpenRouter API key (reply angles, briefs, digests and Watch it for me)</label>
+<label class="f" for="orkey">OpenRouter API key (scores posts, and writes reply angles, briefs, digests and Watch it for me)</label>
 <input id="orkey" type="password" autocomplete="off">
+<div class="inline" style="margin-top:16px"><label><input id="useJev" type="checkbox"> Score posts with Jev (optional)</label></div>
+<p class="hint" style="margin-top:4px">Jev is TypeSafe's decision model, made for this kind of yes or no call. With a TypeSafe key, it scores your feed and picks which of your facts fits a post, instead of your OpenRouter key.</p>
+<div id="jevKey" hidden>
+<label class="f" for="key">TypeSafe API key</label>
+<input id="key" type="password" autocomplete="off">
+<p class="hint" style="margin-top:6px" id="jevNote"></p>
+</div>
 <div style="margin-top:10px"><button id="saveKeys">Check and save keys</button> <span class="msg" id="keyMsg"></span></div>
 </section>
 
 <section>
 <h2>What you care about</h2>
-<p class="hint">Jev uses this to decide what's worth your time. Be specific.</p>
+<p class="hint">Sieve uses this to decide what's worth your time. Be specific.</p>
 <label class="f" for="role">I am…</label>
 <input id="role" type="text" placeholder="e.g. a product manager at a fintech startup">
 <label class="f" for="topics">Topics I want to see (one per line, up to 8)</label>
@@ -73,7 +78,7 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 
 <section>
 <h2>Rules</h2>
-<p class="hint">Plain rules, applied after Jev. Matching is case-insensitive on the author line and post text.</p>
+<p class="hint">Plain rules, applied after scoring. Matching is case-insensitive on the author line and post text.</p>
 <label class="f" for="boostWords">Always show posts that mention (one per line)</label>
 <textarea id="boostWords" rows="3" placeholder="e.g. a person's name, your company, a product"></textarea>
 <label class="f" for="muteWords">Never show posts that mention (one per line)</label>
@@ -102,10 +107,10 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <p class="hint" style="margin-top:6px">Also used for technique briefs.</p>
 <label class="f" for="about">My facts for LinkedIn</label>
 <textarea id="about" rows="7"></textarea>
-<p class="hint" style="margin-top:6px">When you ask for angles on LinkedIn or X, these facts and the post go to TypeSafe, so Jev can pick the one fact, if any, that fits. Only that fact goes to the angle model.</p>
+<p class="hint" style="margin-top:6px">When you ask for angles on LinkedIn or X, these facts and the post go to whichever scores your posts (Jev at TypeSafe, or OpenRouter), so it can pick the one fact, if any, that fits. Only that fact goes to the angle model.</p>
 <label class="f" for="redditAbout">My facts for Reddit (no business names or links)</label>
 <textarea id="redditAbout" rows="6"></textarea>
-<p class="hint" style="margin-top:6px">These facts go to TypeSafe with every Reddit post Jev scores, so it can judge whether you could answer. When you ask for reply angles, all of them go to the angle model with the post.</p>
+<p class="hint" style="margin-top:6px">These facts go with every Reddit post that is scored (to Jev at TypeSafe, or to OpenRouter), so it can judge whether you could answer. When you ask for reply angles, all of them go to the angle model with the post.</p>
 </section>
 
 <section>

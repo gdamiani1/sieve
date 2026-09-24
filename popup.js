@@ -14,7 +14,7 @@ async function load() {
   $("maybe").textContent = stats.maybe || 0;
   $("drafts").textContent = stats.drafts || 0;
   $("briefs").textContent = stats.briefs || 0;
-  $("cost").textContent = `$${((stats.cost || 0) + (stats.draftCost || 0)).toFixed(4)}`;
+  $("cost").textContent = `$${((stats.cost || 0) + (stats.scoreCost || 0) + (stats.draftCost || 0)).toFixed(4)}`;
 }
 for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn"]) {
   $(id).onchange = async () => {

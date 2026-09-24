@@ -44,7 +44,7 @@
     ask_failures: "ask about failures and limits", ask_how: "ask how it works", share_result: "share a related result",
     answer_question: "answer their question", disagree: "respectful counterpoint", none: "",
   };
-  const ERRORS = { no_key: "Sieve: add your TypeSafe key in settings", key_rejected: "Sieve: key rejected", no_credit: "Sieve: out of TypeSafe credit" };
+  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key", or_no_credit: "Sieve: out of OpenRouter credit", key_rejected: "Sieve: key rejected", no_credit: "Sieve: out of TypeSafe credit" };
 
   let enabled = true;
   const results = new Map();

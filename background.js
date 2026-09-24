@@ -4,6 +4,7 @@ import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, bui
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
+import { scoreMessages, parseScore } from "./score-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -51,14 +52,73 @@ function stats(change) {
   });
 }
 
+// Which scorer answers: Jev when the person switched it on and saved a TypeSafe key, otherwise their
+// OpenRouter key. `useJev` is unset for everyone who installed before the switch existed, and for them a
+// saved TypeSafe key means on, so nobody who already scores with Jev is moved off it by an update.
+async function scorer() {
+  const { apiKey, orKey, useJev } = await chrome.storage.local.get(["apiKey", "orKey", "useJev"]);
+  const jevOn = useJev ?? Boolean(apiKey);
+  if (jevOn && apiKey) return { jev: apiKey };
+  if (orKey) return { orKey };
+  return {};
+}
+
+// Scoring always uses the default model, not the one chosen for briefs and angles: a feed is hundreds
+// of posts a day, and an expensive briefs model would be billed for every one of them. Measured on the
+// labelled sample (test/compare_scorers.mjs, 24 Sep 2026): 10 of 11 at Jev's own 0.7/0.4 thresholds,
+// the same as Jev, at about 6 US cents per 1,000 posts against Jev's 4.
+const SCORE_MODEL = DEFAULT_MODEL;
+
+// One scoring call through OpenRouter, answering `questions` in Jev's shape (score-prompt.js).
+async function scoreViaOpenRouter(orKey, questions, state) {
+  let res;
+  try {
+    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
+      body: JSON.stringify({ model: SCORE_MODEL, provider: PROVIDER_PREFS, messages: scoreMessages(questions, state), max_tokens: 300, usage: { include: true }, reasoning: { enabled: false }, temperature: 0, response_format: { type: "json_object" } }),
+    });
+  } catch {
+    return { error: "network" };
+  }
+  if (res.status === 401) return { error: "or_key_rejected" };
+  if (res.status === 402) return { error: "or_no_credit" };
+  if (res.status === 429) return { error: "rate_limited" };
+  if (!res.ok) return { error: `http_${res.status}` };
+  const body = await res.json();
+  const cost = body.usage?.cost || 0;
+  try {
+    return { ...parseScore(body.choices?.[0]?.message?.content || "", questions, state), cost };
+  } catch {
+    return { error: "unreadable", cost };
+  }
+}
+
 async function classify(state, platform) {
-  const { apiKey, redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get(["apiKey", "redditAbout"]);
-  if (!apiKey) return { error: "no_key" };
+  const { redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get("redditAbout");
+  const use = await scorer();
+  if (!use.jev && !use.orKey) return { error: "no_key" };
   const prefs = await loadPrefs();
   const reddit = platform === "reddit";
   const questions = reddit ? redditQuestions(prefs) : platform === "youtube" ? youtubeQuestions(prefs) : linkedinQuestions(prefs, platform === "x" ? "X (Twitter)" : "LinkedIn");
   const jevState = reddit ? { ...state, reader_experience: redditAbout } : state;
   const text = [state.author, state.subreddit, state.title, state.body, state.post].filter(Boolean).join("\n");
+  if (!use.jev) {
+    const r = await scoreViaOpenRouter(use.orKey, questions, jevState);
+    if (r.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + r.cost; });
+    if (r.error) return { error: r.error };
+    const out = verdict(r.answers, prefs, platform, text);
+    // Sieve's own check found text aimed at AI tools: parseScore already set "worth" to 0, and this says
+    // why, unless the person's own always-show word put it there.
+    if (r.hostile && out.tier === "low" && !out.reason) out.reason = "text aimed at AI tools";
+    await stats((s) => {
+      s.posts += 1;
+      if (out.tier === "strong") s.strong += 1;
+      else if (out.tier === "maybe") s.maybe += 1;
+    });
+    return out;
+  }
+  const apiKey = use.jev;
   for (let attempt = 0; attempt < 2; attempt++) {
     let res;
     try {
@@ -94,8 +154,17 @@ async function classify(state, platform) {
 // LinkedIn and X: only the fact Jev rates as about this post reaches the angle prompt (see pickFact).
 // If Jev can't be asked, no fact goes: an unrelated fact is worse than none.
 async function relevantFact(post, list) {
-  const { apiKey } = await chrome.storage.local.get("apiKey");
-  if (!apiKey || !list.length) return "";
+  if (!list.length) return "";
+  const use = await scorer();
+  if (!use.jev && !use.orKey) return "";
+  if (!use.jev) {
+    const r = await scoreViaOpenRouter(use.orKey, factQuestions(list), { post });
+    if (r.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + r.cost; });
+    if (r.error) return "";
+    const i = pickFact(r.answers, list.length);
+    return i < 0 ? "" : `- ${list[i]}`;
+  }
+  const apiKey = use.jev;
   try {
     const res = await fetch(API, {
       method: "POST",

@@ -45,11 +45,11 @@
     share_mistake: "warn about a pitfall", none: "",
   };
   const ERRORS = {
-    no_key: "Sieve: add your TypeSafe key in the extension settings",
+    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key", or_no_credit: "Sieve: out of OpenRouter credit",
     key_rejected: "Jev: key rejected",
     no_credit: "Jev: out of credit, check TypeSafe billing",
-    rate_limited: "Jev: rate limited, will retry on next view",
-    network: "Jev: network error",
+    rate_limited: "Sieve: rate limited, will retry on next view",
+    network: "Sieve: network error",
   };
 
   const results = new Map();
@@ -116,7 +116,7 @@
     badge.className = "jev-badge";
     if (r.error) {
       badge.classList.add("jev-error");
-      badge.textContent = ERRORS[r.error] || `Jev: ${r.error}`;
+      badge.textContent = ERRORS[r.error] || `Sieve: ${r.error}`;
       if (r.error === "rate_limited" || r.error === "network") results.delete(info.key);
       wrap.append(badge);
       return;

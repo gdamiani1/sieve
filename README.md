@@ -5,18 +5,21 @@ angles for a reply. For developers, it turns techniques worth trying into briefs
 Codex, Cursor and others) can try in your repo. It never clicks, comments or posts for you, and never installs
 or runs anything: a brief is text you copy.
 
-It is built on [Jev](https://typesafe.ai), TypeSafe's decision model (Sieve is an independent project, not made by TypeSafe): a model that doesn't generate text,
-it picks from answers you define and returns a probability. Jev makes the narrow calls (is this worth
-reading? could I answer this? which of my facts is about this post?), plain code handles the rules, and you do the part that needs judgement.
+Scoring runs on [Jev](https://typesafe.ai), TypeSafe's decision model, when you add a TypeSafe key, or through
+your own OpenRouter key when you don't. (Sieve is an independent project, not made by TypeSafe.) Jev doesn't
+generate text: it picks from answers you define and returns a probability. Without it, your OpenRouter model is
+asked the same questions and answers in the same shape. Either way the scorer makes the narrow calls (is this
+worth reading? could I answer this? which of my facts is about this post?), plain code handles the rules, and
+you do the part that needs judgement.
 
 ## What it does
 
 **LinkedIn feed**
-- Every post that stays on screen for half a second gets a Jev score. 0.7 and up gets a blue bar and a badge
+- Every post that stays on screen for half a second gets a score. 0.7 and up gets a blue bar and a badge
   with the kind of post, the topic and a suggested move. 0.4 to 0.7 gets a light bar. Below 0.4 fades
   (hover to read; can be turned off). Promoted posts are skipped. Reshares include the shared post.
 - **Comment angles**: three one-line ideas (Ask / Push back / Build on it / Your angle), not a comment.
-  You pick one and write it yourself. Before the angles are written, Jev picks which of your facts, if any,
+  You pick one and write it yourself. Before the angles are written, the scorer picks which of your facts, if any,
   is about the post, and only that one reaches the angle model. Technique posts also show a Brief button.
 
 **Reddit** (www and old.reddit)
@@ -26,7 +29,7 @@ reading? could I answer this? which of my facts is about this post?), plain code
 - **Reply angles** (Answer / Ask / Your experience / Watch out). No links, no promotion.
 
 **YouTube**
-- Every video tile you scroll past gets a Jev chip, scored from its title, channel, length and any snippet.
+- Every video tile you scroll past gets a score chip, from its title, channel, length and any snippet.
 - **Watch it for me**: a video model (Gemini 2.5 Flash-Lite via OpenRouter by default) watches the whole
   public video, picture and sound, and returns watch / skim / skip, key points with clickable timestamps,
   the best moment, learnings and claims to check. About 0.2 US cents per minute of video, up to 55 minutes.
@@ -67,12 +70,12 @@ reading? could I answer this? which of my facts is about this post?), plain code
 ## Make it yours
 
 Settings (right-click the icon → Options, or **Settings** in the popup):
-- **What you care about:** one line about who you are and up to 8 topics. Jev scores every post against these,
+- **What you care about:** one line about who you are and up to 8 topics. Every post is scored against these,
   and the badge shows which of your topics a post is about.
 - **Kinds of posts** to show on LinkedIn and X (technique to try, built something, opinions, questions, news,
   promotion, personal) and on Reddit (asking for help, discussions, showcases, rants, news, promotion); YouTube
   has its own list.
-- **Rules** that always win over Jev: words that always show a post (a person, your company) and words that
+- **Rules** that always win over the score: words that always show a post (a person, your company) and words that
   never do (crypto, webinar, "we're hiring").
 - **Scores:** where highlighting starts, what counts as low, and whether low posts fade, hide or stay.
 - **Reddit:** only in the subreddits you list, and your own definition of "still fresh".
@@ -92,24 +95,27 @@ word for word under the idea. Lines that talk about "me" anywhere else are dropp
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
-   - **TypeSafe API key** (for Jev: scoring posts, and picking which of your facts fits a post for angles). Checked against the API before it's saved.
-   - **OpenRouter API key** (for angles, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`.
+   - **OpenRouter API key** (scoring posts, angles, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`, which also always does the scoring: about 6 US cents per 1,000 posts. Checked against the API before it's saved.
+   - **Score posts with Jev** (optional): turn it on and add a **TypeSafe API key**, and Jev scores posts and picks which of your facts fits a post for angles instead, for about 4 US cents per 1,000 posts. If you saved a TypeSafe key before this switch existed, it starts on.
    - **Your facts** for LinkedIn and for Reddit. Only true, first-hand things. Angles can only point to these.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
 
-Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services and nowhere
-else. TypeSafe gets what Jev scores: a post's text (for YouTube, the title, channel, length and any snippet),
-your role and topics, and on Reddit your Reddit facts. When you ask for angles on LinkedIn or X, TypeSafe also
-gets the post's text and your LinkedIn facts, so Jev can pick which fact, if any, fits. OpenRouter gets a post's
-text when you ask for angles (with the one fact Jev picked, if any; on Reddit, your Reddit facts) or a brief
+Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services at most and
+nowhere else. Whichever scores your posts (TypeSafe with Jev on, OpenRouter otherwise) gets what is scored: a
+post's text (for YouTube, the title, channel, length and any snippet), your role and topics, and on Reddit your
+Reddit facts. When you ask for angles on LinkedIn or X, it also gets the post's text and your LinkedIn facts, so
+it can pick which fact, if any, fits. OpenRouter gets a post's
+text when you ask for angles (with the one fact the scorer picked, if any; on Reddit, your Reddit facts) or a brief
 (with your role and topics), your saved posts (except any Sieve left out) when you ask for a digest, and a
 video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
 request to the model you picked.
 
 ## Cost (September 2026 prices)
 
-- Jev scoring: about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
-- Angles: about $0.00005 per request with DeepSeek V4 Flash. On LinkedIn and X, each request also asks Jev
+- Scoring through OpenRouter (the default): roughly 6 US cents per 1,000 posts with DeepSeek V4 Flash, measured on
+  the invented set with `test/compare_scorers.mjs` on 24 Sep 2026.
+- Scoring with Jev (optional): about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
+- Angles: about $0.00005 per request with DeepSeek V4 Flash. On LinkedIn and X, each request also asks the scorer
   which fact fits: the post plus about 140 input tokens per fact, so roughly 1,000 tokens and $0.00004 with
   five facts (estimated from the request's size, not measured). A digest of a day's posts: well under a cent.
 - A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
@@ -119,7 +125,8 @@ request to the model you picked.
 The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/reddit_test.mjs`). Keys come from
 `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY`, or on macOS from Keychain items `typesafe-api-key` / `openrouter-api-key`.
 
-    node test/rules_test.mjs        # the rules on top of Jev (offline, no keys)
+    node test/rules_test.mjs        # the rules on top of the score (offline, no keys)
+    node test/score_test.mjs        # scoring without a TypeSafe key: the prompt, the parser, and which scorer answers (offline)
     node test/watch_parse_test.mjs  # the video answer parser (offline)
     node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
     node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
@@ -142,6 +149,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
     node test/facts_live_test.mjs   # Jev decides which of the reader's facts, if any, reaches the angle prompt (live, uses keys)
+    node test/compare_scorers.mjs   # the invented set scored by Jev and by OpenRouter models side by side, with cost (live, a few cents)
 
 On the invented set, LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
 scored high where it was labelled maybe) and Reddit on 5 of 6 (the shared-inbox question scored 0.52, maybe
@@ -163,8 +171,9 @@ Claude Haiku 4.5) picked DeepSeek: the others invented or mixed up the reader's 
 
 ## Files
 
-- `prefs.js`: default settings, the questions Jev is asked (built from each user's settings) and the rules applied after.
-- `draft.js`: the angle prompts and parser, and the Jev question that picks which fact fits a post.
+- `prefs.js`: default settings, the questions the scorer is asked (built from each user's settings) and the rules applied after.
+- `score-prompt.js`: the same questions as one OpenRouter prompt, and the answer back in Jev's shape, for scoring without a TypeSafe key.
+- `draft.js`: the angle prompts and parser, and the question that picks which fact fits a post.
 - `digest-prompt.js`: which saved posts go into a digest (flagged ones left out), the digest prompt, the Left out note and the final text.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
   `linkedin-post-id.js`: runs in LinkedIn's own page and finds a feed post's id, so briefs link to the post. Reads only.

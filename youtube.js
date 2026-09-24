@@ -46,7 +46,7 @@
     entertainment: "entertainment", promo: "promo",
   };
   const ERRORS = {
-    no_key: "Sieve: add your TypeSafe key in settings",
+    no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key", or_no_credit: "Sieve: out of OpenRouter credit",
     key_rejected: "Sieve: key rejected",
     no_credit: "Sieve: out of TypeSafe credit",
   };
