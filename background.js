@@ -107,7 +107,8 @@ async function classify(state, platform) {
     const r = await scoreViaOpenRouter(use.orKey, questions, jevState);
     if (r.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + r.cost; });
     if (r.error) return { error: r.error };
-    const out = verdict(r.answers, prefs, platform, text);
+    // The badge names who scored, so a post Jev never saw is never labelled "Jev".
+    const out = { ...verdict(r.answers, prefs, platform, text), scorer: "openrouter" };
     // Sieve's own check found text aimed at AI tools: parseScore already set "worth" to 0, and this says
     // why, unless the person's own always-show word put it there.
     if (r.hostile && out.tier === "low" && !out.reason) out.reason = "text aimed at AI tools";
@@ -139,7 +140,7 @@ async function classify(state, platform) {
     if (res.status === 402 || res.status === 403) return { error: "no_credit" };
     if (!res.ok) return { error: `http_${res.status}` };
     const body = await res.json();
-    const out = verdict(body.answers, prefs, platform, text);
+    const out = { ...verdict(body.answers, prefs, platform, text), scorer: "jev" };
     await stats((s) => {
       s.posts += 1;
       s.tokens += body.usage?.input_tokens || 0;

@@ -122,13 +122,21 @@ const went = () => { const c = calls.at(-1); return c.url.includes("typesafe") ?
 // Someone who saved a TypeSafe key before the switch existed keeps Jev, with no setting touched.
 reset({ apiKey: "ts-stub", orKey: "or-stub" });
 calls.length = 0;
-assert.equal((await classify()).tier, "strong");
+{
+  const r = await classify();
+  assert.equal(r.tier, "strong");
+  assert.equal(r.scorer, "jev", "the badge can say Jev");
+}
 assert.equal(went(), "jev");
 
 // The same person turning the switch off moves to OpenRouter, and the TypeSafe key is kept, unused.
 reset({ apiKey: "ts-stub", orKey: "or-stub", useJev: false });
 calls.length = 0;
-assert.equal((await classify()).tier, "low");
+{
+  const r = await classify();
+  assert.equal(r.tier, "low");
+  assert.equal(r.scorer, "openrouter", "a post Jev never saw is never labelled Jev");
+}
 assert.equal(went(), "openrouter");
 assert.equal(calls.at(-1).auth, "Bearer or-stub");
 assert.equal(store.apiKey, "ts-stub");

@@ -114,7 +114,7 @@
     if (r.tier === "low" && r.lowMode === "fade") el.classList.add("jev-low");
     if (r.tier === "low" && r.lowMode === "hide") { el.classList.add("jev-hidden"); return; }
     const score = document.createElement("span");
-    score.textContent = `Jev ${r.worth.toFixed(2)}${LABEL[r.kind] ? " · " + LABEL[r.kind] : ""}`;
+    score.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)}${LABEL[r.kind] ? " · " + LABEL[r.kind] : ""}`;
     score.title = [r.topic, r.reason].filter(Boolean).join(" · ") || "Jev's guess from the title, channel and length";
     chip.append(score);
     if (r.tier !== "low") chip.append(watchButton(v));

@@ -148,7 +148,7 @@
       else if (r.lowMode === "hide") card.classList.add("jev-hidden");
       const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
       const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
-      badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
+      badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
       badge.title = "Jev's read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.";
       if (tier !== "low") {
         const actions = document.createElement("span");

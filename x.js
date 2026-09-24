@@ -99,7 +99,7 @@
     if (r.tier !== "low") { post.classList.add(`sieve-x-${r.tier}`); wrap.classList.add(`jev-${r.tier}`); }
     const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
     const angle = r.tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
-    badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
+    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
     if (r.tier === "low") { badge.classList.add("jev-quiet"); wrap.append(badge); return; }
     const actions = document.createElement("span");
     actions.className = "jev-actions";

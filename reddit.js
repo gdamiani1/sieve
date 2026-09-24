@@ -131,7 +131,7 @@
     const fresh = info.fresh ? "still fresh" : info.ageHours !== null ? "probably too late" : "";
     const bits = [LABEL[r.kind], r.topic, age && `${age}, ${info.comments} comments`, tier !== "low" && fresh, r.reason].filter(Boolean).join(" · ");
     const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
-    badge.textContent = `Jev ${r.worth.toFixed(2)} · ${bits}${angle}`;
+    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
     badge.title = "Jev's read: could you answer this from your own experience? It writes nothing. Replying is up to you.";
     if (tier === "low") { if (r.lowMode === "fade") badge.classList.add("jev-quiet"); wrap.append(badge); return; }
     const btn = document.createElement("button");
