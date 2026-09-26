@@ -175,4 +175,23 @@ const player = (id, d) => ({ ok: true, json: async () => ({ playabilityStatus: {
   assert.equal(n, 7, "asked again after the rest");
 }
 
+// Requests already queued when the breaker trips are answered at once too, not sent.
+{
+  let n = 0;
+  const describe = T.describer({ fetch: (url, init) => { n++; return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted")))); }, version: () => "v", timeoutMs: 20, parallel: 1 });
+  const out = await Promise.all(Array.from({ length: 6 }, (_, i) => describe(ID(70 + i))));
+  assert.deepEqual(out, Array(6).fill(""));
+  assert.equal(n, 3, "only the three that tripped it were sent");
+}
+
+// A removed or private video is an answer, not a failure: it's remembered and never trips the breaker.
+{
+  let n = 0;
+  const describe = T.describer({ fetch: async () => { n++; return { ok: true, json: async () => ({ playabilityStatus: { status: "ERROR", reason: "This video isn't available anymore" } }) }; }, version: () => "v", parallel: 1 });
+  for (let i = 0; i < 5; i++) assert.equal(await describe(ID(80 + i)), "");
+  assert.equal(n, 5, "five removed videos don't switch descriptions off");
+  await describe(ID(80));
+  assert.equal(n, 5, "and are remembered");
+}
+
 console.log("youtube text: all offline checks passed");

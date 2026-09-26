@@ -72,6 +72,8 @@
         });
         if (!res.ok) return null;
         const body = await res.json();
+        // A removed or private video is an answer (no description), not a failure.
+        if (!body?.videoDetails && body?.playabilityStatus?.status === "ERROR") return "";
         // The answer must be about the video asked for: anything else is a changed endpoint, not data.
         return body?.videoDetails?.videoId === id ? descriptionOf(body) : null;
       } catch {
@@ -87,7 +89,9 @@
       if (now() < restUntil) return Promise.resolve("");
       // A failure (null) answers "" but isn't remembered, so the video can be asked for again later.
       const p = new Promise((resolve) => {
-        waiting.push(() => ask(id).then((d) => {
+        // Resting when its turn comes (it was queued before the failures): answer at once, not remembered.
+        waiting.push(() => (now() < restUntil ? Promise.resolve(undefined) : ask(id)).then((d) => {
+          if (d === undefined) { if (known.get(id) === p) known.delete(id); return resolve(""); }
           if (d === null && known.get(id) === p) known.delete(id);
           failures = d === null ? failures + 1 : 0;
           if (failures >= trips) { failures = 0; restUntil = now() + restMs; }

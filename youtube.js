@@ -229,7 +229,7 @@
     const stale = () => {
       if (asOf === settingsChanged) return false;
       pending.delete(key);
-      tiles().filter((t) => read(t)?.key === key).forEach(check);
+      tiles().filter((t) => visible.has(t) && read(t)?.key === key).forEach(check);
       return true;
     };
     // A tile that shows nothing beyond its title (home, the sidebar) gets the start of the description,
@@ -253,8 +253,10 @@
   }
 
   const timers = new WeakMap();
+  const visible = new WeakSet(); // tiles on screen now, so a rescore after a settings change spends nothing on others
   const seen = new IntersectionObserver((entries) => {
     for (const e of entries) {
+      if (e.isIntersecting) visible.add(e.target); else visible.delete(e.target);
       if (e.isIntersecting) timers.set(e.target, setTimeout(() => check(e.target), DWELL_MS));
       else clearTimeout(timers.get(e.target));
     }
