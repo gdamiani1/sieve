@@ -66,7 +66,7 @@ export function pickFact(answers, count, min = FACT_MIN) {
 
 export function buildMessages({ author, post, angle }, about) {
   const list = facts(about).map((f, i) => `F${i + 1}: ${f}`).join("\n");
-  const system = `You suggest angles for a LinkedIn comment. You do NOT write the comment. The commenter ("me") writes it himself.
+  const system = `You suggest angles for a LinkedIn comment. You do NOT write the comment. The commenter ("me") writes it themselves.
 
 Two sources, never mix them up:
 1. THE POST: written by the post author. The angles are about it.
@@ -102,7 +102,7 @@ The scorer's suggested move, as one of the three if it fits: ${move}`;
 // Returns [{label, text, fact}] where fact is the verbatim fact text for "Your angle" lines.
 export function buildRedditMessages({ author, post, angle }, about) {
   const list = facts(about).map((f, i) => `F${i + 1}: ${f}`).join("\n");
-  const system = `You suggest angles for a Reddit reply. You do NOT write the reply. The replier ("me") writes it himself.
+  const system = `You suggest angles for a Reddit reply. You do NOT write the reply. The replier ("me") writes it themselves.
 
 Two sources, never mix them up:
 1. THE POST: written by the poster, usually asking for help.
