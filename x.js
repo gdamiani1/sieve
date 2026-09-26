@@ -67,6 +67,10 @@
 
   // The post's own link, from its timestamp (the way X has linked a post for years); "" when it has none.
   const permalink = (post) => post.querySelector('a[href*="/status/"] time')?.parentElement?.getAttribute("href") || "";
+  // The status ids of every post link in the post, with each link, in page order.
+  const statusLinks = (post) => [...post.querySelectorAll('a[href*="/status/"]')]
+    .map((a) => { const href = a.getAttribute("href") || ""; return { href, id: href.match(/\/status\/(\d+)/)?.[1] }; })
+    .filter((l) => l.id);
 
   // Asks x-post-data.js (in X's own page) for this post's summary, checks it, and keeps it. Null when
   // there is none or it fails a check. X is a single-page app: a new post's page, or a new address off a
@@ -85,7 +89,7 @@
       // The reader walks X's React data up from the post, so it could land on a container's post instead
       // of this one. When the post links to any post, one of those links has to be the record's. Not just
       // the first link: on a post's own page X puts its timestamp at the bottom, after any quoted post's.
-      const ids = [...post.querySelectorAll('a[href*="/status/"]')].map((a) => (a.getAttribute("href") || "").match(/\/status\/(\d+)/)?.[1]).filter(Boolean);
+      const ids = statusLinks(post).map((l) => l.id);
       if (ids.length && !ids.includes(rec.id)) return null;
       records.delete(rec.id); // put back at the end, so the cap below drops the posts read longest ago
       records.set(rec.id, rec);
@@ -278,9 +282,11 @@
         if (!panel.dataset.hasBrief) body.textContent = "";
         return;
       }
-      // A brief kept from an earlier, longer read of the thread comes back as it was: say how much it
-      // read, rather than the note about what was read this time.
-      if (Number.isInteger(b.threadPosts) && b.threadPosts >= 2) panel.querySelector(".jev-draft-note").textContent = `A brief for your coding agent. Read ${b.threadPosts} posts of this thread.`;
+      // A brief kept from an earlier, longer read of the thread comes back as it was: when it read a
+      // different number of posts than this request sent, say how much it read instead of the note about
+      // this request. When the numbers match, the request's note (and its hints) still holds.
+      const sentPosts = request.post.posts?.length || 1;
+      if (Number.isInteger(b.threadPosts) && b.threadPosts >= 2 && b.threadPosts !== sentPosts) panel.querySelector(".jev-draft-note").textContent = `A brief for your coding agent. Read ${b.threadPosts} posts of this thread.`;
       globalThis.SieveBriefPanel.fill(body, b);
       panel.dataset.hasBrief = "1";
       msg.textContent = "Brief ready.";
@@ -295,7 +301,11 @@
     if (!p) { if (rec?.video && !isAd(post, textOf(post))) renderWatchOnly(post, rec); return; }
     post.dataset.jevKey = p.key;
     states.set(p.key, p.state);
-    urls.set(p.key, p.url);
+    // With a record, the post's own link is the one with the record's id: the first timestamp can be a
+    // quoted post's (X puts a focal post's own timestamp at the bottom).
+    // Cut after the id: a picture's link (/status/<id>/photo/1) carries the id too.
+    const own = rec && statusLinks(post).find((l) => l.id === rec.id)?.href.match(/^\/[A-Za-z0-9_]{1,15}\/status\/\d+/)?.[0];
+    urls.set(p.key, own ? `https://x.com${own}` : p.url);
     if (results.has(p.key)) {
       const w = post.previousElementSibling;
       // Drawn already, unless the post's video record arrived after it was scored.

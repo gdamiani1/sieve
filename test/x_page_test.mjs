@@ -454,6 +454,50 @@ const todays = (a, text) => ({ key: a.dataset.jevKey, platform: "x", authorName:
   assert.equal(u.wrapOf(b).querySelector(".jev-draft-note").textContent, "A brief for your coding agent.");
 }
 
+// 13b. A fresh brief of the same three posts this request sent keeps the request's note and its hint.
+{
+  const summaries = new Map();
+  const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG })); return a; };
+  const B = (d) => { const b = article(d, { handle: "alice", id: ID_B, text: "2/ and cache it." }); summaries.set(b, summary({ id: ID_B, author: "alice", replyTo: ID_A, replyToAuthor: "alice", text: "2/ and cache it." })); return b; };
+  const C = (d) => { const c = article(d, { handle: "alice", id: ID_C, text: "3/ more below." }); summaries.set(c, summary({ id: ID_C, author: "alice", replyTo: ID_B, replyToAuthor: "alice", text: "3/ more below.", hasReplies: true })); return c; };
+  const t = load({ path: `/alice/status/${ID_A}`, posts: [A, B, C], summaries, brief: { what: "Evals in CI.", threadPosts: 3 } });
+  const [a] = t.all();
+  t.see(a);
+  t.button(a, /^Brief$/).click();
+  assert.equal(lastBrief(t.sent).post.posts.length, 3);
+  assert.equal(t.wrapOf(a).querySelector(".jev-draft-note").textContent, "A brief for your coding agent. Read 3 posts by @alice. If the thread goes on below, scroll down and press Write it again.");
+}
+
+// 13c. The saved link is the post's own, not a quoted post's that comes first in the post.
+{
+  const summaries = new Map();
+  const P = (d) => {
+    const a = article(d, { handle: "alice", id: ID_A, text: LONG });
+    const q = d.createElement("a");
+    q.setAttribute("href", `/bob/status/${ID_C}`);
+    q.append(d.createElement("time"));
+    a.childNodes.splice(0, 0, q);
+    q.parentNode = a;
+    const pic = d.createElement("a"); // a picture's link carries the post's id too
+    pic.setAttribute("href", `/alice/status/${ID_A}/photo/1`);
+    a.childNodes.splice(0, 0, pic);
+    pic.parentNode = a;
+    summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG }));
+    return a;
+  };
+  const t = load({ path: `/alice/status/${ID_A}`, posts: [P], summaries });
+  const [a] = t.all();
+  t.see(a);
+  t.button(a, /^Brief$/).click();
+  assert.equal(lastBrief(t.sent).post.authorUrl, `https://x.com/alice/status/${ID_A}`);
+  // Without a record, the first timestamp's link, as before.
+  const u = load({ path: `/alice/status/${ID_A}`, posts: [P] });
+  const [b] = u.all();
+  u.see(b);
+  u.button(b, /^Brief$/).click();
+  assert.equal(lastBrief(u.sent).post.authorUrl, `https://x.com/bob/status/${ID_C}`);
+}
+
 // 14. If building the thread request throws, Brief still sends today's post.
 {
   const summaries = new Map();
