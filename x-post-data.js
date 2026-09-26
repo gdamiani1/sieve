@@ -17,7 +17,7 @@
   const https = (u, host) => {
     try {
       const x = new URL(str(u));
-      return x.protocol === "https:" && x.hostname === host ? x.href : "";
+      return x.protocol === "https:" && x.hostname === host && !x.username && !x.password ? x.href : "";
     } catch {
       return "";
     }
@@ -42,8 +42,12 @@
   // reply's leading @mentions go (displayStart). Links are replaced by their recorded position, counted
   // in code points, because one t.co code can be a prefix of another. Entities are decoded only between
   // links, so an "&amp;" inside an expanded link stays as X sent it. A link whose position doesn't point
-  // at its own short form falls back to a plain search and replace.
-  function words(raw, entities, displayStart) {
+  // at its own short form falls back to a plain search and replace, longest short form first, so one
+  // t.co code that's a prefix of another doesn't leave a leftover fragment of itself behind.
+  // `positional`: false when the entities' own indices don't describe this text at all (a note_tweet
+  // whose tweet carries no entity_set of its own: its positions are for full_text, not the note), so
+  // every link is search-and-replaced rather than checked by index.
+  function words(raw, entities, displayStart, positional = true) {
     const cps = Array.from(raw);
     const urls = Array.isArray(entities?.urls) ? entities.urls : [];
     const media = Array.isArray(entities?.media) ? entities.media : [];
@@ -59,15 +63,15 @@
     for (const u of urls) {
       const short = str(u?.url), long = str(u?.expanded_url);
       if (!short || !long) continue;
-      const r = range(u.indices);
-      if (points(r, short)) reps.push({ r, text: long });
+      const r = positional ? range(u.indices) : null;
+      if (positional && points(r, short)) reps.push({ r, text: long });
       else leftover.push([short, long]);
     }
     for (const m of media) {
       const short = str(m?.url);
       if (!short) continue;
-      const r = range(m.indices);
-      if (points(r, short)) reps.push({ r, text: "" });
+      const r = positional ? range(m.indices) : null;
+      if (positional && points(r, short)) reps.push({ r, text: "" });
       else leftover.push([short, ""]);
     }
     reps.sort((a, b) => a.r[0] - b.r[0]);
@@ -78,16 +82,19 @@
       cursor = r[1];
     }
     out += decode(cps.slice(cursor).join(""));
-    for (const [short, long] of leftover) out = out.split(short).join(long);
+    for (const [short, long] of leftover.slice().sort((a, b) => b[0].length - a[0].length)) out = out.split(short).join(long);
     return out.trim();
   }
 
-  // The whole text: a long post's note_tweet when X sent one, else full_text.
+  // The whole text: a long post's note_tweet when X sent one, else full_text. A note's own entity_set has
+  // positions that describe the note's text; without one, the tweet's own entities.urls/media are the
+  // only links known, but their positions are for full_text, so they're applied by search and replace only.
   function textOf(t) {
     const note = t.note_tweet;
     const noteText = str(note?.text) || str(note?.note_tweet_results?.result?.text);
+    const entitySet = note?.entity_set || note?.note_tweet_results?.result?.entity_set;
     const text = noteText
-      ? words(noteText, note.entity_set || note.note_tweet_results?.result?.entity_set, 0)
+      ? (entitySet ? words(noteText, entitySet, 0) : words(noteText, t.entities, 0, false))
       : words(str(t.full_text), t.entities, Array.isArray(t.display_text_range) ? t.display_text_range[0] : 0);
     return Array.from(text).slice(0, MAX_TEXT).join("");
   }
@@ -107,11 +114,16 @@
     const lowest = [...known].sort((a, b) => a.bitrate - b.bitrate)[0];
     const pick = under || lowest || mp4s[0];
     if (!pick) return null;
-    const ms = m.video_info?.duration_millis;
-    return typeof ms === "number" && ms > 0 ? { mp4: pick.url, seconds: ms / 1000 } : { mp4: pick.url };
+    // X sends duration_millis as a number, but sometimes as a numeric string; either way, a length.
+    const ms = Number(m.video_info?.duration_millis);
+    return Number.isFinite(ms) && ms > 0 ? { mp4: pick.url, seconds: ms / 1000 } : { mp4: pick.url };
   }
 
   function record(t) {
+    // A repost is X's own wrapper around the original: read the original, not the wrapper, so the id,
+    // author, text and media are the post that was actually reposted, not "RT @orig: ..." with no media.
+    const rt = t.retweeted_status;
+    if (rt && typeof rt === "object" && ID.test(str(rt.id_str))) t = rt;
     if (!ID.test(t.id_str)) return null;
     const rec = { id: t.id_str };
     const author = authorOf(t);
@@ -122,7 +134,10 @@
     const q = t.quoted_status;
     if (q && typeof q === "object" && q !== t) {
       const qt = textOf(q);
-      if (qt) rec.quoted = { author: authorOf(q), text: qt };
+      if (qt) {
+        const qa = authorOf(q);
+        rec.quoted = qa ? { author: qa, text: qt } : { text: qt };
+      }
     }
     const media = Array.isArray(t.extended_entities?.media) ? t.extended_entities.media : Array.isArray(t.entities?.media) ? t.entities.media : [];
     const photos = media.filter((m) => m?.type === "photo").map((m) => https(m.media_url_https, "pbs.twimg.com")).filter(Boolean).slice(0, MAX_PHOTOS);

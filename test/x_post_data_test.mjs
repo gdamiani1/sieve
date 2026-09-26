@@ -54,6 +54,15 @@ const base = {
   assert.equal(r.hasReplies, true);
 }
 
+// A long post whose note_tweet carries no entity_set: the note's own t.co links have no positions that
+// mean anything in the note's text (the tweet's entities are positioned in full_text, not the note), so
+// they're only ever applied as plain search and replace, never by index.
+{
+  const noEntitySet = { ...base, full_text: "short", entities: { urls: [{ url: "https://t.co/n1", expanded_url: "https://git-scm.com/docs/git-worktree", indices: [0, 1] }] }, note_tweet: { text: "See https://t.co/n1 for more." } };
+  const r = ask(article(noEntitySet));
+  assert.equal(r.text, "See https://git-scm.com/docs/git-worktree for more.");
+}
+
 // full_text: links expanded by position, the post's own media link dropped, entities decoded.
 {
   const r = ask(article(base));
@@ -80,6 +89,16 @@ const base = {
   assert.equal(r.text, "go https://b.dev/");
 }
 
+// Two fallback links where one short code is a prefix of the other: the longer one is replaced first,
+// so it isn't left holding a leftover fragment of its own short code after the shorter one already ran.
+{
+  const r = ask(article({ ...base, full_text: "go https://t.co/abc and https://t.co/ab", entities: { urls: [
+    { url: "https://t.co/ab", expanded_url: "https://short.dev/", indices: [0, 1] },
+    { url: "https://t.co/abc", expanded_url: "https://long.dev/", indices: [0, 1] },
+  ] }, display_text_range: [0, 40] }));
+  assert.equal(r.text, "go https://long.dev/ and https://short.dev/");
+}
+
 // Photos, in order, pbs.twimg.com only; at most 10.
 {
   const media = [
@@ -90,6 +109,12 @@ const base = {
   assert.deepEqual(ask(article({ ...base, extended_entities: { media } })).photos, ["https://pbs.twimg.com/media/A.jpg", "https://pbs.twimg.com/media/C.jpg"]);
   const many = Array.from({ length: 14 }, (_, i) => ({ type: "photo", media_url_https: `https://pbs.twimg.com/media/P${i}.jpg` }));
   assert.equal(ask(article({ ...base, extended_entities: { media: many } })).photos.length, 10);
+  // A photo can only come from entities.media, with no extended_entities at all.
+  const onlyEntities = ask(article({ ...base, entities: { ...base.entities, media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/D.jpg" }] } }));
+  assert.deepEqual(onlyEntities.photos, ["https://pbs.twimg.com/media/D.jpg"]);
+  // A picture link with credentials is refused, the same as the checker on the other side (x-thread.js).
+  const creds = ask(article({ ...base, extended_entities: { media: [{ type: "photo", media_url_https: "https://user:pw@pbs.twimg.com/media/E.jpg" }] } }));
+  assert.equal(creds.photos, undefined);
 }
 
 // Video: the highest mp4 at or under 2.2 Mbps; the HLS playlist never; seconds from duration_millis.
@@ -112,12 +137,31 @@ const base = {
   // An mp4 on another host is not a video Sieve sends.
   const odd = ask(article({ ...base, extended_entities: { media: [{ type: "video", video_info: { variants: [{ content_type: "video/mp4", bitrate: 900000, url: "https://cdn.example/v.mp4" }] } }] } }));
   assert.equal(odd.video, undefined);
+  // duration_millis sent as a numeric string still gives a length.
+  const strMs = ask(article({ ...base, extended_entities: { media: [{ type: "video", video_info: { duration_millis: "121633", variants: [v(632000, "s")] } }] } }));
+  assert.equal(strMs.video.seconds, 121.633);
 }
 
 // A quoted post: its author and words, same text rules.
 {
   const r = ask(article({ ...base, quoted_status: { id_str: "1", user: { screen_name: "karpathy" }, full_text: "vibe coding &amp; more", entities: {}, display_text_range: [0, 22] } }));
   assert.deepEqual(r.quoted, { author: "karpathy", text: "vibe coding & more" });
+  // A quoted post with no author: no "author" key at all, rather than an empty string.
+  const noAuthor = ask(article({ ...base, quoted_status: { id_str: "1", user: {}, full_text: "anonymous quote", entities: {}, display_text_range: [0, 16] } }));
+  assert.deepEqual(noAuthor.quoted, { text: "anonymous quote" });
+}
+
+// A repost (retweeted_status): the record is the original post, not X's reposting wrapper.
+{
+  const wrapper = { id_str: "5", user: { screen_name: "retweeter" }, full_text: "RT @orig: Long…", entities: {}, display_text_range: [0, 15], retweeted_status: {
+    id_str: "4", user: { screen_name: "orig" }, full_text: "full", entities: {}, display_text_range: [0, 4],
+    extended_entities: { media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/A.jpg" }] },
+  } };
+  const r = ask(article(wrapper));
+  assert.equal(r.id, "4");
+  assert.equal(r.author, "orig");
+  assert.equal(r.text, "full");
+  assert.deepEqual(r.photos, ["https://pbs.twimg.com/media/A.jpg"]);
 }
 
 // startsThread only when self_thread names the post itself.
@@ -138,11 +182,11 @@ assert.equal(ask(article({ ...base, user: { legacy: { screen_name: "swyx" } } })
   assert.equal(ask(new Element()), null, "no React data");
 }
 
-// Too big to be a real post: refused, not cut.
+// Too big to be a real post: the text is cut to 25,000 characters, not refused.
 {
   const huge = "x".repeat(70000);
   const r = ask(article({ ...base, full_text: huge, entities: {}, display_text_range: [0, 70000] }));
-  assert.ok(r === null || r.text.length <= 25000, "text is cut to 25,000 characters, or the record is refused");
+  assert.equal(r.text.length, 25000, "text is cut to exactly 25,000 characters");
 }
 
 // A throwing getter, a loop, and a non-element target never throw.
