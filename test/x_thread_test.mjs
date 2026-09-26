@@ -151,11 +151,35 @@ const baseRec = { key: "12345", platform: "x", authorName: "Boris Cherny", autho
   assert.equal(X.briefRequest(baseRec, m, "101", { feed: false }).note, "The thread starts above: scroll up and press Write it again.");
 }
 {
+  // In the feed, scrolling never loads the parent either, so a missing start says to open the post, not
+  // to scroll up. Both a single post and a 2-post group.
+  const single = map(rec("101", "bcherny", "100", { replyToAuthor: "bcherny" }));
+  assert.equal(X.briefRequest(baseRec, single, "101", { feed: true }).note, "Open the post to brief the whole thread.");
+  const group = map(
+    rec("101", "bcherny", "100", { replyToAuthor: "bcherny", text: "1. Parallel" }),
+    rec("102", "bcherny", "101", { text: "2. Plan mode" }),
+  );
+  const r = X.briefRequest(baseRec, group, "101", { feed: true });
+  assert.equal(r.note, "Read 2 posts by @bcherny. Open the post to brief the whole thread.");
+  assert.equal(r.post.postUrl, undefined);
+}
+{
   // At the 50-post cap, threadOf won't add any more posts even if the last one has replies, so the note
   // says so instead of suggesting a scroll that can't extend it.
   const long = Array.from({ length: 60 }, (_, i) => rec(String(2000 + i), "a", i ? String(1999 + i) : undefined, i === 49 ? { hasReplies: true } : {}));
   const r = X.briefRequest(baseRec, map(...long), "2000", { feed: false });
   assert.equal(r.note, "Read 50 posts by @a. Sieve reads at most 50 posts of a thread.");
+}
+{
+  // The walk can also hit the cap with the first read post's own parent already on the page (a 60-post
+  // thread, clicking post 55): replyToAuthor matches, but the parent IS in the map, just not part of the
+  // 50 posts threadOf kept. That isn't a truncated start: the cap sentence is the right one, not a scroll
+  // that won't help, and postUrl still stays off since this post isn't really the thread's first either.
+  const chain = Array.from({ length: 60 }, (_, i) => rec(String(2000 + i), "a", i ? String(1999 + i) : undefined, i ? { replyToAuthor: "a" } : {}));
+  const r = X.briefRequest(baseRec, map(...chain), "2054", { feed: false });
+  assert.equal(r.post.posts.length, 50);
+  assert.equal(r.note, "Read 50 posts by @a. Sieve reads at most 50 posts of a thread.");
+  assert.equal(r.post.postUrl, undefined);
 }
 {
   // On a post's page, before the replies have loaded.

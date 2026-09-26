@@ -107,16 +107,24 @@
   const postText = (r) => [r.text, r.quoted ? `[quoted post] ${r.quoted.author ? `@${r.quoted.author}: ` : ""}${r.quoted.text}` : ""].filter(Boolean).join("\n\n");
 
   // True when the earliest post read replies to another post by the same author (X says so on the post
-  // itself, via replyToAuthor) but that parent post wasn't read on this page: the visible fragment isn't
-  // really the thread's start, so neither the note nor the link should claim it is.
-  const truncatedStart = (first) => !!(first.replyTo && first.replyToAuthor && first.replyToAuthor === first.author);
+  // itself, via replyToAuthor): a same-author parent, read or not, means this post isn't really the
+  // thread's start, so its link is never the thread's link.
+  const sameAuthorParent = (first) => !!(first.replyTo && first.replyToAuthor && first.replyToAuthor === first.author);
 
-  function note(thread, feed) {
+  // Of that, only a same-author parent that wasn't read on this page is worth a note: the visible
+  // fragment goes missing above and scrolling (or opening the post) would fetch it. The walk can also
+  // stop one short of a same-author parent at the 50-post cap (a long thread, opened partway through);
+  // there the parent WAS read, it's just not among the 50 posts kept, so this stays false and the cap
+  // sentence below is the one that fires instead.
+  const truncatedStart = (records, first) => sameAuthorParent(first) && !records.has(first.replyTo);
+
+  function note(thread, feed, truncated) {
     const parts = [];
     const first = thread[0], last = thread[thread.length - 1];
     if (thread.length >= 2) parts.push(`Read ${thread.length} posts by @${first.author}.`);
-    if (truncatedStart(first)) {
-      parts.push("The thread starts above: scroll up and press Write it again.");
+    if (truncated) {
+      // In the feed, scrolling never loads the parent either, so pointing at a scroll wouldn't help.
+      parts.push(feed ? "Open the post to brief the whole thread." : "The thread starts above: scroll up and press Write it again.");
     } else if (thread.length >= MAX_THREAD) {
       // threadOf stops adding posts at the cap either way, so a scroll (or opening the post) can't
       // bring in more; say so instead of a hint that would go nowhere.
@@ -148,15 +156,16 @@
   function briefRequest(base, records, id, { feed = false } = {}) {
     const thread = id ? threadOf(records, id) : [];
     if (!thread.length) return { post: base, note: "" };
+    const truncated = truncatedStart(records, thread[0]);
     const photos = thread.flatMap((r) => r.photos);
     const joined = thread.map(postText).filter(Boolean).join("\n\n");
     const post = { ...base, text: joined || base.text, photos: photos.slice(0, MAX_SENT_PHOTOS), photoCount: photos.length };
     if (thread.length >= 2) {
       post.posts = thread.map((r) => (r.quoted ? { text: r.text, quoted: { author: r.quoted.author, text: r.quoted.text } } : { text: r.text }));
       // Not when the earliest post read isn't really the thread's start: its link isn't the thread's link.
-      if (thread[0].author && !truncatedStart(thread[0])) post.postUrl = `https://x.com/${thread[0].author}/status/${thread[0].id}`;
+      if (thread[0].author && !sameAuthorParent(thread[0])) post.postUrl = `https://x.com/${thread[0].author}/status/${thread[0].id}`;
     }
-    return { post, note: note(thread, feed) };
+    return { post, note: note(thread, feed, truncated) };
   }
 
   // A post's first non-blank line, cut to `max` characters with "..." (brief.js's firstLine, which a
