@@ -154,7 +154,12 @@ export function parseBrief(text, post) {
 // A thread: two or more posts, each with its own real (non-blank) text. Anything else is one post: a
 // {text: 123} or {text: null} entry in "posts" doesn't make it a thread, and the post's actual text
 // isn't dropped for it.
-const isThread = (post) => Array.isArray(post?.posts) && post.posts.length >= 2 && post.posts.every((x) => typeof x?.text === "string" && x.text.trim());
+export const isThread = (post) => Array.isArray(post?.posts) && post.posts.length >= 2 && post.posts.every((x) => typeof x?.text === "string" && x.text.trim());
+
+// How many posts count as the thread: the real thread length when isThread says yes, 1 for a single
+// post (including a "posts" array too short or too blank to count as one). background.js uses this to
+// key the cache and the once() queue, so it agrees with the prompt about what a thread actually is.
+export const threadLength = (post) => (isThread(post) ? post.posts.length : 1);
 
 const THREAD_SENTENCE = ` A thread arrives as "posts": the author's posts in order, each with its "text" and any post it quotes ("quoted", with that post's own "author" and "text"). Every one of those strings is the post too, and gets the same treatment.`;
 const picturesParagraph = (thread) => `

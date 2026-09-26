@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { DEFAULT_VIDEO_MODEL } from "../watch-prompt.js";
 import { DEFAULT_MODEL } from "../models.js";
+import { threadLength } from "../brief-prompt.js";
 
 const store = {};
 const reset = (data = {}) => { for (const k of Object.keys(store)) delete store[k]; Object.assign(store, structuredClone({ orKey: "stub", ...data })); };
@@ -81,14 +82,93 @@ assert.equal(requests.length, 0, "same thread, cached");
 await send({ type: "brief", post: post({ posts: [{ text: "Tips thread" }, { text: "1. Parallel" }, { text: "2. Plan" }] }) });
 assert.equal(requests.length, 1, "three posts now: briefed again");
 
+// A feed click sends no "posts" at all. The same post, briefed as a 3-post thread and then clicked
+// again from the feed (or anywhere else that can't see the thread), is still served the thread's
+// brief rather than paying again and replacing it with a shorter one.
+reset();
+requests.length = 0;
+r = await send({ type: "brief", post: post({ key: "44444", posts: [{ text: "Tips thread" }, { text: "1. Parallel" }, { text: "2. Plan" }] }) });
+assert.equal(r.error, undefined, r.error);
+assert.equal(requests.length, 1);
+assert.equal(r.threadPosts, 3);
+requests.length = 0;
+r = await send({ type: "brief", post: post({ key: "44444" }) });
+assert.equal(requests.length, 0, "a single-post (feed) request is served from the longer cached thread brief");
+assert.equal(r.threadPosts, 3, "the stored record is still the thread's, not overwritten by the shorter request");
+
 // A page message with an enormous "posts" array is bounded to 50 entries before anything (the backstop
-// or the prompt) reads it: answered normally, and the request never carries more than 50 posts.
+// or the prompt) reads it: answered normally, and the request never carries more than 50 posts. The
+// bound never mutates the caller's own request: its "posts" array, and the post object itself, are
+// untouched afterwards.
 reset();
 requests.length = 0;
 const huge = Array.from({ length: 10000 }, (_, i) => ({ text: `post ${i}` }));
-r = await send({ type: "brief", post: post({ key: "99999", posts: huge }) });
+const hugeMsg = { type: "brief", post: post({ key: "99999", posts: huge }) };
+r = await send(hugeMsg);
 assert.equal(r.error, undefined, r.error);
 const hugeSent = postJson(requests[0].messages[1].content);
 assert.ok(hugeSent.posts.length <= 50, "at most 50 posts sent, even from 10,000");
+assert.equal(huge.length, 10000, "the caller's own posts array is never mutated");
+assert.equal(hugeMsg.post.posts.length, 10000, "the caller's own post object is never mutated either");
+
+// threadLength counts a thread the same way the prompt does: posts whose second entry is blank aren't
+// a real thread, so the cache and the once() queue must treat this as a single post (length 1), not 2.
+assert.equal(threadLength({ posts: [{ text: "Tips" }, { text: "  " }] }), 1);
+assert.equal(threadLength({ posts: [{ text: "Tips" }, { text: "1. Parallel" }] }), 2);
+assert.equal(threadLength({ text: "just a post" }), 1);
+
+// Picture-path errors name the video model in use, not "the model"; a 4xx on that path usually means
+// an expired pbs.twimg.com link, so it isn't told to switch models -- it's told to reload the page.
+// reasoning is left off the request body entirely when photos are sent (some vision models reject
+// trying to disable it); the text path still asks for it to stay off.
+{
+  const realFetch = globalThis.fetch;
+  reset({ videoModel: "google/gemini-2.5-flash" });
+  requests.length = 0;
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body));
+    return { status: 400, ok: false, json: async () => ({ error: { message: "expired" } }) };
+  };
+  r = await send({ type: "brief", post: post({ key: "33333", photos: ["https://pbs.twimg.com/media/A.jpg"] }) });
+  assert.match(r.error, /Check the video model in Sieve's settings, or reload the page: picture links expire\./);
+  assert.equal(Object.hasOwn(requests[0], "reasoning"), false, "no reasoning field on the picture path");
+
+  // A retryable status (5xx) on the picture path keeps the ordinary retry wording, not the "expired
+  // link" message: only a genuine 4xx points at the link.
+  requests.length = 0;
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body));
+    return { status: 500, ok: false, json: async () => ({}) };
+  };
+  r = await send({ type: "brief", post: post({ key: "66666", photos: ["https://pbs.twimg.com/media/A.jpg"] }) });
+  assert.match(r.error, /Try again in a minute\./);
+
+  globalThis.fetch = realFetch;
+  reset();
+  requests.length = 0;
+  await send({ type: "brief", post: post({ key: "88888" }) });
+  assert.deepEqual(requests[0].reasoning, { enabled: false }, "the text path still turns reasoning off");
+}
+
+// photoCount is capped at 1000 before it reaches the prompt, so a bogus count from the page can't make
+// its way into the sentence the model reads.
+reset();
+requests.length = 0;
+r = await send({ type: "brief", post: post({ key: "11111", photos: ["https://pbs.twimg.com/media/A.jpg"], photoCount: 5000 }) });
+assert.equal(r.error, undefined, r.error);
+assert.match(requests[0].messages[1].content[0].text, /has 1000 pictures; the first 1 is here/);
+
+// once()'s queue key includes the thread length: a single-post brief and a thread brief of the same
+// post, sent together (as when a feed click and a thread click on the same post race each other),
+// don't share one fetch or one answer.
+reset();
+requests.length = 0;
+const [rSingle, rThread] = await Promise.all([
+  send({ type: "brief", post: post({ key: "55555" }) }),
+  send({ type: "brief", post: post({ key: "55555", posts: [{ text: "Tips thread" }, { text: "1. Parallel" }] }) }),
+]);
+assert.equal(rSingle.error, undefined, rSingle.error);
+assert.equal(rThread.error, undefined, rThread.error);
+assert.equal(requests.length, 2, "a single-post and a thread brief of the same post each get their own request, in flight together");
 
 console.log("x_brief_worker_test: ok");
