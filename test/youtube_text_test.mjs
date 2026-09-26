@@ -144,4 +144,35 @@ const player = (id, d) => ({ ok: true, json: async () => ({ playabilityStatus: {
   assert.equal(n, 4, "the oldest was let go");
 }
 
+// Newest first: a tile asked for later is served before older ones still waiting.
+{
+  const order = [];
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const describe = T.describer({ fetch: async (url, init) => { const id = JSON.parse(init.body).videoId; order.push(id); if (order.length === 1) await gate; return player(id, "ok"); }, version: () => "v", parallel: 1 });
+  const all = [describe(ID(50)), describe(ID(51)), describe(ID(52)), describe(ID(53))];
+  release();
+  await Promise.all(all);
+  assert.deepEqual(order, [ID(50), ID(53), ID(52), ID(51)]);
+}
+
+// Three failures in a row: every tile answers "" at once for a minute instead of waiting for the
+// timeout, then YouTube is asked again. A success in between resets the count.
+{
+  let t = 0, n = 0, fail = true;
+  const describe = T.describer({ fetch: async (url, init) => { n++; if (fail) throw new TypeError("Failed to fetch"); return player(JSON.parse(init.body).videoId, "ok"); }, version: () => "v", now: () => t, parallel: 1 });
+  await describe(ID(60)); await describe(ID(61));
+  fail = false; await describe(ID(62)); fail = true;
+  await describe(ID(63)); await describe(ID(64));
+  assert.equal(n, 5, "a success between failures resets the count");
+  await describe(ID(65));
+  assert.equal(n, 6);
+  assert.equal(await describe(ID(66)), "");
+  assert.equal(n, 6, "resting: no request");
+  t = 60001;
+  fail = false;
+  assert.equal(await describe(ID(66)), "ok");
+  assert.equal(n, 7, "asked again after the rest");
+}
+
 console.log("youtube text: all offline checks passed");

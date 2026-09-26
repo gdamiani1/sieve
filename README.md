@@ -109,9 +109,9 @@ request to the model you picked, except scoring, which always uses DeepSeek V4 F
 
 - Scoring through OpenRouter (the default): about 6 US cents per 1,000 LinkedIn and X posts, 9 on Reddit (your
   Reddit facts go with each post) and 5 on YouTube, with DeepSeek V4 Flash, measured on the invented sets with
-  `test/compare_scorers.mjs` on 24 Sep 2026. Reading YouTube descriptions (26 Sep) raised YouTube to about 7
-  US cents per 1,000 videos, measured on 20 real videos (about 1,075 input tokens each, against 880 from the
-  title alone); with Jev, about 4 instead of 3.5. The description request itself is free: about 5 KB from
+  `test/compare_scorers.mjs` on 24 Sep 2026. Reading YouTube descriptions (26 Sep) raises YouTube to at most
+  about 7 US cents per 1,000 videos, measured on 20 real videos that all got a description (about 1,075 input
+  tokens on average, against 880 from the title alone); with Jev, about 4 instead of 3.5. The description request itself is free: about 5 KB from
   YouTube per bare tile.
 - Scoring with Jev (optional): about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
 - A digest of a day's posts: well under a cent.

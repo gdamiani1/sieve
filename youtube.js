@@ -54,9 +54,12 @@
 
   let enabled = true;
   let descriptions = true;
+  let settingsChanged = 0; // counts settings saves, so an answer for older settings can be told apart
   const results = new Map();
   const pending = new Set();
-  chrome.storage.local.get("prefs").then((v) => {
+  // Settled once the saved settings are read, so a tile checked before then can't ask YouTube for a
+  // description the person switched off.
+  const prefsRead = chrome.storage.local.get("prefs").then((v) => {
     enabled = v.prefs?.youtubeOn !== false;
     descriptions = v.prefs?.youtubeDescriptions !== false;
     if (!enabled) clearAll();
@@ -89,6 +92,10 @@
     const link = el.querySelector('a[href*="/watch?v="]');
     const id = videoId(link.getAttribute("href"));
     if (!id) return null;
+    // A playlist or course tile links to its first video. It is scored as itself, under its own key, so
+    // it never shares a verdict with that video's own tile, and never with that video's description.
+    let list = "";
+    try { list = new URL(link.getAttribute("href"), location.origin).searchParams.get("list") || ""; } catch {}
     const titleEl = el.querySelector("#video-title, h3 a, h3, a[title]");
     const title = (titleEl?.getAttribute("title") || titleEl?.textContent || "").trim();
     const channel = (el.querySelector('ytd-channel-name a, a[href^="/@"]')?.textContent || "").trim();
@@ -101,7 +108,7 @@
     const summary = chapters.length ? "" : el.querySelector("ytd-expandable-metadata-renderer #collapsed-title")?.textContent || "";
     const snippets = [...el.querySelectorAll(".metadata-snippet-text, .metadata-snippet-text-navigation, #description-text")].map((s) => s.textContent);
     const more = T ? T.tileText({ snippets, chapters, summary }) : { snippet: "", chapters: "" };
-    return { id, url: `https://www.youtube.com/watch?v=${id}`, title, channel, seconds: badge ? toSeconds(badge) : 0, ...more };
+    return { id, key: list ? `${id}|${list}` : id, playlist: !!list, url: `https://www.youtube.com/watch?v=${id}`, title, channel, seconds: badge ? toSeconds(badge) : 0, ...more };
   }
 
   function thumbOf(el) {
@@ -141,8 +148,8 @@
 
   // What the score was read from, for the chip's tooltip.
   function from(read = {}) {
-    const extra = [read.snippet && "what the tile shows", read.chapters && "chapters", read.description && "description"].filter(Boolean);
-    return extra.length ? `title, channel, length, ${extra.join(" and ")}` : "title, channel and length";
+    const parts = ["title", "channel", "length", read.snippet && "the text shown with it", read.chapters && "chapters", read.description && "description"].filter(Boolean);
+    return `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
   }
 
   function watchButton(v) {
@@ -211,23 +218,36 @@
     if (!enabled) return;
     const v = read(tile);
     if (!v) return;
-    tile.dataset.jevKey = v.id;
-    if (results.has(v.id)) return render(tile, v, results.get(v.id));
-    if (pending.has(v.id)) return;
-    pending.add(v.id);
+    const key = v.key;
+    tile.dataset.jevKey = key;
+    if (results.has(key)) return render(tile, v, results.get(key));
+    if (pending.has(key)) return;
+    pending.add(key);
+    const asOf = settingsChanged;
+    // Settings changed while this tile was out: its answer is for the old settings. Drop it and score
+    // the tile again, if it's still on the page.
+    const stale = () => {
+      if (asOf === settingsChanged) return false;
+      pending.delete(key);
+      tiles().filter((t) => read(t)?.key === key).forEach(check);
+      return true;
+    };
     // A tile that shows nothing beyond its title (home, the sidebar) gets the start of the description,
     // unless that's switched off. describe() answers "" on any failure, so the tile is still scored.
-    const bare = !v.snippet && !v.chapters;
-    (bare && descriptions && describe ? describe(v.id) : Promise.resolve("")).then((description) => {
-      if (retired || !enabled) { pending.delete(v.id); return; }
+    const bare = !v.playlist && !v.snippet && !v.chapters;
+    prefsRead.catch(() => {}).then(() => (enabled && bare && descriptions && describe ? describe(v.id) : "")).then((described) => {
+      if (retired || !enabled) { pending.delete(key); return; }
+      if (stale()) return;
+      const description = descriptions ? described : "";
       const state = { title: v.title, channel: v.channel, length: v.seconds ? `${Math.round(v.seconds / 60)} min` : "unknown", snippet: v.snippet, chapters: v.chapters, description };
       send({ type: "classify", platform: "youtube", state }, (r) => {
-        pending.delete(v.id);
+        if (stale()) return;
+        pending.delete(key);
         if (!r) return;
         if (r.error === "rate_limited" || r.error === "network") return;
         const scored = { ...r, read: { snippet: !!v.snippet, chapters: !!v.chapters, description: !!description } };
-        results.set(v.id, scored);
-        tiles().forEach((t) => { if (t.dataset.jevKey === v.id) render(t, v, scored); });
+        results.set(key, scored);
+        tiles().forEach((t) => { if (t.dataset.jevKey === key) render(t, v, scored); });
       });
     });
   }
@@ -255,6 +275,7 @@
     if (!changes.prefs) return;
     enabled = changes.prefs.newValue?.youtubeOn !== false;
     descriptions = changes.prefs.newValue?.youtubeDescriptions !== false;
+    settingsChanged++;
     results.clear();
     clearAll();
     document.querySelectorAll(".sieve-yt-bar").forEach((b) => b.remove());

@@ -40,15 +40,19 @@
   }
 
   // fetch: the page's fetch. version(): the client version, asked for on the first request only.
-  function describer({ fetch, version, origin = "https://www.youtube.com", timeoutMs = 4000, parallel = 2, keep = 500 }) {
+  function describer({ fetch, version, origin = "https://www.youtube.com", timeoutMs = 4000, parallel = 2, keep = 500, trips = 3, restMs = 60000, now = () => Date.now() }) {
     const known = new Map(); // id -> Promise<string>, newest last
     const waiting = [];
     let running = 0;
     let v = "";
+    // After `trips` failures in a row (YouTube slow, the endpoint changed, no network), answer "" at once
+    // for `restMs`, rather than making every tile wait for the timeout.
+    let failures = 0, restUntil = 0;
 
     const next = () => {
       while (running < parallel && waiting.length) {
-        const job = waiting.shift();
+        // Newest first: the tile just scrolled to, or on the page just opened, before ones already gone.
+        const job = waiting.pop();
         running++;
         job().finally(() => { running--; next(); });
       }
@@ -80,10 +84,13 @@
     return function describe(id) {
       if (typeof id !== "string" || !/^[A-Za-z0-9_-]{11}$/.test(id)) return Promise.resolve("");
       if (known.has(id)) return known.get(id);
+      if (now() < restUntil) return Promise.resolve("");
       // A failure (null) answers "" but isn't remembered, so the video can be asked for again later.
       const p = new Promise((resolve) => {
         waiting.push(() => ask(id).then((d) => {
           if (d === null && known.get(id) === p) known.delete(id);
+          failures = d === null ? failures + 1 : 0;
+          if (failures >= trips) { failures = 0; restUntil = now() + restMs; }
           resolve(d ?? "");
         }));
       });

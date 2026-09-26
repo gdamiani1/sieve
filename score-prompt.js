@@ -33,7 +33,7 @@ function describe(questions) {
 // A YouTube tile as the page sent it, reduced to the fields a video is scored on and capped the way
 // youtube-text.js caps them, so both scorers (Jev gets the state as it is) see exactly the same text and
 // a page can't send more than that.
-const YOUTUBE_CAPS = { title: 300, channel: 150, length: 20, snippet: 1000, chapters: 600, description: 1500 };
+const YOUTUBE_CAPS = { title: 150, channel: 150, length: 20, snippet: 1000, chapters: 600, description: 1500 };
 export function youtubeState(state = {}) {
   const out = {};
   for (const [k, n] of Object.entries(YOUTUBE_CAPS)) {
