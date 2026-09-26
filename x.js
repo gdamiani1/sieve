@@ -53,15 +53,56 @@
 
   const hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return String(h); };
 
+  // X threads, pictures and video (x-thread.js, x-post-data.js). Without them, every post works as before.
+  const XT = globalThis.SieveXThread;
+  const records = new Map(); // the page summaries read on this page, by post id
+  let recordsPath = location.pathname;
+  const onPostPage = () => /\/status\/\d+/.test(location.pathname);
+
+  // The post's own link, from its timestamp (the way X has linked a post for years); "" when it has none.
+  const permalink = (post) => post.querySelector('a[href*="/status/"] time')?.parentElement?.getAttribute("href") || "";
+
+  // Asks x-post-data.js (in X's own page) for this post's summary, checks it, and keeps it. Null when
+  // there is none or it fails a check. X is a single-page app: a new address starts a new set.
+  function readRecord(post) {
+    if (!XT) return null;
+    if (location.pathname !== recordsPath) { records.clear(); recordsPath = location.pathname; }
+    try {
+      delete post.dataset.sieveXId;
+      post.removeAttribute("data-sieve-x");
+      post.dispatchEvent(new CustomEvent("sieve-x-post", { bubbles: true }));
+      const rec = XT.readRecord(post.getAttribute("data-sieve-x"));
+      post.removeAttribute("data-sieve-x");
+      if (!rec) return null;
+      // The reader walks X's React data up from the post, so it could land on a container's post instead
+      // of this one. When the post shows its own link, the record has to be for that post.
+      const own = permalink(post).match(/\/status\/(\d+)/)?.[1];
+      if (own && own !== rec.id) return null;
+      records.set(rec.id, rec);
+      post.dataset.sieveXId = rec.id;
+      return rec;
+    } catch {
+      return null;
+    }
+  }
+
+  // The post's own words and any post it quotes, as extract() reads them.
+  const textOf = (post) => [...post.querySelectorAll(TEXT)].map((t) => t.innerText.trim()).filter(Boolean).join("\n\n[quoted post]\n");
+
+  // An ad: "Ad" or "Promoted" in the header, before the post's own words (or in its first 200
+  // characters when it has none).
+  const isAd = (post, text) => {
+    const header = post.innerText.slice(0, 200);
+    return /\bAd\b|Promoted/.test(text ? header.split(text.slice(0, 20))[0] || "" : header);
+  };
+
   function extract(post) {
-    const texts = [...post.querySelectorAll(TEXT)].map((t) => t.innerText.trim()).filter(Boolean);
-    if (!texts.length) return null;
-    const text = texts.join("\n\n[quoted post]\n");
+    const text = textOf(post);
+    if (!text) return null;
     if (text.length < 40) return null;
     const user = post.querySelector('[data-testid="User-Name"]')?.innerText.replace(/\s+/g, " ").trim() || "";
-    const header = post.innerText.slice(0, 200);
-    if (/\bAd\b|Promoted/.test(header.split(text.slice(0, 20))[0] || "")) return null;
-    const link = post.querySelector('a[href*="/status/"] time')?.parentElement?.getAttribute("href");
+    if (isAd(post, text)) return null;
+    const link = permalink(post);
     return { key: hash(text), url: link ? `https://x.com${link}` : "", state: { author: user.slice(0, 200), post: text.slice(0, 4000) } };
   }
 
@@ -69,6 +110,53 @@
   function postRecord(key, r) {
     const state = states.get(key) || {};
     return { key, platform: "x", authorName: (state.author || "").split(" @")[0], authorUrl: urls.get(key) || "", text: state.post || "", topic: r.topic, kind: r.kind, worth: r.worth, scorer: r.scorer };
+  }
+
+  // Watch it for me on an X video: the same drawer and worker path as YouTube (watch-drawer.js, watch()).
+  function watchButton(rec) {
+    const w = rec && XT?.watchRequest(rec);
+    if (!w) return null;
+    const b = document.createElement("button");
+    b.className = "jev-suggest sieve-x-watch";
+    b.textContent = w.label;
+    b.disabled = w.tooLong;
+    b.title = "The video model watches the whole video and says whether it's worth your time.";
+    b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); watch(w, false); });
+    return b;
+  }
+
+  function showWatch(w, r) {
+    const D = globalThis.SieveWatchDrawer;
+    if (!D?.show) { retire(); return; } // watch-drawer.js didn't load: ask for a reload rather than draw nothing
+    D.show({ title: w.msg.title, channel: w.msg.channel, seconds: w.msg.seconds }, r, { again: () => watch(w, true), price: w.price, showCost: true });
+  }
+
+  function watch(w, again) {
+    if (retired || !alive()) { showWatch(w, { error: "Sieve was updated. Reload this page to keep using it." }); return; }
+    showWatch(w, null);
+    send({ ...w.msg, again }, (r) => showWatch(w, r || { error: "No answer from the extension." }));
+  }
+
+  // A video post Sieve doesn't score (too few words to judge) still gets Watch it for me.
+  function renderWatchOnly(post, rec) {
+    const b = watchButton(rec);
+    if (!b) return;
+    delete post.dataset.jevKey; // no words to score: any key here is from a post X drew in this element before
+    const wrap = wrapOf(post);
+    if (wrap.dataset.sieveWatchOnly === rec.id) return;
+    wrap.dataset.sieveWatchOnly = rec.id;
+    delete wrap.dataset.jevKey;
+    wrap.replaceChildren();
+    wrap.className = "sieve-x-wrap";
+    post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
+    const badge = document.createElement("div");
+    badge.className = "jev-badge jev-quiet";
+    badge.textContent = "Sieve";
+    const actions = document.createElement("span");
+    actions.className = "jev-actions";
+    actions.append(b);
+    badge.append(actions);
+    wrap.append(badge);
   }
 
   // Badges sit just above the post, outside X's own layout.
@@ -86,6 +174,7 @@
   function render(post, r) {
     const wrap = wrapOf(post);
     wrap.dataset.jevKey = post.dataset.jevKey;
+    delete wrap.dataset.sieveWatchOnly;
     wrap.replaceChildren();
     wrap.className = "sieve-x-wrap";
     post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
@@ -97,10 +186,9 @@
     if (r.tier !== "low") { post.classList.add(`sieve-x-${r.tier}`); wrap.classList.add(`jev-${r.tier}`); }
     const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
     badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}`;
-    if (r.tier === "low") { badge.classList.add("jev-quiet"); wrap.append(badge); return; }
-    if (r.kind === "technique") {
-      const actions = document.createElement("span");
-      actions.className = "jev-actions";
+    const actions = document.createElement("span");
+    actions.className = "jev-actions";
+    if (r.tier !== "low" && r.kind === "technique") {
       const bb = document.createElement("button");
       bb.className = "jev-suggest";
       bb.textContent = "Brief";
@@ -108,9 +196,20 @@
       bb.dataset.jevBriefBtn = "1";
       bb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); briefPanel(wrap, post, r, false); });
       actions.append(bb);
-      badge.append(actions);
     }
+    // Any post with a video Sieve can send, low or not (a hidden one returned above).
+    const wb = watchButton(records.get(post.dataset.sieveXId));
+    if (wb) actions.append(wb);
+    if (actions.childNodes.length) badge.append(actions);
+    if (r.tier === "low") badge.classList.add("jev-quiet");
     wrap.append(badge);
+  }
+
+  // What Brief sends: today's post, or with X's page data the full text, the pictures and the thread.
+  function briefRequestFor(post, r) {
+    const base = postRecord(post.dataset.jevKey, r);
+    const rec = readRecord(post);
+    return XT && rec ? XT.briefRequest(base, records, rec.id, { feed: !onPostPage() }) : { post: base, note: "" };
   }
 
   function briefPanel(wrap, post, r, again) {
@@ -130,6 +229,8 @@
       wrap.append(panel);
     }
     if (panel.dataset.busy) return; // a brief is already loading; ignore Brief / Write it again clicks
+    const request = briefRequestFor(post, r);
+    panel.querySelector(".jev-draft-note").textContent = ["A brief for your coding agent.", request.note].filter(Boolean).join(" ");
     const body = panel.querySelector(".sieve-b-body");
     const msg = panel.querySelector(".jev-draft-msg");
     if (!panel.dataset.hasBrief) body.textContent = ""; // "again" keeps the current brief up until the new one arrives; the status line says "reading…"
@@ -145,7 +246,7 @@
     panel.dataset.busy = "1";
     const req = String((Number(panel.dataset.req) || 0) + 1);
     panel.dataset.req = req;
-    send({ type: "brief", post: postRecord(post.dataset.jevKey, r), again }, (b) => {
+    send({ type: "brief", post: request.post, again }, (b) => {
       if (panel.dataset.req !== req) return; // a newer request replaced this one
       panel.dataset.busy = "";
       if (!b || b.error) {
@@ -165,7 +266,8 @@
     if (retired) return;
     if (!enabled) return;
     const p = extract(post);
-    if (!p) return;
+    const rec = readRecord(post); // before any early return: a thread's short posts are still part of it
+    if (!p) { if (rec?.video && !isAd(post, textOf(post))) renderWatchOnly(post, rec); return; }
     post.dataset.jevKey = p.key;
     states.set(p.key, p.state);
     urls.set(p.key, p.url);
@@ -197,7 +299,13 @@
     if (retired || !alive()) { if (!retired) retire(); return; }
     markDark();
     document.querySelectorAll(POST).forEach((post) => {
-      if (!post.dataset.jevWatched) { post.dataset.jevWatched = "1"; seen.observe(post); }
+      if (!post.dataset.jevWatched) {
+        post.dataset.jevWatched = "1";
+        seen.observe(post);
+        // On a post's page, every post is read as it appears, so a thread scrolled past quickly is still
+        // whole when Brief is pressed (X removes posts from the page as they scroll away).
+        if (enabled && onPostPage()) readRecord(post);
+      }
       const r = post.dataset.jevKey && results.get(post.dataset.jevKey);
       const prev = post.previousElementSibling;
       if (r && !(prev && prev.classList.contains("sieve-x-wrap"))) render(post, r); // X re-rendered it
