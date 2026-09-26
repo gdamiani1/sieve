@@ -149,5 +149,6 @@ const baseRec = { key: "12345", platform: "x", authorName: "Boris Cherny", autho
 assert.equal(X.firstLine("\n\n  First line  \nsecond"), "First line");
 assert.equal(X.firstLine("a".repeat(100)), `${"a".repeat(80)}...`);
 assert.equal(X.firstLine(""), "");
+assert.equal(X.firstLine("One\u2028Two"), "One", "splits on a line separator too, not just a plain space");
 
 console.log("x_thread_test: ok");

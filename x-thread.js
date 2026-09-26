@@ -137,7 +137,7 @@
   // A post's first non-blank line, cut to `max` characters with "..." (brief.js's firstLine, which a
   // classic script can't import).
   function firstLine(s, max = 80) {
-    const line = Array.from((isStr(s) ? s : "").split(/\r\n|[\n\r]/).map((l) => l.trim()).find(Boolean) || "");
+    const line = Array.from((isStr(s) ? s : "").split(/\r\n|[\n\r\u2028\u2029]/).map((l) => l.trim()).find(Boolean) || "");
     return line.length > max ? `${line.slice(0, max).join("").trimEnd()}...` : line.join("");
   }
 
