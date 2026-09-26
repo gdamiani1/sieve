@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+import { estimateUsd, formatUsd, MAX_MINUTES } from "../watch-prompt.js";
 
 const ctx = { URL };
 vm.runInNewContext(readFileSync(new URL("../x-thread.js", import.meta.url), "utf8"), ctx);
@@ -38,6 +39,18 @@ assert.equal(X.readRecord("not json"), null);
 assert.equal(X.readRecord("[]"), null);
 assert.equal(X.readRecord("x".repeat(70000)), null, "over 64 KB");
 assert.equal(X.readRecord(JSON.stringify({ id: "5" })).text, "", "only the id is required");
+{
+  // MAX_TEXT counts code points, as x-post-data.js cuts text, not UTF-16 units: a surrogate-pair emoji
+  // is one code point but two units, so a 25,000 code-point text with emoji must not be rejected as a
+  // whole, which would also lose this post's pictures, video and replyTo and cut a thread short.
+  const emoji = "\u{1F600}".repeat(13000) + "x".repeat(12000);
+  assert.equal(Array.from(emoji).length, 25000);
+  const r = X.readRecord(JSON.stringify({ ...good, text: emoji }));
+  assert.ok(r, "25,000 code points, even as emoji pairs, is not over the limit");
+  assert.equal(r.text, emoji);
+  assert.deepEqual(plain(r.photos), good.photos, "the rest of the record survives too");
+  assert.equal(r.video.mp4, good.video.mp4);
+}
 
 // ---- threadOf ----
 const rec = (id, author, replyTo, extra = {}) => X.readRecord(JSON.stringify({ id, author, ...(replyTo ? { replyTo } : {}), text: `post ${id}`, ...extra }));
@@ -113,9 +126,44 @@ const baseRec = { key: "12345", platform: "x", authorName: "Boris Cherny", autho
   assert.equal(r.note, "Read 3 posts by @bcherny. If the thread goes on below, scroll down and press Write it again. Post 3 has a video: use Watch it for me on it.");
 }
 {
+  // In the feed, scrolling never loads the rest of an author's own posts X grouped together, so the
+  // note points at opening the post instead of suggesting a scroll that won't help.
+  const m = map(
+    rec("100", "bcherny", undefined, { text: "Tips thread" }),
+    rec("101", "bcherny", "100", { text: "1. Parallel", hasReplies: true }),
+  );
+  assert.equal(X.briefRequest(baseRec, m, "100", { feed: true }).note, "Read 2 posts by @bcherny. Open the post to brief the whole thread.");
+}
+{
+  // The person opened a later post's page: the earliest post read replies to its own author, so this
+  // fragment isn't really the thread's start, but the parent post itself wasn't read on this page.
+  const m = map(
+    rec("101", "bcherny", "100", { replyToAuthor: "bcherny", text: "1. Parallel" }),
+    rec("102", "bcherny", "101", { text: "2. Plan mode" }),
+  );
+  const r = X.briefRequest(baseRec, m, "101", { feed: false });
+  assert.equal(r.note, "Read 2 posts by @bcherny. The thread starts above: scroll up and press Write it again.");
+  assert.equal(r.post.postUrl, undefined, "the first post read is not really the thread's first post");
+}
+{
+  // Same, but only the one post was read: no "Read N posts" prefix.
+  const m = map(rec("101", "bcherny", "100", { replyToAuthor: "bcherny" }));
+  assert.equal(X.briefRequest(baseRec, m, "101", { feed: false }).note, "The thread starts above: scroll up and press Write it again.");
+}
+{
+  // At the 50-post cap, threadOf won't add any more posts even if the last one has replies, so the note
+  // says so instead of suggesting a scroll that can't extend it.
+  const long = Array.from({ length: 60 }, (_, i) => rec(String(2000 + i), "a", i ? String(1999 + i) : undefined, i === 49 ? { hasReplies: true } : {}));
+  const r = X.briefRequest(baseRec, map(...long), "2000", { feed: false });
+  assert.equal(r.note, "Read 50 posts by @a. Sieve reads at most 50 posts of a thread.");
+}
+{
   // On a post's page, before the replies have loaded.
   const m = map(rec("100", "bcherny", undefined, { hasReplies: true }));
-  assert.equal(X.briefRequest(baseRec, m, "100", { feed: false }).note, "If the author continues this in a thread, scroll down to load it and press Write it again.");
+  assert.equal(X.briefRequest(baseRec, m, "100", { feed: false }).note, "", "hasReplies alone isn't a thread hint: anyone could have replied");
+  // On a post's page, X itself marks the post as the start of a thread.
+  const s = map(rec("100", "bcherny", undefined, { startsThread: true }));
+  assert.equal(X.briefRequest(baseRec, s, "100", { feed: false }).note, "This post starts a thread. Scroll down to load it and press Write it again.");
   // In the feed, a post X marks as starting a thread.
   const f = map(rec("100", "bcherny", undefined, { startsThread: true, hasReplies: true }));
   assert.equal(X.briefRequest(baseRec, f, "100", { feed: true }).note, "This post starts a thread. Open it to brief the whole thread.");
@@ -131,12 +179,22 @@ const baseRec = { key: "12345", platform: "x", authorName: "Boris Cherny", autho
   const v = rec("1945976064758730965", "mckaywrigley", undefined, { text: "Claudeputer\nmore", video: { mp4: "https://video.twimg.com/v/c.mp4?tag=14", seconds: 121.633 } });
   const w = X.watchRequest(v);
   assert.deepEqual(plain(w.msg), { type: "watch", platform: "x", id: "1945976064758730965", url: "https://x.com/mckaywrigley/status/1945976064758730965", video: "https://video.twimg.com/v/c.mp4?tag=14", title: "Claudeputer", channel: "@mckaywrigley", caption: "Claudeputer\nmore", seconds: 121.633 });
-  assert.equal(w.label, "Watch it for me · <1¢");
-  assert.equal(w.price, "<1¢");
+  // Price and label must agree with watch-prompt.js's own math, not a hand-copied constant that could
+  // drift from it.
+  assert.equal(w.price, formatUsd(estimateUsd(121.633)));
+  assert.equal(w.label, `Watch it for me · ${formatUsd(estimateUsd(121.633))}`);
   assert.equal(w.tooLong, false);
+  const w600 = X.watchRequest(rec("1945976064758730969", "a", undefined, { video: { mp4: "https://video.twimg.com/v/c.mp4", seconds: 600 } }));
+  assert.equal(w600.price, formatUsd(estimateUsd(600)));
+  assert.equal(w600.label, `Watch it for me · ${formatUsd(estimateUsd(600))}`);
   const long = X.watchRequest(rec("1945976064758730966", "a", undefined, { video: { mp4: "https://video.twimg.com/v/c.mp4", seconds: 60 * 56 } }));
   assert.equal(long.tooLong, true);
   assert.equal(long.label, "too long to watch");
+  // The too-long cutoff must match watch-prompt.js's MAX_MINUTES, not a copy that could drift from it.
+  const justUnder = X.watchRequest(rec("1945976064758730970", "a", undefined, { video: { mp4: "https://video.twimg.com/v/c.mp4", seconds: MAX_MINUTES * 60 - 1 } }));
+  assert.equal(justUnder.tooLong, false);
+  const justOver = X.watchRequest(rec("1945976064758730971", "a", undefined, { video: { mp4: "https://video.twimg.com/v/c.mp4", seconds: MAX_MINUTES * 60 + 1 } }));
+  assert.equal(justOver.tooLong, true);
   assert.equal(X.watchRequest(rec("1945976064758730967", "a", undefined, { text: "" , video: { mp4: "https://video.twimg.com/v/c.mp4" } })).msg.title, "Video by @a", "a video with no words still has a title");
   assert.equal(X.watchRequest(rec("1945976064758730968", "a", undefined, { video: { mp4: "https://video.twimg.com/v/c.mp4" } })).msg.seconds, 0);
   assert.equal(X.watchRequest(rec("1945976064758730965", "a")), null, "no video");

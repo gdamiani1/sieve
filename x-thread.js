@@ -29,7 +29,11 @@
     }
   };
   const handle = (v) => v === undefined || v === "" || (isStr(v) && HANDLE.test(v));
-  const words = (v) => v === undefined || (isStr(v) && v.length <= MAX_TEXT);
+  // Counted in code points, not UTF-16 units: x-post-data.js cuts text to MAX_TEXT code points, and an
+  // emoji surrogate pair is one code point but two units, so counting units would reject a text at
+  // exactly the limit and lose the whole record (its pictures, video and replyTo) over nothing.
+  const codePoints = (v) => Array.from(v).length;
+  const words = (v) => v === undefined || (isStr(v) && codePoints(v) <= MAX_TEXT);
 
   // data-sieve-x -> a checked record, or null. Anything on the page can set an attribute, so every field
   // is checked, and a record that fails any check is ignored as a whole.
@@ -46,7 +50,7 @@
     if (r.replyTo !== undefined) out.replyTo = r.replyTo;
     if (r.quoted !== undefined) {
       const q = r.quoted;
-      if (!q || typeof q !== "object" || !handle(q.author) || !isStr(q.text) || !q.text || q.text.length > MAX_TEXT) return null;
+      if (!q || typeof q !== "object" || !handle(q.author) || !isStr(q.text) || !q.text || codePoints(q.text) > MAX_TEXT) return null;
       out.quoted = { author: q.author || "", text: q.text };
     }
     if (r.photos !== undefined) {
@@ -97,22 +101,42 @@
     return thread;
   }
 
-  // One post's words as saved: its own, then any post it quotes, marked the way x.js always has.
+  // One post's words as saved: its own, then any post it quotes. x.js writes "[quoted post]" on its own
+  // line with no author; here the author is folded onto that line instead, so a model reading a joined
+  // thread knows whose words the quote is, not just that a quote exists.
   const postText = (r) => [r.text, r.quoted ? `[quoted post] ${r.quoted.author ? `@${r.quoted.author}: ` : ""}${r.quoted.text}` : ""].filter(Boolean).join("\n\n");
+
+  // True when the earliest post read replies to another post by the same author (X says so on the post
+  // itself, via replyToAuthor) but that parent post wasn't read on this page: the visible fragment isn't
+  // really the thread's start, so neither the note nor the link should claim it is.
+  const truncatedStart = (first) => !!(first.replyTo && first.replyToAuthor && first.replyToAuthor === first.author);
 
   function note(thread, feed) {
     const parts = [];
     const first = thread[0], last = thread[thread.length - 1];
+    if (thread.length >= 2) parts.push(`Read ${thread.length} posts by @${first.author}.`);
+    if (truncatedStart(first)) {
+      parts.push("The thread starts above: scroll up and press Write it again.");
+    } else if (thread.length >= MAX_THREAD) {
+      // threadOf stops adding posts at the cap either way, so a scroll (or opening the post) can't
+      // bring in more; say so instead of a hint that would go nowhere.
+      parts.push("Sieve reads at most 50 posts of a thread.");
+    } else if (thread.length >= 2 && last.hasReplies) {
+      // In the feed, scrolling never loads the rest of an author's own posts X grouped together; only
+      // opening the post does. On the post's own page, scrolling does load more.
+      parts.push(feed ? "Open the post to brief the whole thread." : "If the thread goes on below, scroll down and press Write it again.");
+    } else if (thread.length === 1 && feed && first.startsThread) {
+      parts.push("This post starts a thread. Open it to brief the whole thread.");
+    } else if (thread.length === 1 && !feed && first.startsThread) {
+      // hasReplies alone isn't a thread hint on a post's own page: it counts anyone's replies, not just
+      // the author continuing in a thread, so it fired on nearly every single post. startsThread is X's
+      // own signal that the author did.
+      parts.push("This post starts a thread. Scroll down to load it and press Write it again.");
+    }
     if (thread.length >= 2) {
-      parts.push(`Read ${thread.length} posts by @${first.author}.`);
-      if (last.hasReplies) parts.push("If the thread goes on below, scroll down and press Write it again.");
       const withVideo = thread.map((r, i) => (r.video ? i + 1 : 0)).filter(Boolean);
       if (withVideo.length === 1) parts.push(`Post ${withVideo[0]} has a video: use Watch it for me on it.`);
       else if (withVideo.length > 1) parts.push(`Posts ${withVideo.join(", ")} have videos: use Watch it for me on them.`);
-    } else if (feed && first.startsThread) {
-      parts.push("This post starts a thread. Open it to brief the whole thread.");
-    } else if (!feed && first.hasReplies && first.author) {
-      parts.push("If the author continues this in a thread, scroll down to load it and press Write it again.");
     }
     return parts.join(" ");
   }
@@ -129,7 +153,8 @@
     const post = { ...base, text: joined || base.text, photos: photos.slice(0, MAX_SENT_PHOTOS), photoCount: photos.length };
     if (thread.length >= 2) {
       post.posts = thread.map((r) => (r.quoted ? { text: r.text, quoted: { author: r.quoted.author, text: r.quoted.text } } : { text: r.text }));
-      if (thread[0].author) post.postUrl = `https://x.com/${thread[0].author}/status/${thread[0].id}`;
+      // Not when the earliest post read isn't really the thread's start: its link isn't the thread's link.
+      if (thread[0].author && !truncatedStart(thread[0])) post.postUrl = `https://x.com/${thread[0].author}/status/${thread[0].id}`;
     }
     return { post, note: note(thread, feed) };
   }
