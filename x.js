@@ -56,17 +56,25 @@
   // X threads, pictures and video (x-thread.js, x-post-data.js). Without them, every post works as before.
   const XT = globalThis.SieveXThread;
   const records = new Map(); // the page summaries read on this page, by post id
-  let recordsPath = location.pathname;
   const onPostPage = () => /\/status\/\d+/.test(location.pathname);
+  // Which page the records belong to: the post's id on a post's page, else the address. Opening a picture
+  // (/photo/1, /video/1) or the post's likes, quotes and so on changes the address but not the post, and
+  // closing it changes it back: keyed on the address, that would lose a thread gathered by scrolling.
+  const pageKey = () => location.pathname.match(/\/status\/(\d+)/)?.[1] || location.pathname;
+  let recordsPage = pageKey();
+  // In the feed, posts keep coming for as long as someone scrolls; keep the most recent ones only.
+  const MAX_FEED_RECORDS = 500;
 
   // The post's own link, from its timestamp (the way X has linked a post for years); "" when it has none.
   const permalink = (post) => post.querySelector('a[href*="/status/"] time')?.parentElement?.getAttribute("href") || "";
 
   // Asks x-post-data.js (in X's own page) for this post's summary, checks it, and keeps it. Null when
-  // there is none or it fails a check. X is a single-page app: a new address starts a new set.
+  // there is none or it fails a check. X is a single-page app: a new post's page, or a new address off a
+  // post's page, starts a new set.
   function readRecord(post) {
     if (!XT) return null;
-    if (location.pathname !== recordsPath) { records.clear(); recordsPath = location.pathname; }
+    const page = pageKey();
+    if (page !== recordsPage) { records.clear(); recordsPage = page; }
     try {
       delete post.dataset.sieveXId;
       post.removeAttribute("data-sieve-x");
@@ -75,10 +83,13 @@
       post.removeAttribute("data-sieve-x");
       if (!rec) return null;
       // The reader walks X's React data up from the post, so it could land on a container's post instead
-      // of this one. When the post shows its own link, the record has to be for that post.
-      const own = permalink(post).match(/\/status\/(\d+)/)?.[1];
-      if (own && own !== rec.id) return null;
+      // of this one. When the post links to any post, one of those links has to be the record's. Not just
+      // the first link: on a post's own page X puts its timestamp at the bottom, after any quoted post's.
+      const ids = [...post.querySelectorAll('a[href*="/status/"]')].map((a) => (a.getAttribute("href") || "").match(/\/status\/(\d+)/)?.[1]).filter(Boolean);
+      if (ids.length && !ids.includes(rec.id)) return null;
+      records.delete(rec.id); // put back at the end, so the cap below drops the posts read longest ago
       records.set(rec.id, rec);
+      if (!onPostPage()) while (records.size > MAX_FEED_RECORDS) records.delete(records.keys().next().value);
       post.dataset.sieveXId = rec.id;
       return rec;
     } catch {
@@ -134,7 +145,10 @@
   function watch(w, again) {
     if (retired || !alive()) { showWatch(w, { error: "Sieve was updated. Reload this page to keep using it." }); return; }
     showWatch(w, null);
-    send({ ...w.msg, again }, (r) => showWatch(w, r || { error: "No answer from the extension." }));
+    send({ ...w.msg, again }, (r) => {
+      if (!enabled) return; // X was switched off while the video was being watched; its drawer is gone
+      showWatch(w, r || { error: "No answer from the extension." });
+    });
   }
 
   // A video post Sieve doesn't score (too few words to judge) still gets Watch it for me.
@@ -168,6 +182,7 @@
 
   function clearAll() {
     document.querySelectorAll(".sieve-x-wrap").forEach((w) => w.remove());
+    document.getElementById("sieve-drawer")?.remove(); // a Watch it for me drawer opened from X
     document.querySelectorAll(POST).forEach((p) => { p.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe"); delete p.dataset.jevKey; });
   }
 
@@ -198,7 +213,9 @@
       actions.append(bb);
     }
     // Any post with a video Sieve can send, low or not (a hidden one returned above).
-    const wb = watchButton(records.get(post.dataset.sieveXId));
+    // The records may have been reset (another page) or capped since the post was read: read it again.
+    const id = post.dataset.sieveXId;
+    const wb = watchButton(id && (records.get(id) || readRecord(post)));
     if (wb) actions.append(wb);
     if (actions.childNodes.length) badge.append(actions);
     if (r.tier === "low") badge.classList.add("jev-quiet");
@@ -208,8 +225,13 @@
   // What Brief sends: today's post, or with X's page data the full text, the pictures and the thread.
   function briefRequestFor(post, r) {
     const base = postRecord(post.dataset.jevKey, r);
-    const rec = readRecord(post);
-    return XT && rec ? XT.briefRequest(base, records, rec.id, { feed: !onPostPage() }) : { post: base, note: "" };
+    // Anything going wrong with X's page data still leaves today's brief of the post itself.
+    try {
+      const rec = readRecord(post);
+      return XT && rec ? XT.briefRequest(base, records, rec.id, { feed: !onPostPage() }) : { post: base, note: "" };
+    } catch {
+      return { post: base, note: "" };
+    }
   }
 
   function briefPanel(wrap, post, r, again) {
@@ -256,6 +278,9 @@
         if (!panel.dataset.hasBrief) body.textContent = "";
         return;
       }
+      // A brief kept from an earlier, longer read of the thread comes back as it was: say how much it
+      // read, rather than the note about what was read this time.
+      if (Number.isInteger(b.threadPosts) && b.threadPosts >= 2) panel.querySelector(".jev-draft-note").textContent = `A brief for your coding agent. Read ${b.threadPosts} posts of this thread.`;
       globalThis.SieveBriefPanel.fill(body, b);
       panel.dataset.hasBrief = "1";
       msg.textContent = "Brief ready.";
@@ -273,7 +298,8 @@
     urls.set(p.key, p.url);
     if (results.has(p.key)) {
       const w = post.previousElementSibling;
-      if (w?.classList.contains("sieve-x-wrap") && w.dataset.jevKey === p.key) return;
+      // Drawn already, unless the post's video record arrived after it was scored.
+      if (w?.classList.contains("sieve-x-wrap") && w.dataset.jevKey === p.key && (w.querySelector(".sieve-x-watch") || !XT?.watchRequest(rec))) return;
       return render(post, results.get(p.key));
     }
     if (pending.has(p.key)) return;

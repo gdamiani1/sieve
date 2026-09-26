@@ -110,7 +110,9 @@ function article(doc, { handle, id, text, name = "Alice" }) {
 
 // Loads the four scripts with `posts` already on the page. `summaries` maps a post element to the JSON
 // x-post-data.js would write for it; a post that isn't in it gets nothing, as when the reader finds none.
-function load({ path = "/home", posts = [], summaries = new Map(), score = SCORE }) {
+// `brief` is the worker's reply to a brief; `holdWatch` keeps watch replies back until the test answers
+// them through `held`.
+function load({ path = "/home", posts = [], summaries = new Map(), score = SCORE, brief = { error: "stubbed" }, holdWatch = false }) {
   const document = fakeDocument();
   document.captures = {};
   document.addEventListener = (type, fn) => { (document.captures[type] ||= []).push(fn); };
@@ -120,7 +122,10 @@ function load({ path = "/home", posts = [], summaries = new Map(), score = SCORE
   document.body.append(feed);
   for (const p of posts) feed.append(p(document));
   const sent = [];
+  const held = [];
   let seenCb = null;
+  let scanCb = null;
+  let prefsCb = null;
   const sandbox = {
     document,
     location: { pathname: path },
@@ -131,7 +136,7 @@ function load({ path = "/home", posts = [], summaries = new Map(), score = SCORE
     clearTimeout: () => {},
     CustomEvent: class { constructor(type, init = {}) { this.type = type; this.bubbles = !!init.bubbles; } },
     IntersectionObserver: class { constructor(cb) { seenCb = cb; } observe() {} },
-    MutationObserver: class { observe() {} },
+    MutationObserver: class { constructor(cb) { scanCb = cb; } observe() {} },
     navigator: {},
     chrome: {
       runtime: {
@@ -140,11 +145,12 @@ function load({ path = "/home", posts = [], summaries = new Map(), score = SCORE
         sendMessage: (msg, cb) => {
           sent.push(msg);
           if (msg.type === "classify") cb(score);
-          else if (msg.type === "brief") cb({ error: "stubbed" });
+          else if (msg.type === "brief") cb(brief);
+          else if (msg.type === "watch" && holdWatch) held.push(cb);
           else cb({ ok: true });
         },
       },
-      storage: { local: { get: () => Promise.resolve({}) }, onChanged: { addListener() {} } },
+      storage: { local: { get: () => Promise.resolve({}) }, onChanged: { addListener(fn) { prefsCb = fn; } } },
     },
   };
   sandbox.globalThis = sandbox;
@@ -156,7 +162,13 @@ function load({ path = "/home", posts = [], summaries = new Map(), score = SCORE
   const wrapOf = (post) => post.previousElementSibling;
   const buttons = (post) => wrapOf(post).querySelectorAll("button");
   const button = (post, re) => buttons(post).find((b) => re.test(b.textContent));
-  return { document, sandbox, sent, all, see, wrapOf, buttons, button };
+  // X changed the page: x.js's MutationObserver runs scan().
+  const scan = () => scanCb();
+  // The popup switched X on or off.
+  const setX = (on) => prefsCb({ prefs: { newValue: { xOn: on } } });
+  // A post X adds to the page later.
+  const add = (p) => { const el = p(document); feed.append(el); return el; };
+  return { document, sandbox, sent, held, all, see, wrapOf, buttons, button, scan, setX, add };
 }
 const summary = (o) => JSON.stringify(o);
 const plain = (v) => JSON.parse(JSON.stringify(v));
@@ -311,6 +323,147 @@ const todays = (a, text) => ({ key: a.dataset.jevKey, platform: "x", authorName:
   t.see(a);
   assert.equal(a.getAttribute("data-sieve-x"), null);
   assert.equal(a.dataset.sieveXId, ID_A);
+}
+
+// 8. Opening a picture changes the address to .../photo/1 and closing it changes it back. The thread read
+// by scrolling stays: records reset only when the page's post changes.
+{
+  const summaries = new Map();
+  const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, hasReplies: true })); return a; };
+  const B = (d) => { const b = article(d, { handle: "alice", id: ID_B, text: "2/ and cache it." }); summaries.set(b, summary({ id: ID_B, author: "alice", replyTo: ID_A, replyToAuthor: "alice", text: "2/ and cache it." })); return b; };
+  const C = (d) => { const c = article(d, { handle: "bob", id: ID_C, text: "a picture caption" }); summaries.set(c, summary({ id: ID_C, author: "bob", text: "a picture caption" })); return c; };
+  const t = load({ path: `/alice/status/${ID_A}`, posts: [A, B], summaries });
+  const [a] = t.all();
+  t.see(a);
+  t.sandbox.location.pathname = `/alice/status/${ID_A}/photo/1`;
+  t.see(t.add(C));
+  t.sandbox.location.pathname = `/alice/status/${ID_A}`;
+  t.button(a, /^Brief$/).click();
+  assert.deepEqual(lastBrief(t.sent).post.posts, [{ text: LONG }, { text: "2/ and cache it." }], "the picture view kept the thread");
+  // Another post's page does start a new set.
+  t.sandbox.location.pathname = `/bob/status/${ID_C}`;
+  t.see(t.add(C));
+  t.sandbox.location.pathname = `/alice/status/${ID_A}`;
+  t.wrapOf(a).querySelector('[data-a="again"]').click();
+  assert.equal(lastBrief(t.sent).post.posts, undefined, "a new post's page dropped the thread");
+}
+
+// 8b. The records were reset (another page) and X then redrew the post's badge: the Watch button comes
+// back, read again from the post.
+{
+  const summaries = new Map();
+  const V = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, video: { mp4: MP4, seconds: 120 } })); return a; };
+  const t = load({ posts: [V], summaries });
+  const [a] = t.all();
+  t.see(a);
+  t.sandbox.location.pathname = "/explore";
+  t.see(t.add((d) => article(d, { handle: "bob", id: ID_C, text: "hi" })));
+  t.sandbox.location.pathname = "/home";
+  t.wrapOf(a).remove(); // X replaced the post's surroundings
+  t.scan();
+  assert.deepEqual(t.buttons(a).map((x) => x.textContent), ["Brief", "Watch it for me · <1¢"]);
+}
+
+// 9. A focal post: X puts its own timestamp at the bottom, so a quoted post's link comes first. The
+// record for the post's own id is still accepted; one whose id is in none of its links is refused.
+{
+  const focal = (id) => (d) => {
+    const a = article(d, { handle: "alice", id: ID_A, text: LONG });
+    const q = d.createElement("a");
+    q.setAttribute("href", `/bob/status/${ID_C}`);
+    q.append(d.createElement("time"));
+    a.childNodes.splice(0, 0, q);
+    q.parentNode = a;
+    return a;
+  };
+  for (const [id, want] of [[ID_A, ID_A], [ID_B, undefined]]) {
+    const summaries = new Map();
+    const make = focal(id);
+    const P = (d) => { const a = make(d); summaries.set(a, summary({ id, author: "alice", text: LONG })); return a; };
+    const t = load({ path: `/alice/status/${ID_A}`, posts: [P], summaries });
+    const [a] = t.all();
+    t.see(a);
+    assert.equal(a.dataset.sieveXId, want, `record ${id}`);
+  }
+}
+
+// 10. In the feed, records keep at most 500 posts, the oldest dropped first.
+{
+  for (const [fillers, want] of [[498, 2], [499, undefined]]) {
+    const summaries = new Map();
+    const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, hasReplies: true })); return a; };
+    const t = load({ posts: [A], summaries });
+    const [a] = t.all();
+    t.see(a);
+    for (let i = 0; i < fillers; i++) {
+      const id = String(3000000000000000000n + BigInt(i));
+      const f = t.add((d) => { const el = article(d, { handle: "bob", id, text: "hi" }); summaries.set(el, summary({ id, author: "bob", text: "hi" })); return el; });
+      t.see(f);
+      f.parentNode.removeChild(f); // X drops posts scrolled away; keeps this test quick
+    }
+    const B = (d) => { const b = article(d, { handle: "alice", id: ID_B, text: `${LONG} Part two.` }); summaries.set(b, summary({ id: ID_B, author: "alice", replyTo: ID_A, replyToAuthor: "alice", text: `${LONG} Part two.` })); return b; };
+    const b = t.add(B);
+    t.see(b);
+    t.button(b, /^Brief$/).click();
+    assert.equal(lastBrief(t.sent).post.posts?.length, want, `${fillers} posts in between`);
+  }
+}
+
+// 11. A post scored before its record could be read gets Watch it for me once the record arrives.
+{
+  const summaries = new Map();
+  const t = load({ posts: [(d) => article(d, { handle: "alice", id: ID_A, text: LONG })], summaries });
+  const [a] = t.all();
+  t.see(a);
+  assert.deepEqual(t.buttons(a).map((x) => x.textContent), ["Brief"]);
+  summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, video: { mp4: MP4, seconds: 120 } }));
+  t.see(a);
+  assert.deepEqual(t.buttons(a).map((x) => x.textContent), ["Brief", "Watch it for me · <1¢"]);
+  t.see(a); // drawn once
+  assert.equal(t.wrapOf(a).querySelectorAll(".sieve-x-watch").length, 1);
+}
+
+// 12. Switching X off closes the watch drawer, and an answer that arrives after that draws nothing.
+{
+  const summaries = new Map();
+  const V = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, video: { mp4: MP4, seconds: 120 } })); return a; };
+  const t = load({ posts: [V], summaries, holdWatch: true });
+  const [a] = t.all();
+  t.see(a);
+  t.button(a, /^Watch it for me/).click();
+  assert.ok(t.document.getElementById("sieve-drawer"));
+  t.setX(false);
+  assert.equal(t.document.getElementById("sieve-drawer"), null, "the drawer closed");
+  t.held[0]({ error: "late" });
+  assert.equal(t.document.getElementById("sieve-drawer"), null, "the late answer drew nothing");
+}
+
+// 13. A cached brief of a longer thread: the note says how many posts the brief read.
+{
+  const summaries = new Map();
+  const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG })); return a; };
+  const t = load({ posts: [A], summaries, brief: { what: "Evals in CI.", threadPosts: 3 } });
+  const [a] = t.all();
+  t.see(a);
+  t.button(a, /^Brief$/).click();
+  assert.equal(t.wrapOf(a).querySelector(".jev-draft-note").textContent, "A brief for your coding agent. Read 3 posts of this thread.");
+  const u = load({ posts: [A], summaries, brief: { what: "Evals in CI.", threadPosts: 1 } });
+  const [b] = u.all();
+  u.see(b);
+  u.button(b, /^Brief$/).click();
+  assert.equal(u.wrapOf(b).querySelector(".jev-draft-note").textContent, "A brief for your coding agent.");
+}
+
+// 14. If building the thread request throws, Brief still sends today's post.
+{
+  const summaries = new Map();
+  const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG })); return a; };
+  const t = load({ posts: [A], summaries });
+  const [a] = t.all();
+  t.see(a);
+  t.sandbox.SieveXThread.briefRequest = () => { throw new Error("boom"); };
+  t.button(a, /^Brief$/).click();
+  assert.deepEqual(lastBrief(t.sent), { type: "brief", post: todays(a, LONG), again: false });
 }
 
 console.log("x page: all checks passed");
