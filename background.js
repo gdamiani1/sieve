@@ -412,7 +412,7 @@ async function brief(req) {
   try {
     // The thread's posts and the picture links are for the model only; the saved post is its words.
     const { posts: _posts, photos: _photos, photoCount: _count, ...plain } = p;
-    await save(plain);
+    await save(plain, { replace: true });
   } catch {}
   await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
   return briefReply(rec);
@@ -430,11 +430,23 @@ const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => 
 // "save" message from the content scripts, watch()'s video record, and brief()'s post copy alike.
 // A post is the same post only on the same platform: LinkedIn and X both key a post by a hash of its
 // text, so a cross-posted post has the same key on each.
-function save(post) {
+// `replace` is only for brief(): a strong post is saved at scoring time (x.js's "save" message) with
+// whatever text was visible on the page then, before a thread's other posts were read. Briefing it later
+// can turn up the joined thread text and a postUrl the first save never had, and that's worth keeping
+// over an early-return that leaves the saved entry stuck with a single post's words. The plain "save"
+// message path stays as it was: the first save wins and later saves of the same post are no-ops.
+function save(post, { replace = false } = {}) {
   const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0, scorer: post.scorer === "jev" || post.scorer === "openrouter" ? post.scorer : undefined };
   return update("saved", ({ saved: stored }) => {
     const saved = savedPosts(stored);
-    if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;
+    const existing = saved.findIndex((p) => p.key === clean.key && platformOf(p.platform) === clean.platform);
+    if (existing !== -1) {
+      if (!replace) return null;
+      // Only the words and the link move; savedAt (and everything else about the earlier save) stays.
+      const next = [...saved];
+      next[existing] = { ...saved[existing], text: clean.text, postUrl: clean.postUrl, ...(clean.title ? { title: clean.title } : {}) };
+      return { saved: next };
+    }
     const cutoff = Date.now() - KEEP_DAYS * 864e5;
     const next = [{ ...clean, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
     return { saved: next };

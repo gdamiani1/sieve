@@ -160,8 +160,13 @@
     const photos = thread.flatMap((r) => r.photos);
     const joined = thread.map(postText).filter(Boolean).join("\n\n");
     const post = { ...base, text: joined || base.text, photos: photos.slice(0, MAX_SENT_PHOTOS), photoCount: photos.length };
-    if (thread.length >= 2) {
-      post.posts = thread.map((r) => (r.quoted ? { text: r.text, quoted: { author: r.quoted.author, text: r.quoted.text } } : { text: r.text }));
+    // A picture-only post (x-post-data.js drops the media link, so its "text" is blank) has nothing to
+    // add to "posts": brief-prompt.js's isThread requires every entry to have real text, and one blank
+    // entry would fail that check and drop the whole thread down to a single post. Its pictures already
+    // travel in "photos" above, so leaving it out of "posts" loses nothing.
+    const textPosts = thread.filter((r) => r.text && r.text.trim());
+    if (textPosts.length >= 2) {
+      post.posts = textPosts.map((r) => (r.quoted ? { text: r.text, quoted: { author: r.quoted.author, text: r.quoted.text } } : { text: r.text }));
       // Not when the earliest post read isn't really the thread's start: its link isn't the thread's link.
       if (thread[0].author && !sameAuthorParent(thread[0])) post.postUrl = `https://x.com/${thread[0].author}/status/${thread[0].id}`;
     }

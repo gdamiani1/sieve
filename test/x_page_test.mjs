@@ -449,6 +449,30 @@ const todays = (a, text) => ({ key: a.dataset.jevKey, platform: "x", authorName:
   }
 }
 
+// 10b. On a post's page, records keep at most 2,000 posts, the oldest dropped first: a much longer cap
+// than the feed's 500, since a reply chain on a post's own page can run long before the thread's other
+// end scrolls out.
+{
+  for (const [fillers, want] of [[1998, 2], [1999, undefined]]) {
+    const summaries = new Map();
+    const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, hasReplies: true })); return a; };
+    const t = load({ path: `/alice/status/${ID_A}`, posts: [A], summaries });
+    const [a] = t.all();
+    t.see(a);
+    for (let i = 0; i < fillers; i++) {
+      const id = String(3000000000000000000n + BigInt(i));
+      const f = t.add((d) => { const el = article(d, { handle: "bob", id, text: "hi" }); summaries.set(el, summary({ id, author: "bob", text: "hi" })); return el; });
+      t.see(f);
+      f.parentNode.removeChild(f); // X drops posts scrolled away; keeps this test quick
+    }
+    const B = (d) => { const b = article(d, { handle: "alice", id: ID_B, text: `${LONG} Part two.` }); summaries.set(b, summary({ id: ID_B, author: "alice", replyTo: ID_A, replyToAuthor: "alice", text: `${LONG} Part two.` })); return b; };
+    const b = t.add(B);
+    t.see(b);
+    t.button(b, /^Brief$/).click();
+    assert.equal(lastBrief(t.sent).post.posts?.length, want, `${fillers} posts in between, on a post's page`);
+  }
+}
+
 // 11. A post scored before its record could be read gets Watch it for me once the record arrives.
 {
   const summaries = new Map();

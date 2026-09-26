@@ -197,6 +197,20 @@ const baseRec = { key: "12345", platform: "x", authorName: "Boris Cherny", autho
   const m = map(rec("100", "a", undefined, { text: "", photos: ["https://pbs.twimg.com/media/A.jpg"] }));
   assert.equal(X.briefRequest(baseRec, m, "100", { feed: true }).post.text, "visible text from the page");
 }
+{
+  // A thread with a picture-only middle post: x-post-data.js drops the media link, so that post's text
+  // is blank. "posts" carries only the two posts with real text (isThread in brief-prompt.js needs every
+  // entry non-blank), but every post's pictures still count, and the note still reports all 3 posts read.
+  const m = map(
+    rec("100", "a", undefined, { text: "text" }),
+    rec("101", "a", "100", { text: "", photos: ["https://pbs.twimg.com/media/mid.jpg"] }),
+    rec("102", "a", "101", { text: "text", photos: ["https://pbs.twimg.com/media/last.jpg"] }),
+  );
+  const r = X.briefRequest(baseRec, m, "101", { feed: false });
+  assert.deepEqual(plain(r.post.posts), [{ text: "text" }, { text: "text" }], "the picture-only post is left out of posts");
+  assert.deepEqual(plain(r.post.photos), ["https://pbs.twimg.com/media/mid.jpg", "https://pbs.twimg.com/media/last.jpg"], "but its picture still travels");
+  assert.equal(r.note, "Read 3 posts by @a.", "the note still counts all 3 posts read");
+}
 
 // ---- watchRequest ----
 {

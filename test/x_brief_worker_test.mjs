@@ -1,9 +1,18 @@
 // Offline: brief() in the real worker for X threads and pictures. In-memory chrome.storage, a stubbed
 // OpenRouter: no keys, no network.
 import assert from "node:assert/strict";
+import vm from "node:vm";
+import { readFileSync } from "node:fs";
 import { DEFAULT_VIDEO_MODEL } from "../watch-prompt.js";
 import { DEFAULT_MODEL } from "../models.js";
 import { threadLength } from "../brief-prompt.js";
+
+// x-thread.js, loaded the same way x_thread_test.mjs does, to build a real briefRequest() for the
+// picture-only-post case below rather than hand-typing a "posts" array that might not match what the
+// page actually sends.
+const xtCtx = { URL };
+vm.runInNewContext(readFileSync(new URL("../x-thread.js", import.meta.url), "utf8"), xtCtx);
+const XT = xtCtx.SieveXThread;
 
 const store = {};
 const reset = (data = {}) => { for (const k of Object.keys(store)) delete store[k]; Object.assign(store, structuredClone({ orKey: "stub", ...data })); };
@@ -117,6 +126,27 @@ assert.equal(threadLength({ posts: [{ text: "Tips" }, { text: "  " }] }), 1);
 assert.equal(threadLength({ posts: [{ text: "Tips" }, { text: "1. Parallel" }] }), 2);
 assert.equal(threadLength({ text: "just a post" }), 1);
 
+// A thread with a picture-only middle post ("text", picture, "text"): x-thread.js's briefRequest leaves
+// that post out of "posts" (its own text is blank), but the other two still make it a real thread, so
+// threadLength reads 2, not 1 or 3 -- and the worker records threadPosts: 2 for it, the same as any
+// other 2-post thread.
+{
+  const readRec = (id, extra) => XT.readRecord(JSON.stringify({ id, author: "bcherny", ...(id !== "100" ? { replyTo: String(Number(id) - 1) } : {}), text: "post", ...extra }));
+  const records = new Map([
+    ["100", readRec("100", { text: "text" })],
+    ["101", readRec("101", { text: "", photos: ["https://pbs.twimg.com/media/mid.jpg"] })],
+    ["102", readRec("102", { text: "text" })],
+  ]);
+  const built = XT.briefRequest(post({ posts: undefined }), records, "101", { feed: false });
+  assert.equal(threadLength(built.post), 2, "the picture-only post doesn't count, but the thread is still real");
+
+  reset();
+  requests.length = 0;
+  r = await send({ type: "brief", post: { ...built.post, key: "77777" } });
+  assert.equal(r.error, undefined, r.error);
+  assert.equal(r.threadPosts, 2);
+}
+
 // Picture-path errors name the video model in use, not "the model"; a 4xx on that path usually means
 // an expired pbs.twimg.com link, so it isn't told to switch models -- it's told to reload the page.
 // reasoning is left off the request body entirely when photos are sent (some vision models reject
@@ -157,6 +187,21 @@ requests.length = 0;
 r = await send({ type: "brief", post: post({ key: "11111", photos: ["https://pbs.twimg.com/media/A.jpg"], photoCount: 5000 }) });
 assert.equal(r.error, undefined, r.error);
 assert.match(requests[0].messages[1].content[0].text, /has 1000 pictures; the first 1 is here/);
+
+// A post saved at scoring time (the "save" message, sent with only the visible text) and then briefed
+// as a thread: brief()'s save(plain, { replace: true }) updates that entry in place with the thread's
+// joined words and its postUrl, rather than save()'s ordinary early return leaving the first, thinner
+// save untouched. Still exactly one entry for the key: this is an update, not a second save.
+reset();
+requests.length = 0;
+await send({ type: "save", post: { key: "22222", platform: "x", text: "visible text from the page", worth: 0.8 } });
+const savedAt = store.saved[0].savedAt;
+r = await send({ type: "brief", post: post({ key: "22222", posts: [{ text: "Tips thread" }, { text: "1. Parallel" }], postUrl: "https://x.com/bcherny/status/100" }) });
+assert.equal(r.error, undefined, r.error);
+assert.equal(store.saved.length, 1, "still one entry for the key, not a second save");
+assert.equal(store.saved[0].text, "Tips thread\n\n1. Parallel");
+assert.equal(store.saved[0].postUrl, "https://x.com/bcherny/status/100");
+assert.equal(store.saved[0].savedAt, savedAt, "the earlier savedAt is kept, not reset");
 
 // once()'s queue key includes the thread length: a single-post brief and a thread brief of the same
 // post, sent together (as when a feed click and a thread click on the same post race each other),

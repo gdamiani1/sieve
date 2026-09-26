@@ -68,6 +68,10 @@
   const mediaView = () => /\/status\/\d+\/(photo|video)\/\d+/.test(location.pathname);
   // In the feed, posts keep coming for as long as someone scrolls; keep the most recent ones only.
   const MAX_FEED_RECORDS = 500;
+  // A post's own page can carry a very long thread (or reply chain) too, so it needs a cap of its own:
+  // higher than the feed's, since threadOf reads up to 50 posts back from wherever the cap left the
+  // parent, but still finite, so an endless scroll on one post's page can't grow the map forever.
+  const MAX_POST_RECORDS = 2000;
 
   // The post's own link, from its timestamp (the way X has linked a post for years); "" when it has none.
   const permalink = (post) => post.querySelector('a[href*="/status/"] time')?.parentElement?.getAttribute("href") || "";
@@ -98,7 +102,8 @@
       if (ids.length && !ids.includes(rec.id)) return null;
       records.delete(rec.id); // put back at the end, so the cap below drops the posts read longest ago
       records.set(rec.id, rec);
-      if (!onPostPage()) while (records.size > MAX_FEED_RECORDS) records.delete(records.keys().next().value);
+      const cap = onPostPage() ? MAX_POST_RECORDS : MAX_FEED_RECORDS;
+      while (records.size > cap) records.delete(records.keys().next().value);
       post.dataset.sieveXId = rec.id;
       return rec;
     } catch {
