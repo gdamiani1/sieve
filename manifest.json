@@ -75,12 +75,25 @@
       ],
       "js": [
         "brief-panel.js",
+        "watch-drawer.js",
+        "x-thread.js",
         "x.js"
       ],
       "css": [
         "content.css"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "x-post-data.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "action": {

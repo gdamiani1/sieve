@@ -55,6 +55,7 @@ shreddit-post.jev-maybe, .thing.jev-maybe { outline: 2px solid #9aa2ff; outline-
   background: #14120e; color: #fff; white-space: nowrap; }
 .sieve-yt-chip-strong .sieve-yt-watch { background: #fff; color: #2433f5; }
 .sieve-yt-watch:disabled { opacity: .5; cursor: default; }
+.jev-suggest:disabled { opacity: .5; cursor: default; } /* "too long to watch" on X */
 .sieve-yt-strong { outline: 2px solid var(--sieve-line); outline-offset: 4px; border-radius: 12px; }
 .sieve-yt-bar { display: flex; gap: 10px; align-items: center; margin: 8px 0 4px; }
 .sieve-yt-bar-label { font: 800 12px/1 -apple-system, system-ui, sans-serif; color: var(--sieve-line); letter-spacing: .04em; text-transform: uppercase; }

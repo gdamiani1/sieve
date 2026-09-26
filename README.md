@@ -38,6 +38,8 @@ you do the part that needs judgement.
 
 **X**
 - Same scoring and briefs as LinkedIn. Ads are skipped.
+- On a post's own page, Brief reads the author's whole thread from X's own page data (the full text, not the
+  "Show more" cut), and looks at the pictures in it. An X video gets Watch it for me, as on YouTube.
 
 **Technique briefs**
 - On LinkedIn and X, posts that teach a technique or tool you could try get a "technique to try" badge and,
@@ -137,11 +139,16 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/video_platform_test.mjs # Watch it for me on a platform other than YouTube (offline)
     node test/store_zip_test.mjs    # the store package: leaves out tests and tools, refuses forbidden words and missing loads (offline)
     node test/fake_dom_test.mjs     # the fake DOM test helper itself (offline)
+    node test/x_post_data_test.mjs  # X's page data: full text, reply chain, pictures and video (offline)
+    node test/x_thread_test.mjs     # X threads: checking page summaries, finding the thread, brief and watch requests (offline)
+    node test/x_brief_worker_test.mjs # X briefs through the real worker: pictures, the vision model, threads (offline)
+    node test/x_page_test.mjs       # x.js on a fake X page: threads, pictures, Watch it for me (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring
     node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
+    node test/x_live_test.mjs       # an X picture brief on Flash-Lite and Flash, and an X video watched, under 1 US cent
     node test/compare_scorers.mjs   # the invented sets scored by Jev and by OpenRouter side by side, with cost; SET=reddit, youtube or hostile (live, a few cents); TITLE_ONLY=1 with SET=youtube scores the tiles as 1.3.0 did
 
 On the invented set, Jev's LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
@@ -169,6 +176,8 @@ instead of high).
 - `digest-prompt.js`: which saved posts go into a digest (flagged ones left out), the digest prompt, the Left out note and the final text.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
   `linkedin-post-id.js`: runs in LinkedIn's own page and finds a feed post's id, so briefs link to the post. Reads only.
+  `x-post-data.js`: runs in X's own page and reads a post's full text, reply chain, pictures and video. Reads only.
+  `x-thread.js`: checks what `x-post-data.js` wrote, finds the author's thread, and builds the brief and watch requests.
 - `watch-prompt.js`: the Watch it for me prompt, cost estimate and parser. `json.js`: tolerant parsing of model JSON.
 - `brief.js`: the technique brief (shape, safety header, markdown, Copy as prompt, the rules for warned briefs).
   `brief-prompt.js`: the prompt that briefs one post, and its parser.

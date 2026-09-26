@@ -3,7 +3,7 @@ import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./w
 import { DEFAULT_MODEL, PROVIDER_PREFS } from "./models.js";
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
-import { briefMessages, parseBrief } from "./brief-prompt.js";
+import { briefMessages, briefMessagesWithPictures, parseBrief, threadLength } from "./brief-prompt.js";
 import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
@@ -301,28 +301,52 @@ const hasCredentials = (u) => {
   }
 };
 
+// An X post's picture links, as the page sent them: https on pbs.twimg.com only, no credentials, at most
+// ten. Anything else is dropped, not refused: the brief still has the words. Other platforms send none.
+const xPhotos = (platform, photos) => (platform === "x" && Array.isArray(photos) ? photos : [])
+  .map((u) => { try { const x = new URL(String(u)); return x.protocol === "https:" && x.hostname === "pbs.twimg.com" && !x.username && !x.password ? x.href : ""; } catch { return ""; } })
+  .filter(Boolean)
+  .slice(0, 10);
+
 // A technique brief for one post the user clicked "Brief" on. The brief is kept (and the post saved)
 // for the digest page and the export. Cached per post unless asked again.
 async function brief(req) {
-  const p = req.post || {};
+  const raw = req.post || {};
+  // A page message's "posts" is bounded to 50 entries (the prompt sends at most 50 anyway, and the
+  // AI-directed backstop reads every entry) before anything else reads it: a runaway or hostile page
+  // script sending thousands of posts doesn't slow the backstop or inflate what gets sent. A local
+  // copy, so the caller's own request object and its posts array are never changed.
+  const bounded = Array.isArray(raw.posts) && raw.posts.length > 50 ? raw.posts.slice(0, 50) : raw.posts;
+  const p = { ...raw, posts: bounded };
   if (!p.key || !p.text) return { error: "Sieve couldn't read this post. Reload the page and try again." };
   // A watched video's own "yt-" record belongs to Watch it for me, not to this flow: briefing it here
   // by mistake would overwrite the video's brief with a LinkedIn/X-shaped prompt.
   if (String(p.key).startsWith("yt-")) return { error: "YouTube videos get their brief from Watch it for me." };
   const platform = platformOf(p.platform);
-  const { orKey, model = DEFAULT_MODEL, briefs = {} } = await chrome.storage.local.get(["orKey", "model", "briefs"]);
+  const { orKey, model: textModel = DEFAULT_MODEL, videoModel = DEFAULT_VIDEO_MODEL, briefs = {} } = await chrome.storage.local.get(["orKey", "model", "videoModel", "briefs"]);
+  // A brief with pictures goes to the model that reads them (the video model setting); the text model
+  // reads words only.
+  const photos = xPhotos(platform, p.photos);
+  const model = photos.length ? videoModel : textModel;
   // A record already in storage but that no longer normalizes (an older shape, or corrupted) doesn't
   // count as cached: fall through and brief the post again rather than hand back nothing useful.
   // Looked up by platform as well as key: a post cross-posted to LinkedIn and X has the same key on both.
+  // Served from the cache whenever this request's thread is no longer than the one already briefed: a
+  // feed click sends no "posts" at all, and shouldn't miss the cache and replace a thread brief with a
+  // shorter one just because this particular request happened not to carry the thread.
   const cachedRaw = findBrief(briefs, platform, p.key);
   const cached = cachedRaw ? briefReply(cachedRaw) : null;
-  if (cached && !req.again) return cached;
+  if (cached && !req.again && threadLength(p) <= (cached.threadPosts || 1)) return cached;
   if (!orKey) return { error: "Briefs need an OpenRouter key. Add one in Sieve's settings." };
   const prefs = await loadPrefs();
   // One retry with more room: an unreadable answer is usually a cut-off. The whole attempt loop runs
   // inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still records whatever was
   // spent before it, exactly once -- and never writes stats at all when nothing was spent.
   let parsed = null, cost = 0, lastError = "";
+  // Capped well above anything a real post could carry, so a bogus photoCount from the page can't blow
+  // up the sentence the model reads ("has 4,000,000,000 pictures").
+  const photoCount = Math.min(1000, Math.max(photos.length, Number.isInteger(p.photoCount) ? p.photoCount : 0));
+  const messages = photos.length ? briefMessagesWithPictures(p, photos, prefs, photoCount) : briefMessages(p, prefs);
   try {
     const attempts = [900, 1800];
     for (const [i, maxTokens] of attempts.entries()) {
@@ -331,7 +355,9 @@ async function brief(req) {
         res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-          body: JSON.stringify({ model, provider: PROVIDER_PREFS, messages: briefMessages(p, prefs), max_tokens: maxTokens, temperature: req.again ? 0.5 : 0.2, response_format: { type: "json_object" }, reasoning: { enabled: false }, usage: { include: true } }),
+          // Reasoning is left off entirely on the picture path, the same as watch(): some vision models
+          // reject a request that tries to disable it, rather than just ignoring the field.
+          body: JSON.stringify({ model, provider: PROVIDER_PREFS, messages, max_tokens: maxTokens, temperature: req.again ? 0.5 : 0.2, response_format: { type: "json_object" }, ...(photos.length ? {} : { reasoning: { enabled: false } }), usage: { include: true } }),
         });
       } catch {
         return { error: "Network error reaching OpenRouter. Check your connection, then try again." };
@@ -344,7 +370,12 @@ async function brief(req) {
         // punctuation strip stops OpenRouter's own "." from turning into a "..".
         const why = Array.from(cleanText(body.error?.message)).slice(0, 160).join("").replace(/[.\s]+$/, "");
         const retry = res.status === 408 || res.status === 429 || res.status >= 500;
-        return { error: `OpenRouter said ${res.status}${why ? `: ${why}` : ""}. ${retry ? "Try again in a minute." : "Check the model in Sieve's settings, or pick another one."}` };
+        // On the picture path a 4xx is usually an expired pbs.twimg.com link, not a bad model choice:
+        // the model in use is the video model, and reloading the page gets a fresh link.
+        const notRetry = photos.length
+          ? "Check the video model in Sieve's settings, or reload the page: picture links expire."
+          : "Check the model in Sieve's settings, or pick another one.";
+        return { error: `OpenRouter said ${res.status}${why ? `: ${why}` : ""}. ${retry ? "Try again in a minute." : notRetry}` };
       }
       cost += body.usage?.cost || 0;
       const cutOff = body.choices?.[0]?.finish_reason === "length";
@@ -374,12 +405,14 @@ async function brief(req) {
   // The post's own link when the page gave one (LinkedIn's postUrl; on X and Reddit authorUrl already is
   // the post), the author's otherwise. A post with no title of its own is named by its first line, so
   // the brief's source line says which post it was, not only who wrote it.
-  const rec = { key: p.key, platform, title: p.title || firstLine(p.text), author: p.authorName || "", url: webUrl(p.postUrl) || webUrl(p.authorUrl), at: Date.now(), cost, ...parsed.brief };
+  const rec = { key: p.key, platform, title: p.title || firstLine(p.text), author: p.authorName || "", url: webUrl(p.postUrl) || webUrl(p.authorUrl), at: Date.now(), cost, ...(threadLength(p) > 1 ? { threadPosts: threadLength(p) } : {}), ...parsed.brief };
   await update("briefs", ({ briefs: latest = {} }) => ({ briefs: addBrief(latest, rec) }));
   // The brief is what the user asked for; a storage hiccup on the post copy shouldn't lose it. save()
   // does its own field cleanup now, the same for every route that calls it.
   try {
-    await save(p);
+    // The thread's posts and the picture links are for the model only; the saved post is its words.
+    const { posts: _posts, photos: _photos, photoCount: _count, ...plain } = p;
+    await save(plain, { replace: true });
   } catch {}
   await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
   return briefReply(rec);
@@ -397,11 +430,23 @@ const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => 
 // "save" message from the content scripts, watch()'s video record, and brief()'s post copy alike.
 // A post is the same post only on the same platform: LinkedIn and X both key a post by a hash of its
 // text, so a cross-posted post has the same key on each.
-function save(post) {
+// `replace` is only for brief(): a strong post is saved at scoring time (x.js's "save" message) with
+// whatever text was visible on the page then, before a thread's other posts were read. Briefing it later
+// can turn up the joined thread text and a postUrl the first save never had, and that's worth keeping
+// over an early-return that leaves the saved entry stuck with a single post's words. The plain "save"
+// message path stays as it was: the first save wins and later saves of the same post are no-ops.
+function save(post, { replace = false } = {}) {
   const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0, scorer: post.scorer === "jev" || post.scorer === "openrouter" ? post.scorer : undefined };
   return update("saved", ({ saved: stored }) => {
     const saved = savedPosts(stored);
-    if (saved.some((p) => p.key === clean.key && platformOf(p.platform) === clean.platform)) return null;
+    const existing = saved.findIndex((p) => p.key === clean.key && platformOf(p.platform) === clean.platform);
+    if (existing !== -1) {
+      if (!replace) return null;
+      // Only the words and the link move; savedAt (and everything else about the earlier save) stays.
+      const next = [...saved];
+      next[existing] = { ...saved[existing], text: clean.text, postUrl: clean.postUrl || saved[existing].postUrl, ...(clean.title ? { title: clean.title } : {}) };
+      return { saved: next };
+    }
     const cutoff = Date.now() - KEEP_DAYS * 864e5;
     const next = [{ ...clean, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
     return { saved: next };
@@ -468,7 +513,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "brief") {
-    once(`brief:${msg.post?.platform}:${msg.post?.key}`, () => brief(msg)).then(reply, () => reply({ error: "Sieve couldn't store the brief. Try again, and if it keeps failing, reload the extension." }));
+    // The thread length is part of the queue key too: a single-post (feed) brief and a thread brief of
+    // the same post, in flight together, are different requests and mustn't share one answer.
+    once(`brief:${msg.post?.platform}:${msg.post?.key}:${threadLength(msg.post || {})}`, () => brief(msg)).then(reply, () => reply({ error: "Sieve couldn't store the brief. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
   if (msg.type === "digest") {
