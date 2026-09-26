@@ -329,7 +329,7 @@ for (const tail of [cp(0x0301, 0x0316).repeat(50000), cp(0x0f73).repeat(33333) +
     const body = bu.content.slice(bu.content.indexOf("\n") + 1);
     const got = JSON.parse(body.split("\n")[0]);
     assert.equal(got.posts.length, 7, "the 30,000 budget keeps 7 whole posts of 4,000 each and drops the rest");
-    assert.match(body, /\nSome of the thread was cut to fit: it goes on past what is here\.$/);
+    assert.match(body, /\nSome of the thread was cut to fit\.$/);
   }
   // An under-budget thread gets no such line.
   {

@@ -164,7 +164,7 @@ The post's pictures follow the JSON object${thread ? ", in thread order" : ""}. 
 const MAX_PICTURES = 10;
 const MAX_THREAD_POSTS = 50;
 const MAX_THREAD_TEXT = 30000; // code points of post text (not counting quotes) across the whole thread
-const CUT_NOTE = "\nSome of the thread was cut to fit: it goes on past what is here.";
+const CUT_NOTE = "\nSome of the thread was cut to fit.";
 
 export function briefMessages(post, prefs, { pictures = false } = {}) {
   const thread = isThread(post);
