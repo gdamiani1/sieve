@@ -444,7 +444,7 @@ function save(post, { replace = false } = {}) {
       if (!replace) return null;
       // Only the words and the link move; savedAt (and everything else about the earlier save) stays.
       const next = [...saved];
-      next[existing] = { ...saved[existing], text: clean.text, postUrl: clean.postUrl, ...(clean.title ? { title: clean.title } : {}) };
+      next[existing] = { ...saved[existing], text: clean.text, postUrl: clean.postUrl || saved[existing].postUrl, ...(clean.title ? { title: clean.title } : {}) };
       return { saved: next };
     }
     const cutoff = Date.now() - KEEP_DAYS * 864e5;
