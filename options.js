@@ -33,6 +33,7 @@ async function load() {
   checks("redditKinds", REDDIT_KINDS, p.redditKinds);
   checks("youtubeKinds", YOUTUBE_KINDS, p.youtubeKinds);
   $("youtubeOn").checked = p.youtubeOn;
+  $("youtubeDescriptions").checked = p.youtubeDescriptions;
   $("videoModel").value = s.videoModel || DEFAULT_VIDEO_MODEL;
   $("subreddits").value = p.subreddits.join("\n");
   $("freshHours").value = p.freshHours;
@@ -59,6 +60,7 @@ $("saveAll").onclick = async () => {
     redditKinds: readChecks("redditKinds"),
     youtubeKinds: readChecks("youtubeKinds"),
     youtubeOn: $("youtubeOn").checked,
+    youtubeDescriptions: $("youtubeDescriptions").checked,
     linkedinOn: $("linkedinOn").checked,
     xOn: $("xOn").checked,
     redditOn: $("redditOn").checked,

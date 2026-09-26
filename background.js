@@ -4,7 +4,7 @@ import { DEFAULT_MODEL, PROVIDER_PREFS } from "./models.js";
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
-import { scoreMessages, parseScore, postDirected } from "./score-prompt.js";
+import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -102,7 +102,8 @@ async function scoreViaOpenRouter(orKey, questions, state) {
   return { error: "unreadable", cost };
 }
 
-async function classify(state, platform) {
+async function classify(pageState, platform) {
+  const state = platform === "youtube" ? youtubeState(pageState) : pageState;
   const { redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get("redditAbout");
   const use = await scorer();
   if (!use.jev && !use.orKey) return { error: "no_key" };

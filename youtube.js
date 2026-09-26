@@ -1,4 +1,5 @@
-// YouTube: a Jev chip on each video you scroll past (title, channel, length), and
+// YouTube: a score chip on each video you scroll past (title, channel, length, and what else the tile or
+// the video's description says: youtube-text.js), and
 // "Watch it for me", which has a video model watch the whole thing on request.
 // Never plays, likes, comments or subscribes.
 (() => {
@@ -52,9 +53,21 @@
   };
 
   let enabled = true;
+  let descriptions = true;
   const results = new Map();
   const pending = new Set();
-  chrome.storage.local.get("prefs").then((v) => { enabled = v.prefs?.youtubeOn !== false; if (!enabled) clearAll(); });
+  chrome.storage.local.get("prefs").then((v) => {
+    enabled = v.prefs?.youtubeOn !== false;
+    descriptions = v.prefs?.youtubeDescriptions !== false;
+    if (!enabled) clearAll();
+  });
+
+  // The page's own client version, read once, from the inline script that sets YouTube's config.
+  const T = globalThis.SieveYouTubeText;
+  const describe = T?.describer({
+    fetch: (...a) => fetch(...a),
+    version: () => T.clientVersion([...document.scripts].find((s) => !s.src && s.textContent.includes("INNERTUBE_CLIENT_VERSION"))?.textContent),
+  });
 
   const cost = (seconds) => {
     if (!seconds) return "";
@@ -81,9 +94,14 @@
     const channel = (el.querySelector('ytd-channel-name a, a[href^="/@"]')?.textContent || "").trim();
     const badge = [...el.querySelectorAll("badge-shape, ytd-thumbnail-overlay-time-status-renderer, [class*='badge']")]
       .map((b) => b.textContent.trim()).find((t) => /^\d{1,2}(:\d{2}){1,2}$/.test(t));
-    const snippet = (el.querySelector(".metadata-snippet-text, #description-text")?.textContent || "").trim();
     if (!title) return null;
-    return { id, url: `https://www.youtube.com/watch?v=${id}`, title, channel, seconds: badge ? toSeconds(badge) : 0, snippet };
+    // Search results show description lines, chapter titles and sometimes YouTube's own summary. The
+    // summary sits where the chapter list would, so it's read only from a tile without chapters.
+    const chapters = [...el.querySelectorAll("ytd-macro-markers-list-item-renderer h3")].map((h) => h.textContent);
+    const summary = chapters.length ? "" : el.querySelector("ytd-expandable-metadata-renderer #collapsed-title")?.textContent || "";
+    const snippets = [...el.querySelectorAll(".metadata-snippet-text, .metadata-snippet-text-navigation, #description-text")].map((s) => s.textContent);
+    const more = T ? T.tileText({ snippets, chapters, summary }) : { snippet: "", chapters: "" };
+    return { id, url: `https://www.youtube.com/watch?v=${id}`, title, channel, seconds: badge ? toSeconds(badge) : 0, ...more };
   }
 
   function thumbOf(el) {
@@ -115,10 +133,16 @@
     if (r.tier === "low" && r.lowMode === "hide") { el.classList.add("jev-hidden"); return; }
     const score = document.createElement("span");
     score.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)}${LABEL[r.kind] ? " · " + LABEL[r.kind] : ""}`;
-    score.title = [r.topic, r.reason].filter(Boolean).join(" · ") || `${r.scorer === "jev" ? "Jev's" : "Sieve's"} guess from the title, channel and length`;
+    score.title = [r.topic, r.reason].filter(Boolean).join(" · ") || `${r.scorer === "jev" ? "Jev's" : "Sieve's"} guess from the ${from(r.read)}`;
     chip.append(score);
     if (r.tier !== "low") chip.append(watchButton(v));
     thumb.append(chip);
+  }
+
+  // What the score was read from, for the chip's tooltip.
+  function from(read = {}) {
+    const extra = [read.snippet && "what the tile shows", read.chapters && "chapters", read.description && "description"].filter(Boolean);
+    return extra.length ? `title, channel, length, ${extra.join(" and ")}` : "title, channel and length";
   }
 
   function watchButton(v) {
@@ -191,13 +215,20 @@
     if (results.has(v.id)) return render(tile, v, results.get(v.id));
     if (pending.has(v.id)) return;
     pending.add(v.id);
-    const state = { title: v.title, channel: v.channel, length: v.seconds ? `${Math.round(v.seconds / 60)} min` : "unknown", snippet: v.snippet };
-    send({ type: "classify", platform: "youtube", state }, (r) => {
-      pending.delete(v.id);
-      if (!r) return;
-      if (r.error === "rate_limited" || r.error === "network") return;
-      results.set(v.id, r);
-      tiles().forEach((t) => { if (t.dataset.jevKey === v.id) render(t, v, r); });
+    // A tile that shows nothing beyond its title (home, the sidebar) gets the start of the description,
+    // unless that's switched off. describe() answers "" on any failure, so the tile is still scored.
+    const bare = !v.snippet && !v.chapters;
+    (bare && descriptions && describe ? describe(v.id) : Promise.resolve("")).then((description) => {
+      if (retired || !enabled) { pending.delete(v.id); return; }
+      const state = { title: v.title, channel: v.channel, length: v.seconds ? `${Math.round(v.seconds / 60)} min` : "unknown", snippet: v.snippet, chapters: v.chapters, description };
+      send({ type: "classify", platform: "youtube", state }, (r) => {
+        pending.delete(v.id);
+        if (!r) return;
+        if (r.error === "rate_limited" || r.error === "network") return;
+        const scored = { ...r, read: { snippet: !!v.snippet, chapters: !!v.chapters, description: !!description } };
+        results.set(v.id, scored);
+        tiles().forEach((t) => { if (t.dataset.jevKey === v.id) render(t, v, scored); });
+      });
     });
   }
 
@@ -223,6 +254,7 @@
   chrome.storage.onChanged.addListener((changes) => {
     if (!changes.prefs) return;
     enabled = changes.prefs.newValue?.youtubeOn !== false;
+    descriptions = changes.prefs.newValue?.youtubeDescriptions !== false;
     results.clear();
     clearAll();
     document.querySelectorAll(".sieve-yt-bar").forEach((b) => b.remove());

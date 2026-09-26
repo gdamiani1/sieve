@@ -60,6 +60,7 @@
       "js": [
         "brief-panel.js",
         "watch-drawer.js",
+        "youtube-text.js",
         "youtube.js"
       ],
       "css": [

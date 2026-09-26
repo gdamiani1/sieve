@@ -8,7 +8,10 @@
 //
 //   node test/compare_scorers.mjs [model ...]
 //   SET=reddit node test/compare_scorers.mjs     (the invented Reddit posts from reddit_test.mjs)
-//   SET=youtube node test/compare_scorers.mjs    (invented video tiles, labelled for the default reader)
+//   SET=youtube node test/compare_scorers.mjs    (invented video tiles, labelled for the default reader; the
+//                                                 ones after the first six have titles that mislead, with the
+//                                                 snippet, chapters or description that say what the video is)
+//   TITLE_ONLY=1 SET=youtube ...                  (the same tiles from title, channel and length only, as 1.3.0 scored them)
 //   SET=hostile node test/compare_scorers.mjs    (test/hostile.json: every one must land low, "!" marks
 //                                                 a post the backstop or the model's own report caught)
 import { readFileSync } from "node:fs";
@@ -41,7 +44,20 @@ const YOUTUBE = [
   { id: "reaction", want: "low", state: { title: "Reacting to the WILDEST AI news this week!!", channel: "Hype Central", length: "12 min" } },
   { id: "prank", want: "low", state: { title: "Funniest office pranks compilation 2026", channel: "LOL Daily", length: "9 min" } },
   { id: "course", want: "low", state: { title: "Get rich with AI: my $997 course is finally open", channel: "Passive Income Pro", length: "5 min" } },
+  // Titles that mislead: a joke, a vague line or clickbait on a real how-to, and a serious title on fluff.
+  { id: "haunted", want: "high", state: { title: "my terminal is haunted", channel: "Kit Builds", length: "14 min", chapters: "Why my files kept reformatting | What a hook is | A PostToolUse hook that runs the formatter | Blocking edits to .env | Testing the hooks | The settings file" } },
+  { id: "finally", want: "high", state: { title: "It finally happened", channel: "Applied ML Weekly", length: "22 min", description: "Our invoice extractor broke in production for the third time, so we built what we should have built first: a golden set of 60 real invoices and a check that runs in CI on every prompt change.\n\nIn this video:\n0:00 What broke\n2:10 Picking 60 invoices\n6:40 Writing the checks\n12:30 Wiring it into GitHub Actions\n18:00 What it caught in the first week\n\nThe repo is linked below." } },
+  { id: "quit-job", want: "high", state: { title: "I QUIT my job because of this AI tool 😱", channel: "Ops Notes", length: "19 min", snippet: "I didn't quit. But this n8n flow now sorts 300 emails a day into orders, complaints and invoices for our small shop. Full build, the prompt, and what it costs per month." } },
+  { id: "sponsored", want: "high", state: { title: "Bookkeeping on autopilot", channel: "Solo Operator", length: "16 min", description: "This video is sponsored by NordVPN. Get 4 extra months at nordvpn.com/solo\nJoin my newsletter: solo.example/news\nSocials: @solooperator\n\nI run a one-person business and I was spending four hours a month on bookkeeping. Here I build a Python script that reads bank exports, matches them to invoices and flags the ones that don't match, step by step.\n\n0:00 Sponsor\n1:10 The problem\n3:00 Reading the bank export\n7:45 Matching invoices\n12:20 The monthly report" } },
+  { id: "cooking", want: "high", state: { title: "Cooking with robots 🍳", channel: "Kit Builds", length: "21 min", chapters: "Parsing supplier invoices with a small model | Building the n8n flow | Handling the weird PDFs | What it costs per month" } },
+  { id: "tried-it", want: "high", state: { title: "I tried the feature everyone's hyped about", channel: "Build With Agents", length: "17 min", chapters: "Setup | The task: migrate a 400-test suite | Where the agent got stuck | The fix | Time and cost" } },
+  { id: "trailer", want: "low", state: { title: "Production-grade AI agents: the complete architecture", channel: "Agent Academy", length: "3 min", description: "Enrollment for the Agent Architect Cohort is open until Friday! 🚀 $1,497, or 3 payments.\n\nIn this trailer you'll get a first look at what we cover in the 8-week program. Spots are limited.\n\nApply now: agentacademy.example/apply\nFree community: agentacademy.example/join" } },
+  { id: "fluff", want: "low", state: { title: "How I automate my whole business with AI (full system)", channel: "Passive Income Pro", length: "11 min", snippet: "Come with me through my morning: coffee, gym, and a look at the dashboard my AI team built. Get all my templates in the community, link below." } },
 ];
+
+// TITLE_ONLY: what 1.3.0 sent for a tile (its snippet was always empty on the page).
+const TITLE_ONLY = process.env.TITLE_ONLY === "1";
+if (TITLE_ONLY) for (const t of YOUTUBE) t.state = { title: t.state.title, channel: t.state.channel, length: t.state.length };
 
 const HOSTILE = JSON.parse(readFileSync(new URL("./hostile.json", import.meta.url))).map((f) => ({ id: f.id, want: "low", state: { author: f.post.authorName, title: f.post.title, post: f.post.text } }));
 const questions = SET === "reddit" ? redditQuestions(prefs) : SET === "youtube" ? youtubeQuestions(prefs) : linkedinQuestions(prefs);

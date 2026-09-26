@@ -72,6 +72,8 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <section>
 <h2>YouTube</h2>
 <div class="inline"><label><input id="youtubeOn" type="checkbox"> Score YouTube videos and offer "Watch it for me"</label></div>
+<div class="inline"><label><input id="youtubeDescriptions" type="checkbox"> Read each video's description when the tile doesn't show one</label></div>
+<p class="hint">For home and sidebar tiles, which show only a title. Sieve asks YouTube for the start of the description, without your YouTube cookies, and sends it to the scorer with the title.</p>
 <label class="f">Kinds of videos to show</label>
 <div class="checks" id="youtubeKinds"></div>
 <label class="f" for="videoModel">Video model for "Watch it for me" (OpenRouter id, must accept video)</label>

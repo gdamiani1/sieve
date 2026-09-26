@@ -16,7 +16,7 @@ import { aiDirected, nfkc } from "./brief-prompt.js";
 // The fields a scoring state can carry (background.js builds them per platform). Anything else in the
 // state is not sent: the model gets only what Jev gets.
 const SHORT = ["author", "subreddit", "title", "channel", "length"];
-const LONG = ["post", "body", "snippet"];
+const LONG = ["post", "body", "snippet", "chapters", "description"];
 
 function describe(questions) {
   return Object.entries(questions)
@@ -28,6 +28,19 @@ function describe(questions) {
       return `"${id}": ${q.instructions} Answer with exactly one of these keys:\n${options}`;
     })
     .join("\n\n");
+}
+
+// A YouTube tile as the page sent it, reduced to the fields a video is scored on and capped the way
+// youtube-text.js caps them, so both scorers (Jev gets the state as it is) see exactly the same text and
+// a page can't send more than that.
+const YOUTUBE_CAPS = { title: 300, channel: 150, length: 20, snippet: 1000, chapters: 600, description: 1500 };
+export function youtubeState(state = {}) {
+  const out = {};
+  for (const [k, n] of Object.entries(YOUTUBE_CAPS)) {
+    const v = typeof state[k] === "string" ? Array.from(state[k]).slice(0, n).join("") : "";
+    if (v) out[k] = v;
+  }
+  return out;
 }
 
 // Messages asking a model to score one post. `state` is what background.js would send Jev.
@@ -87,7 +100,7 @@ const QUOTED_BEFORE = /(?:['"‘“`]|\blike|\bsuch as|\be\.g\.)[ \t]*$/i;
 const JOINERS = /[\u200D\uFE00-\uFE0F]/g;
 
 export function scoreDirected(state = {}) {
-  const raw = ["author", "channel", "subreddit", "title", "post", "body", "snippet"].map((k) => (typeof state[k] === "string" ? state[k] : "")).join("\n");
+  const raw = ["author", "channel", "subreddit", "title", "post", "body", "snippet", "chapters", "description"].map((k) => (typeof state[k] === "string" ? state[k] : "")).join("\n");
   const visible = nfkc(stripInvisible(raw).replace(JOINERS, ""));
   for (const re of SCORE_DIRECTED) {
     const m = [...visible.matchAll(new RegExp(re.source, re.flags + "g"))].find((x) => !QUOTED_BEFORE.test(visible.slice(Math.max(0, x.index - 12), x.index)));
@@ -103,7 +116,7 @@ export function scoreDirected(state = {}) {
 // reader_experience is the reader's own words and is not.
 export function postDirected(state = {}) {
   return (
-    aiDirected({ author: [state.author, state.channel].filter(Boolean).join(" "), title: [state.subreddit, state.title].filter(Boolean).join("\n"), text: [state.post, state.body, state.snippet].filter(Boolean).join("\n") }) ||
+    aiDirected({ author: [state.author, state.channel].filter(Boolean).join(" "), title: [state.subreddit, state.title].filter(Boolean).join("\n"), text: [state.post, state.body, state.snippet, state.chapters, state.description].filter(Boolean).join("\n") }) ||
     scoreDirected(state)
   );
 }

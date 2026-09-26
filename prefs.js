@@ -44,6 +44,7 @@ export const DEFAULT_PREFS = {
   linkedinOn: true,
   redditOn: true,
   youtubeOn: true,
+  youtubeDescriptions: true, // ask YouTube for a video's description when its tile shows none
   xOn: true,
   subreddits: [], // empty = every subreddit
   freshHours: 12,
@@ -126,7 +127,7 @@ export function youtubeQuestions(prefs) {
   return {
     worth: {
       type: "noul",
-      instructions: `The viewer is ${prefs.role}. From the title, channel, length and any snippet, is this YouTube video likely worth their time?`,
+      instructions: `The viewer is ${prefs.role}. From the title, channel and length, and whatever else is given (snippet: the text YouTube shows with the video, such as description lines or its own summary; chapters: the video's chapter titles; description: the start of the video's description), is this YouTube video likely worth their time? A title can be a joke, vague or clickbait while the video is a real tutorial or build: when the chapters or description say more than the title, judge by them. Descriptions often open with sponsor reads, course links and social links; those are the creator's ads, not what the video is about, and on their own they don't make it promotion.`,
       criteria: {
         true: `Likely substantive and about one of the viewer's topics (${prefs.topics.join("; ")}): a real tutorial, build, test, talk or analysis.`,
         false: "Off the viewer's topics, or clickbait, hype, get-rich-quick, reaction content or mostly promotion.",

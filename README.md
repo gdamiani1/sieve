@@ -26,7 +26,11 @@ you do the part that needs judgement.
   (≤ 12 hours, ≤ 40 comments).
 
 **YouTube**
-- Every video tile you scroll past gets a score chip, from its title, channel, length and any snippet.
+- Every video tile you scroll past gets a score chip, from its title, channel and length and whatever else
+  says what the video is: on search pages the description lines, chapter titles and summary YouTube shows
+  with the tile; on home and sidebar tiles, which show only a title, the start of the video's description,
+  which Sieve asks YouTube for (its own player endpoint, without your YouTube cookies; switch it off in
+  settings). A joke or clickbait title on a real tutorial no longer sinks it.
 - **Watch it for me**: a video model (Gemini 2.5 Flash-Lite via OpenRouter by default) watches the whole
   public video, picture and sound, and returns watch / skim / skip, key points with clickable timestamps,
   the best moment, learnings and claims to check. About 0.2 US cents per minute of video, up to 55 minutes.
@@ -95,7 +99,8 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
 
 Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services at most and
 nowhere else. Whichever scores your posts (TypeSafe with Jev on, OpenRouter otherwise) gets what is scored: a
-post's text (for YouTube, the title, channel, length and any snippet), your role and topics, and on Reddit your
+post's text (for YouTube, the title, channel and length, the text YouTube shows with the tile, and for a tile
+that shows none, the first 1,500 characters of the description), your role and topics, and on Reddit your
 Reddit facts. OpenRouter gets a post's text when you ask for a brief (with your role and topics), your saved posts (except any Sieve left out) when you ask for a digest, and a
 video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
 request to the model you picked, except scoring, which always uses DeepSeek V4 Flash to keep a feed cheap.
@@ -104,7 +109,10 @@ request to the model you picked, except scoring, which always uses DeepSeek V4 F
 
 - Scoring through OpenRouter (the default): about 6 US cents per 1,000 LinkedIn and X posts, 9 on Reddit (your
   Reddit facts go with each post) and 5 on YouTube, with DeepSeek V4 Flash, measured on the invented sets with
-  `test/compare_scorers.mjs` on 24 Sep 2026.
+  `test/compare_scorers.mjs` on 24 Sep 2026. Reading YouTube descriptions (26 Sep) raised YouTube to about 7
+  US cents per 1,000 videos, measured on 20 real videos (about 1,075 input tokens each, against 880 from the
+  title alone); with Jev, about 4 instead of 3.5. The description request itself is free: about 5 KB from
+  YouTube per bare tile.
 - Scoring with Jev (optional): about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
 - A digest of a day's posts: well under a cent.
 - A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
@@ -115,6 +123,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
 `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY`, or on macOS from Keychain items `typesafe-api-key` / `openrouter-api-key`.
 
     node test/rules_test.mjs        # the rules on top of the score (offline, no keys)
+    node test/youtube_text_test.mjs # what a YouTube tile says beyond its title, and asking YouTube for the description (offline)
     node test/score_test.mjs        # scoring without a TypeSafe key: the prompt, the parser, and which scorer answers (offline)
     node test/watch_parse_test.mjs  # the video answer parser (offline)
     node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
@@ -133,7 +142,7 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/reddit_test.mjs       # Reddit scoring
     node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
-    node test/compare_scorers.mjs   # the invented sets scored by Jev and by OpenRouter side by side, with cost; SET=reddit, youtube or hostile (live, a few cents)
+    node test/compare_scorers.mjs   # the invented sets scored by Jev and by OpenRouter side by side, with cost; SET=reddit, youtube or hostile (live, a few cents); TITLE_ONLY=1 with SET=youtube scores the tiles as 1.3.0 did
 
 On the invented set, Jev's LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
 scored high where it was labelled maybe) and Reddit on 5 of 6 (the shared-inbox question scored 0.52, maybe
@@ -164,6 +173,8 @@ instead of high).
 - `brief.js`: the technique brief (shape, safety header, markdown, Copy as prompt, the rules for warned briefs).
   `brief-prompt.js`: the prompt that briefs one post, and its parser.
   `brief-panel.js`: shows a brief on LinkedIn, X and YouTube. `export.js`: the Export library file.
+- `youtube-text.js`: what a YouTube tile says beyond its title (description lines, chapters, YouTube's summary),
+  and the start of a video's description from YouTube's player endpoint when the tile shows none.
 - `watch-drawer.js`: the "watched for you" drawer for Watch it for me, shared by every page that offers it.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
 
