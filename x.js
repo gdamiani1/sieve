@@ -1,4 +1,4 @@
-// X (Twitter): same scoring and comment angles as LinkedIn. Reads only posts that stay on
+// X (Twitter): same scoring and briefs as LinkedIn. Reads only posts that stay on
 // screen, never likes, reposts, replies or follows. Hooks: X's long-standing data-testid labels.
 (() => {
   // After the extension is reloaded or updated, scripts already running in open tabs lose their
@@ -41,8 +41,6 @@
   const DWELL_MS = 600;
   const LABEL = {
     technique: "technique to try", built_something: "built something", opinion: "opinion", question: "asks a question", news: "news", promo: "promo", personal: "personal",
-    ask_failures: "ask about failures and limits", ask_how: "ask how it works", share_result: "share a related result",
-    answer_question: "answer their question", disagree: "respectful counterpoint", none: "",
   };
   const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again", key_rejected: "Sieve: key rejected", no_credit: "Sieve: out of TypeSafe credit" };
 
@@ -98,17 +96,11 @@
     if (r.tier === "low" && r.lowMode === "fade") post.classList.add("jev-low");
     if (r.tier !== "low") { post.classList.add(`sieve-x-${r.tier}`); wrap.classList.add(`jev-${r.tier}`); }
     const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
-    const angle = r.tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
-    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
+    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}`;
     if (r.tier === "low") { badge.classList.add("jev-quiet"); wrap.append(badge); return; }
-    const actions = document.createElement("span");
-    actions.className = "jev-actions";
-    const btn = document.createElement("button");
-    btn.className = "jev-suggest";
-    btn.textContent = "Reply angles";
-    btn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); angles(wrap, post, r, false); });
-    actions.append(btn);
     if (r.kind === "technique") {
+      const actions = document.createElement("span");
+      actions.className = "jev-actions";
       const bb = document.createElement("button");
       bb.className = "jev-suggest";
       bb.textContent = "Brief";
@@ -116,40 +108,9 @@
       bb.dataset.jevBriefBtn = "1";
       bb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); briefPanel(wrap, post, r, false); });
       actions.append(bb);
+      badge.append(actions);
     }
-    badge.append(actions);
     wrap.append(badge);
-  }
-
-  function angles(wrap, post, r, again) {
-    let panel = wrap.querySelector(".jev-draft:not(.jev-brief)");
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.className = "jev-draft";
-      panel.innerHTML = `<div class="jev-draft-note">Ideas, not a reply. Pick one and write it yourself.</div>
-        <ul class="jev-angles"></ul>
-        <div class="jev-draft-row"><button data-a="again">New angles</button><button data-a="close">Close</button><span class="jev-draft-msg"></span></div>`;
-      for (const ev of ["click", "keydown", "keyup", "keypress", "focusin"]) panel.addEventListener(ev, (e) => e.stopPropagation());
-      panel.querySelector('[data-a="again"]').onclick = () => angles(wrap, post, r, true);
-      panel.querySelector('[data-a="close"]').onclick = () => panel.remove();
-      wrap.append(panel);
-    }
-    const list = panel.querySelector(".jev-angles");
-    const msg = panel.querySelector(".jev-draft-msg");
-    list.innerHTML = '<li class="jev-thinking">Thinking of angles…</li>';
-    msg.textContent = "";
-    send({ type: "draft", ...states.get(post.dataset.jevKey), angle: r.angle, again }, (d) => {
-      list.innerHTML = "";
-      if (!d || d.error) { msg.textContent = d?.error || "No answer from the extension."; return; }
-      for (const a of d.angles) {
-        const li = document.createElement("li");
-        const b = document.createElement("b");
-        b.textContent = a.label + ": ";
-        li.append(b, a.text);
-        if (a.fact) { const f = document.createElement("div"); f.className = "jev-fact"; f.textContent = "Your fact: " + a.fact; li.append(f); }
-        list.append(li);
-      }
-    });
   }
 
   function briefPanel(wrap, post, r, again) {

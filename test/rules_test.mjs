@@ -1,7 +1,7 @@
 // Offline: the plain rules on top of Jev's answers. No keys, no network.
 import assert from "node:assert/strict";
 import { DEFAULT_PREFS, verdict, linkedinQuestions, youtubeQuestions, KINDS, YOUTUBE_KINDS } from "../prefs.js";
-const ans = (worth, kind = "built_something", topic = "t0") => ({ worth: { noul: worth }, kind: { choice: kind }, topic: { choice: topic }, angle: { choice: "ask_how" } });
+const ans = (worth, kind = "built_something", topic = "t0") => ({ worth: { noul: worth }, kind: { choice: kind }, topic: { choice: topic } });
 const P = (o = {}) => ({ ...DEFAULT_PREFS, ...o });
 assert.equal(verdict(ans(0.8), P(), "linkedin", "x").tier, "strong");
 assert.equal(verdict(ans(0.5), P(), "linkedin", "x").tier, "maybe");

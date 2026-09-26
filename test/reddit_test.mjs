@@ -1,10 +1,8 @@
-// Synthetic Reddit-style posts (written for testing, not real). Runs Jev with REDDIT_QUESTIONS, then angles for the top one.
-import { DEFAULT_PREFS, redditQuestions } from "../prefs.js";
+// Synthetic Reddit-style posts (written for testing, not real). Runs Jev with REDDIT_QUESTIONS.
+import { DEFAULT_PREFS, redditQuestions, DEFAULT_REDDIT_ABOUT } from "../prefs.js";
 const REDDIT_QUESTIONS = redditQuestions(DEFAULT_PREFS);
-import { DEFAULT_REDDIT_ABOUT, DEFAULT_MODEL, buildRedditMessages, parseAngles } from "../draft.js";
-import { typesafeKey, openrouterKey } from "./keys.mjs";
+import { typesafeKey } from "./keys.mjs";
 const ts = typesafeKey();
-const or = openrouterKey();
 const POSTS = [
   { want: "high", subreddit: "r/smallbusiness", title: "How do you catch wrong customer tax IDs before invoicing?", body: "Twice this year I sent invoices with a typo in the client's VAT number and had to cancel and reissue. Is there a simple way to validate these before sending? I'm a one person shop, no accounting software yet." },
   { want: "high", subreddit: "r/automation", title: "Sorting a shared inbox automatically, is an LLM overkill?", body: "We get ~300 emails a day into info@. I want to auto-tag them as order, complaint, invoice, spam. GPT works but it's slow and I worry about cost. Anyone done this with something lighter?" },
@@ -19,13 +17,5 @@ for (const p of POSTS) {
   const b = await r.json();
   if (!r.ok) { console.log(r.status, JSON.stringify(b).slice(0, 200)); continue; }
   const w = b.answers.answerable.noul, tier = w >= 0.7 ? "high" : w >= 0.4 ? "maybe" : "low";
-  console.log(`${tier === p.want ? "ok " : "   "}${p.want.padEnd(5)} got ${tier.padEnd(5)} ${w.toFixed(2)}  ${b.answers.kind.choice.padEnd(12)} ${b.answers.topic.choice.padEnd(15)} ${b.answers.angle.choice.padEnd(22)} ${p.title.slice(0, 50)}`);
-  p.angle = b.answers.angle.choice; p.tier = tier;
-}
-for (const p of POSTS.filter((x) => x.tier === "high").slice(0, 2)) {
-  const r = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${or}` },
-    body: JSON.stringify({ model: DEFAULT_MODEL, messages: buildRedditMessages({ author: `u/someone in ${p.subreddit}`, post: `${p.title}\n\n${p.body}`, angle: p.angle }, DEFAULT_REDDIT_ABOUT), max_tokens: 200, temperature: 0.5, reasoning: { enabled: false } }) });
-  const b = await r.json();
-  console.log(`\n${p.title}`);
-  for (const a of parseAngles(b.choices[0].message.content, DEFAULT_REDDIT_ABOUT)) console.log(`  ${a.label}: ${a.text}${a.fact ? `\n      [fact] ${a.fact.slice(0, 80)}` : ""}`);
+  console.log(`${tier === p.want ? "ok " : "   "}${p.want.padEnd(5)} got ${tier.padEnd(5)} ${w.toFixed(2)}  ${b.answers.kind.choice.padEnd(12)} ${b.answers.topic.choice.padEnd(15)} ${p.title.slice(0, 50)}`);
 }

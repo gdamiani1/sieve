@@ -52,7 +52,8 @@ const clean = { author: "Dana", post: "We ran 20 golden cases in CI and caught 3
 {
   const { answers, hostile } = parseScore('{"worth": 0.83, "topic": "t0", "kind": "built_something", "angle": "ask_how"}', questions, clean);
   assert.equal(hostile, "");
-  assert.deepEqual(answers, { worth: { noul: 0.83 }, topic: { choice: "t0" }, kind: { choice: "built_something" }, angle: { choice: "ask_how" } });
+  // "angle" was a question until reply angles were removed; a field that isn't a question is ignored.
+  assert.deepEqual(answers, { worth: { noul: 0.83 }, topic: { choice: "t0" }, kind: { choice: "built_something" } });
   // verdict() can't tell it from a Jev answer.
   assert.equal(verdict(answers, DEFAULT_PREFS, "linkedin", clean.post).tier, "strong");
 }
@@ -65,12 +66,10 @@ const clean = { author: "Dana", post: "We ran 20 golden cases in CI and caught 3
   assert.equal(parseScore('{"worth": -2, "topic": "t0", "kind": "news"}', questions, clean).answers.worth.noul, 0);
 }
 
-// A topic the model made up is "other", which topicLabel can read; an unknown angle is simply left out.
+// A topic the model made up is "other", which topicLabel can read.
 {
-  const { answers } = parseScore('{"worth": 0.6, "topic": "cooking", "kind": "opinion", "angle": "flatter"}', questions, clean);
+  const { answers } = parseScore('{"worth": 0.6, "topic": "cooking", "kind": "opinion"}', questions, clean);
   assert.deepEqual(answers.topic, { choice: "other" });
-  assert.equal(answers.angle, undefined);
-  assert.equal(verdict(answers, DEFAULT_PREFS, "linkedin", clean.post).angle, "none");
 }
 
 // No probability, or no kind, can't be scored: an error, never a guess.
@@ -198,7 +197,7 @@ let cutOffFirst = false; // the next OpenRouter answer is cut off at max_tokens,
 globalThis.fetch = async (url, init) => {
   calls.push({ url: String(url), auth: init.headers.Authorization, body: JSON.parse(init.body) });
   if (String(url).includes("typesafe")) {
-    const body = { answers: { worth: { noul: 0.9 }, topic: { choice: "t0" }, kind: { choice: "technique" }, angle: { choice: "ask_how" } }, usage: { input_tokens: 1000 } };
+    const body = { answers: { worth: { noul: 0.9 }, topic: { choice: "t0" }, kind: { choice: "technique" } }, usage: { input_tokens: 1000 } };
     return { status: 200, ok: true, headers: { get: () => null }, json: async () => body };
   }
   if (cutOffFirst) {

@@ -14,7 +14,8 @@
 import { readFileSync } from "node:fs";
 import { DEFAULT_PREFS, linkedinQuestions, redditQuestions, youtubeQuestions } from "../prefs.js";
 import { scoreMessages, parseScore } from "../score-prompt.js";
-import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_REDDIT_ABOUT } from "../draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS } from "../models.js";
+import { DEFAULT_REDDIT_ABOUT } from "../prefs.js";
 import { typesafeKey, openrouterKey } from "./keys.mjs";
 
 const models = process.argv.slice(2).length ? process.argv.slice(2) : [DEFAULT_MODEL, "google/gemini-2.5-flash-lite"];

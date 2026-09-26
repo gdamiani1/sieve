@@ -44,9 +44,6 @@
   const LABEL = {
     technique: "technique to try", built_something: "built something", opinion: "opinion", question: "asks a question",
     news: "news", promo: "promo", personal: "personal",
-    ask_failures: "ask about failures and limits", ask_how: "ask how it works",
-    share_result: "share a related result", answer_question: "answer their question",
-    disagree: "respectful counterpoint", none: "",
   };
   const ERRORS = {
     no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again",
@@ -57,7 +54,7 @@
   };
 
   const results = new Map(); // text hash -> result
-  const states = new Map(); // text hash -> what Jev saw, reused for drafting
+  const states = new Map(); // text hash -> what the scorer saw, reused for briefs
   const pending = new Set();
   let enabled = true;
   chrome.storage.local.get("prefs").then((v) => { enabled = v.prefs?.linkedinOn !== false; if (!enabled) clearAll(); });
@@ -147,67 +144,22 @@
       else if (r.lowMode === "fade") card.classList.add("jev-low");
       else if (r.lowMode === "hide") card.classList.add("jev-hidden");
       const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
-      const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
-      badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
+      badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}`;
       badge.title = `${r.scorer === "jev" ? "Jev's" : "Sieve's"} read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.`;
-      if (tier !== "low") {
+      if (tier !== "low" && r.kind === "technique") {
         const actions = document.createElement("span");
         actions.className = "jev-actions";
-        const btn = document.createElement("button");
-        btn.className = "jev-suggest";
-        btn.textContent = "Comment angles";
-        btn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openDraft(card, r, false); });
-        actions.append(btn);
-        if (r.kind === "technique") {
-          const bb = document.createElement("button");
-          bb.className = "jev-suggest";
-          bb.textContent = "Brief";
-          bb.title = "A brief for your coding agent: what it is, what you need, and a small way to try it.";
-          bb.dataset.jevBriefBtn = "1";
-          bb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openBrief(card, r, false); });
-          actions.append(bb);
-        }
+        const bb = document.createElement("button");
+        bb.className = "jev-suggest";
+        bb.textContent = "Brief";
+        bb.title = "A brief for your coding agent: what it is, what you need, and a small way to try it.";
+        bb.dataset.jevBriefBtn = "1";
+        bb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openBrief(card, r, false); });
+        actions.append(bb);
         badge.append(actions);
       }
     }
     card.prepend(badge);
-  }
-
-  function openDraft(card, r, again) {
-    const key = card.dataset.jevKey;
-    let panel = card.querySelector(":scope > .jev-draft:not(.jev-brief)");
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.className = "jev-draft";
-      panel.innerHTML = `<div class="jev-draft-note">Ideas, not a comment. Pick one, write it in your own words, paste it into the comment box yourself.</div>
-        <ul class="jev-angles"></ul>
-        <div class="jev-draft-row"><button data-a="again">New angles</button><button data-a="close">Close</button><span class="jev-draft-msg"></span></div>`;
-      for (const ev of ["click", "keydown", "keyup", "keypress", "focusin"]) panel.addEventListener(ev, (e) => e.stopPropagation());
-      panel.querySelector('[data-a="again"]').onclick = () => openDraft(card, r, true);
-      panel.querySelector('[data-a="close"]').onclick = () => panel.remove();
-      card.querySelector(":scope > .jev-badge").after(panel);
-    }
-    const list = panel.querySelector(".jev-angles");
-    const msg = panel.querySelector(".jev-draft-msg");
-    list.innerHTML = '<li class="jev-thinking">Thinking of angles…</li>';
-    msg.textContent = "";
-    send({ type: "draft", ...states.get(key), angle: r.angle, again }, (d) => {
-      list.innerHTML = "";
-      if (!d || d.error) { msg.textContent = d?.error || "No answer from the extension."; return; }
-      for (const a of d.angles) {
-        const li = document.createElement("li");
-        const b = document.createElement("b");
-        b.textContent = a.label + ": ";
-        li.append(b, a.text);
-        if (a.fact) {
-          const f = document.createElement("div");
-          f.className = "jev-fact";
-          f.textContent = "Your fact: " + a.fact;
-          li.append(f);
-        }
-        list.append(li);
-      }
-    });
   }
 
   function openBrief(card, r, again) {

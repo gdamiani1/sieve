@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { briefMessages, parseBrief } from "../brief-prompt.js";
 import { briefMarkdown } from "../brief.js";
-import { DEFAULT_MODEL, PROVIDER_PREFS } from "../draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS } from "../models.js";
 import { DEFAULT_PREFS } from "../prefs.js";
 import { openrouterKey } from "./keys.mjs";
 

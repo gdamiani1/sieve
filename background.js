@@ -1,6 +1,6 @@
-import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict } from "./prefs.js";
+import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdict, DEFAULT_REDDIT_ABOUT } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
-import { DEFAULT_MODEL, PROVIDER_PREFS, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT, buildMessages, buildRedditMessages, parseAngles, facts, factQuestions, pickFact } from "./draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS } from "./models.js";
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, parseBrief } from "./brief-prompt.js";
@@ -63,13 +63,12 @@ async function scorer() {
   return {};
 }
 
-// Scoring always uses this model, not the one chosen for briefs and angles: a feed is hundreds of posts a
+// Scoring always uses this model, not the one chosen for briefs: a feed is hundreds of posts a
 // day, and an expensive briefs model would be billed for every one of them. Its own constant, so changing
 // the briefs default for quality can't change what a feed costs without anyone noticing. Measured with
 // test/compare_scorers.mjs on 24 Sep 2026, at Jev's own 0.7/0.4 thresholds: LinkedIn 10 of 11 (Jev 10),
 // Reddit 6 of 6 (Jev 5), YouTube 6 of 6 (Jev 6), at about 5 to 9 US cents per 1,000 posts against Jev's
-// 3 to 4. test/facts_live_test.mjs with SCORER=openrouter: 9 of 10, and no fact reached a post it wasn't
-// about. Change it only after running both again.
+// 3 to 4. Change it only after running it again.
 const SCORE_MODEL = "deepseek/deepseek-v4-flash";
 
 // One scoring call through OpenRouter, answering `questions` in Jev's shape (score-prompt.js).
@@ -166,70 +165,6 @@ async function classify(state, platform) {
     return out;
   }
   return { error: "rate_limited" };
-}
-
-// LinkedIn and X: only the fact Jev rates as about this post reaches the angle prompt (see pickFact).
-// If Jev can't be asked, no fact goes: an unrelated fact is worse than none.
-async function relevantFact(post, list) {
-  if (!list.length) return "";
-  const use = await scorer();
-  if (!use.jev && !use.orKey) return "";
-  if (!use.jev) {
-    const r = await scoreViaOpenRouter(use.orKey, factQuestions(list), { post });
-    if (r.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + r.cost; });
-    if (r.error) return "";
-    const i = pickFact(r.answers, list.length);
-    return i < 0 ? "" : `- ${list[i]}`;
-  }
-  const apiKey = use.jev;
-  try {
-    const res = await fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "jev-latest", state: { post }, questions: factQuestions(list) }),
-    });
-    if (!res.ok) return "";
-    const body = await res.json().catch(() => null);
-    if (!body?.answers) return "";
-    await stats((s) => { s.tokens += body.usage?.input_tokens || 0; });
-    const i = pickFact(body.answers, list.length);
-    return i < 0 ? "" : `- ${list[i]}`;
-  } catch {
-    return "";
-  }
-}
-
-async function draft(req) {
-  const { orKey, model = DEFAULT_MODEL, about: liAbout = DEFAULT_ABOUT, redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get(["orKey", "model", "about", "redditAbout"]);
-  const reddit = req.platform === "reddit";
-  const build = reddit ? buildRedditMessages : buildMessages;
-  if (!orKey) return { error: "Add an OpenRouter key in the extension options to get comment angles." };
-  const about = reddit ? redditAbout : await relevantFact(req.post || "", facts(liAbout));
-  // Reasoning is switched off; if a provider thinks anyway and runs out of room, retry once with more.
-  for (const maxTokens of [200, 800]) {
-    let res;
-    try {
-      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${orKey}`, "X-Title": "Sieve" },
-        body: JSON.stringify({ model, provider: PROVIDER_PREFS, messages: build(req, about), max_tokens: maxTokens, usage: { include: true }, reasoning: { enabled: false }, temperature: req.again ? 0.9 : 0.5 }),
-      });
-    } catch {
-      return { error: "Network error reaching OpenRouter." };
-    }
-    if (res.status === 401) return { error: "OpenRouter rejected the key." };
-    if (res.status === 402) return { error: "OpenRouter is out of credit." };
-    if (!res.ok) return { error: `OpenRouter said ${res.status}.` };
-    const body = await res.json();
-    await stats((s) => { s.draftCost = (s.draftCost || 0) + (body.usage?.cost || 0); });
-    const text = body.choices?.[0]?.message?.content;
-    const angles = text ? parseAngles(text, about, req.post || "") : [];
-    if (angles.length) {
-      await stats((s) => { s.drafts = (s.drafts || 0) + 1; });
-      return { angles };
-    }
-  }
-  return { error: "The model returned no angles twice. Try Another, or switch model in options." };
 }
 
 // "Watch it for me": the video model watches the whole video, the result is kept for the digest.
@@ -545,10 +480,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.type === "classify") {
     classify(msg.state, msg.platform).then(reply);
     return true; // async reply
-  }
-  if (msg.type === "draft") {
-    draft(msg).then(reply);
-    return true;
   }
 });
 

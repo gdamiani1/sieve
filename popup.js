@@ -12,7 +12,6 @@ async function load() {
   $("posts").textContent = stats.posts || 0;
   $("strong").textContent = stats.strong || 0;
   $("maybe").textContent = stats.maybe || 0;
-  $("drafts").textContent = stats.drafts || 0;
   $("briefs").textContent = stats.briefs || 0;
   $("cost").textContent = `$${((stats.cost || 0) + (stats.scoreCost || 0) + (stats.draftCost || 0)).toFixed(4)}`;
 }

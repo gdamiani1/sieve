@@ -93,18 +93,6 @@ export function linkedinQuestions(prefs, site = "LinkedIn") {
         personal: "Personal milestone, celebration or life update.",
       },
     },
-    angle: {
-      type: "choice",
-      instructions: "If the reader replied, which opening would fit this post best?",
-      criteria: {
-        ask_failures: "The post reports success without error rates, failure cases or limits, so asking about those fits.",
-        ask_how: "The method is unclear, so asking how it works fits.",
-        share_result: "The reader could add a related first-hand result or experience.",
-        answer_question: "The author asked something the reader could answer.",
-        disagree: "A claim looks overstated or wrong, so a respectful counterpoint fits.",
-        none: "Nothing specific to add.",
-      },
-    },
   };
 }
 
@@ -129,17 +117,6 @@ export function redditQuestions(prefs) {
         rant: "Venting or complaining.",
         news: "Shares news or a link.",
         promo: "Promotes a product, service, survey or the poster's own business.",
-      },
-    },
-    angle: {
-      type: "choice",
-      instructions: "If the reader replied, what kind of reply would help the poster most?",
-      criteria: {
-        answer_from_experience: "Answer directly from something the reader has done.",
-        clarifying_question: "The post is missing key details; ask for them first.",
-        approach: "Explain how the reader would approach the problem.",
-        share_mistake: "Warn about a mistake the reader made or a pitfall they hit.",
-        none: "No reply needed.",
       },
     },
   };
@@ -186,5 +163,11 @@ export function verdict(answers, prefs, platform, text) {
   if (mute) { tier = "low"; reason = `muted word "${mute}"`; }
   const boost = prefs.boostWords.find((w) => w && lower.includes(w.toLowerCase()));
   if (boost) { tier = "strong"; reason = `always show "${boost}"`; }
-  return { worth, tier, reason, kind, topic: topicLabel(prefs, answers.topic.choice), angle: answers.angle?.choice || "none", lowMode: prefs.lowMode };
+  return { worth, tier, reason, kind, topic: topicLabel(prefs, answers.topic.choice), lowMode: prefs.lowMode };
 }
+
+// Reddit facts: sent with every Reddit post that is scored, so the scorer can judge whether you could
+// answer it. Reddit is pseudonymous: no business name, no site, nothing that reads as promotion.
+export const DEFAULT_REDDIT_ABOUT = `- Replace these with true, first-hand facts about you, written for Reddit (no business names or links).
+- Example: I've done my own bookkeeping as a sole trader for three years.
+- Example: I built a script that validates customer tax IDs before invoices go out.`;

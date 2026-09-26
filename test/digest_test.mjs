@@ -6,7 +6,7 @@
 // under a cent. VERBOSE=1 prints each digest.
 import { readFileSync } from "node:fs";
 import { pickDigestPosts, digestMessages, digestText } from "../digest-prompt.js";
-import { DEFAULT_MODEL, PROVIDER_PREFS } from "../draft.js";
+import { DEFAULT_MODEL, PROVIDER_PREFS } from "../models.js";
 import { stripInvisible } from "../brief.js";
 import { openrouterKey } from "./keys.mjs";
 

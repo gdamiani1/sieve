@@ -1,5 +1,5 @@
-import { DEFAULT_MODEL, DEFAULT_ABOUT, DEFAULT_REDDIT_ABOUT } from "./draft.js";
-import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs } from "./prefs.js";
+import { DEFAULT_MODEL } from "./models.js";
+import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs, DEFAULT_REDDIT_ABOUT } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL } from "./watch-prompt.js";
 
 const $ = (id) => document.getElementById(id);
@@ -18,7 +18,7 @@ const readChecks = (container) => Object.fromEntries([...$(container).querySelec
 
 async function load() {
   const p = await loadPrefs();
-  const s = await chrome.storage.local.get(["apiKey", "orKey", "useJev", "model", "about", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
+  const s = await chrome.storage.local.get(["apiKey", "orKey", "useJev", "model", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Paste your TypeSafe key";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
   // Unset for everyone who installed before the switch: a saved TypeSafe key means they already score
@@ -42,7 +42,6 @@ async function load() {
   for (const id of ["highAt", "lowBelow"]) { $(id).value = p[id]; $(`${id}Out`).textContent = Number(p[id]).toFixed(2); }
   document.querySelector(`input[name=lowMode][value=${p.lowMode}]`).checked = true;
   $("model").value = s.model || DEFAULT_MODEL;
-  $("about").value = s.about || DEFAULT_ABOUT;
   $("redditAbout").value = s.redditAbout || DEFAULT_REDDIT_ABOUT;
   $("remind").checked = s.reminderOn !== false;
   $("rtime").value = s.reminderTime || "18:00";
@@ -75,7 +74,6 @@ $("saveAll").onclick = async () => {
     prefs,
     model: $("model").value.trim() || DEFAULT_MODEL,
     videoModel: $("videoModel").value.trim() || DEFAULT_VIDEO_MODEL,
-    about: $("about").value.trim() || DEFAULT_ABOUT,
     redditAbout: $("redditAbout").value.trim() || DEFAULT_REDDIT_ABOUT,
     reminderOn: $("remind").checked,
     reminderTime: $("rtime").value || "18:00",

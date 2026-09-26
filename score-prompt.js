@@ -3,7 +3,7 @@
 // Jev answers a set of typed questions about each post (prefs.js: linkedinQuestions, redditQuestions,
 // youtubeQuestions) and verdict() turns the answers into strong, maybe or low. This asks a general
 // model the same questions and hands back answers in Jev's own shape, so verdict() and everything
-// after it (the chip, the digest, briefs, angles) can't tell which scorer answered.
+// after it (the chip, the digest, briefs) can't tell which scorer answered.
 //
 // The post is third-party material, under the same rules as brief-prompt.js: it travels as one JSON
 // object in the user message, never as instructions, and the plain-code backstop (aiDirected) reads
@@ -149,7 +149,7 @@ export function parseScore(text, questions, state) {
       // topicLabel() needs a key it can read, and "other" is the honest one when the model gave none.
       else if (id === "topic" && Object.hasOwn(q.criteria, "other")) answers[id] = { choice: "other" };
       else if (id === "kind") throw new Error(`No kind in the answer`);
-      // Any other choice question is optional to verdict() (angle falls back to "none").
+      // Any other choice question is optional to verdict().
     }
   }
   return { answers, hostile };

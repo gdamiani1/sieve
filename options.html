@@ -27,10 +27,10 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <section>
 <h2>Keys</h2>
 <p class="hint">Stored only in this browser. Each key is checked before it's saved.</p>
-<label class="f" for="orkey">OpenRouter API key (scores posts, and writes reply angles, briefs, digests and Watch it for me)</label>
+<label class="f" for="orkey">OpenRouter API key (scores posts, writes briefs and digests, and runs Watch it for me)</label>
 <input id="orkey" type="password" autocomplete="off">
 <div class="inline" style="margin-top:16px"><label><input id="useJev" type="checkbox" aria-controls="jevKey" aria-describedby="jevHint"> Score posts with Jev (optional)</label></div>
-<p class="hint" style="margin-top:4px" id="jevHint">Jev is TypeSafe's decision model, made for this kind of yes or no call. With a TypeSafe key, it scores your feed and picks which of your facts fits a post, instead of your OpenRouter key. Scoring costs about 4 US cents per 1,000 posts with Jev, and 5 to 9 with your OpenRouter key.</p>
+<p class="hint" style="margin-top:4px" id="jevHint">Jev is TypeSafe's decision model, made for this kind of yes or no call. With a TypeSafe key, it scores your feed instead of your OpenRouter key. Scoring costs about 4 US cents per 1,000 posts with Jev, and 5 to 9 with your OpenRouter key.</p>
 <div id="jevKey" hidden>
 <label class="f" for="key">TypeSafe API key</label>
 <input id="key" type="password" autocomplete="off">
@@ -64,6 +64,9 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <div class="checks" id="redditKinds"></div>
 <label class="f">Call a thread "still fresh" when it's at most</label>
 <div class="inline"><label><input id="freshHours" type="number" min="1" max="168"> hours old</label><label><input id="freshComments" type="number" min="0" max="1000"> comments</label></div>
+<label class="f" for="redditAbout">My facts for Reddit (no business names or links)</label>
+<textarea id="redditAbout" rows="6"></textarea>
+<p class="hint" style="margin-top:6px">Only true, first-hand things. These facts go with every Reddit post that is scored (to Jev at TypeSafe, or to OpenRouter), so it can judge whether you could answer.</p>
 </section>
 
 <section>
@@ -100,17 +103,10 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 </section>
 
 <section>
-<h2>Reply angles</h2>
-<p class="hint">Angles may only point to facts listed here, and show the fact word for word. Only true, first-hand things.</p>
+<h2>Briefs and digests</h2>
 <label class="f" for="model">Model (OpenRouter id)</label>
 <input id="model" type="text">
-<p class="hint" style="margin-top:6px">Also used for technique briefs.</p>
-<label class="f" for="about">My facts for LinkedIn</label>
-<textarea id="about" rows="7"></textarea>
-<p class="hint" style="margin-top:6px">When you ask for angles on LinkedIn or X, these facts and the post go to whichever scores your posts (Jev at TypeSafe, or OpenRouter), so it can pick the one fact, if any, that fits. Only that fact goes to the angle model.</p>
-<label class="f" for="redditAbout">My facts for Reddit (no business names or links)</label>
-<textarea id="redditAbout" rows="6"></textarea>
-<p class="hint" style="margin-top:6px">These facts go with every Reddit post that is scored (to Jev at TypeSafe, or to OpenRouter), so it can judge whether you could answer. When you ask for reply angles, all of them go to the angle model with the post.</p>
+<p class="hint" style="margin-top:6px">Writes technique briefs and the daily digest. Scoring and Watch it for me use their own models.</p>
 </section>
 
 <section>

@@ -41,8 +41,6 @@
 
   const LABEL = {
     asking_help: "asks for help", discussion: "discussion", showcase: "showcase", rant: "rant", news: "news", promo: "promo",
-    answer_from_experience: "answer from experience", clarifying_question: "ask for details", approach: "explain your approach",
-    share_mistake: "warn about a pitfall", none: "",
   };
   const ERRORS = {
     no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again",
@@ -130,47 +128,10 @@
     const age = info.ageHours === null ? "" : info.ageHours < 1 ? "under 1h old" : `${Math.round(info.ageHours)}h old`;
     const fresh = info.fresh ? "still fresh" : info.ageHours !== null ? "probably too late" : "";
     const bits = [LABEL[r.kind], r.topic, age && `${age}, ${info.comments} comments`, tier !== "low" && fresh, r.reason].filter(Boolean).join(" · ");
-    const angle = tier !== "low" && r.angle !== "none" ? ` → ${LABEL[r.angle]}` : "";
-    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}${angle}`;
+    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}`;
     badge.title = `${r.scorer === "jev" ? "Jev's" : "Sieve's"} read: could you answer this from your own experience? It writes nothing. Replying is up to you.`;
-    if (tier === "low") { if (r.lowMode === "fade") badge.classList.add("jev-quiet"); wrap.append(badge); return; }
-    const btn = document.createElement("button");
-    btn.className = "jev-suggest";
-    btn.textContent = "Reply angles";
-    btn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); angles(wrap, info, r, false); });
-    badge.append(btn);
+    if (tier === "low" && r.lowMode === "fade") badge.classList.add("jev-quiet");
     wrap.append(badge);
-  }
-
-  function angles(wrap, info, r, again) {
-    let panel = wrap.querySelector(".jev-draft");
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.className = "jev-draft";
-      panel.innerHTML = `<div class="jev-draft-note">Ideas, not a reply. Write it yourself, in plain Reddit voice. No links or mentions of your business for now.</div>
-        <ul class="jev-angles"></ul>
-        <div class="jev-draft-row"><button data-a="again">New angles</button><button data-a="close">Close</button><span class="jev-draft-msg"></span></div>`;
-      for (const ev of ["click", "keydown", "keyup", "keypress", "focusin"]) panel.addEventListener(ev, (e) => e.stopPropagation());
-      panel.querySelector('[data-a="again"]').onclick = () => angles(wrap, info, r, true);
-      panel.querySelector('[data-a="close"]').onclick = () => panel.remove();
-      wrap.append(panel);
-    }
-    const list = panel.querySelector(".jev-angles");
-    const msg = panel.querySelector(".jev-draft-msg");
-    list.innerHTML = '<li class="jev-thinking">Thinking of angles…</li>';
-    msg.textContent = "";
-    send({ type: "draft", platform: "reddit", author: `u/${info.author} in ${info.subreddit}`, post: `${info.title}\n\n${info.body}`, angle: r.angle, again }, (d) => {
-      list.innerHTML = "";
-      if (!d || d.error) { msg.textContent = d?.error || "No answer from the extension."; return; }
-      for (const a of d.angles) {
-        const li = document.createElement("li");
-        const b = document.createElement("b");
-        b.textContent = a.label + ": ";
-        li.append(b, a.text);
-        if (a.fact) { const f = document.createElement("div"); f.className = "jev-fact"; f.textContent = "Your fact: " + a.fact; li.append(f); }
-        list.append(li);
-      }
-    });
   }
 
   function check(el) {
