@@ -62,6 +62,10 @@
   // closing it changes it back: keyed on the address, that would lose a thread gathered by scrolling.
   const pageKey = () => location.pathname.match(/\/status\/(\d+)/)?.[1] || location.pathname;
   let recordsPage = pageKey();
+  // A picture or video opened full size, over whatever page it was opened from. Its address carries the id
+  // of the post the picture is in, which can be another post than the page's (or come from the feed), so
+  // it must neither start a new set nor add the posts X draws beside it.
+  const mediaView = () => /\/status\/\d+\/(photo|video)\/\d+/.test(location.pathname);
   // In the feed, posts keep coming for as long as someone scrolls; keep the most recent ones only.
   const MAX_FEED_RECORDS = 500;
 
@@ -74,9 +78,10 @@
 
   // Asks x-post-data.js (in X's own page) for this post's summary, checks it, and keeps it. Null when
   // there is none or it fails a check. X is a single-page app: a new post's page, or a new address off a
-  // post's page, starts a new set.
+  // post's page, starts a new set. In a picture or video view nothing is read: only what was read before.
   function readRecord(post) {
     if (!XT) return null;
+    if (mediaView()) return records.get(post.dataset.sieveXId) || null;
     const page = pageKey();
     if (page !== recordsPage) { records.clear(); recordsPage = page; }
     try {
@@ -194,6 +199,12 @@
     const wrap = wrapOf(post);
     wrap.dataset.jevKey = post.dataset.jevKey;
     delete wrap.dataset.sieveWatchOnly;
+    // The post's record, for Watch it for me. The records may have been reset (another page) or capped
+    // since the post was read: read it again. The wrap notes which record this drawing considered, so
+    // check() draws again only when a new one arrives, not on every dwell over a hidden or error post.
+    const id = post.dataset.sieveXId;
+    const rec = id ? records.get(id) || readRecord(post) : null;
+    wrap.dataset.sieveXWatch = rec?.id || "";
     wrap.replaceChildren();
     wrap.className = "sieve-x-wrap";
     post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
@@ -217,9 +228,7 @@
       actions.append(bb);
     }
     // Any post with a video Sieve can send, low or not (a hidden one returned above).
-    // The records may have been reset (another page) or capped since the post was read: read it again.
-    const id = post.dataset.sieveXId;
-    const wb = watchButton(id && (records.get(id) || readRecord(post)));
+    const wb = watchButton(rec);
     if (wb) actions.append(wb);
     if (actions.childNodes.length) badge.append(actions);
     if (r.tier === "low") badge.classList.add("jev-quiet");
@@ -308,8 +317,8 @@
     urls.set(p.key, own ? `https://x.com${own}` : p.url);
     if (results.has(p.key)) {
       const w = post.previousElementSibling;
-      // Drawn already, unless the post's video record arrived after it was scored.
-      if (w?.classList.contains("sieve-x-wrap") && w.dataset.jevKey === p.key && (w.querySelector(".sieve-x-watch") || !XT?.watchRequest(rec))) return;
+      // Drawn already, unless a record with a video arrived after the drawing (sieveXWatch, set by render()).
+      if (w?.classList.contains("sieve-x-wrap") && w.dataset.jevKey === p.key && (!XT?.watchRequest(rec) || w.dataset.sieveXWatch === rec.id)) return;
       return render(post, results.get(p.key));
     }
     if (pending.has(p.key)) return;

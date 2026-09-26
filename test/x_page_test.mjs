@@ -348,6 +348,46 @@ const todays = (a, text) => ({ key: a.dataset.jevKey, platform: "x", authorName:
   assert.equal(lastBrief(t.sent).post.posts, undefined, "a new post's page dropped the thread");
 }
 
+// 8a. A picture in another post (its address carries that post's id), and a picture opened from the feed:
+// neither resets what was read, and a post drawn in the picture view isn't read at all (a third post of
+// the thread shown there would otherwise join it).
+{
+  const setup = (path) => {
+    const summaries = new Map();
+    const A = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, hasReplies: true })); return a; };
+    const B = (d) => { const b = article(d, { handle: "alice", id: ID_B, text: "2/ and cache it." }); summaries.set(b, summary({ id: ID_B, author: "alice", replyTo: ID_A, replyToAuthor: "alice", text: "2/ and cache it.", photos: [PHOTO_B] })); return b; };
+    const C = (d) => { const c = article(d, { handle: "alice", id: ID_C, text: `3/ ${LONG}` }); summaries.set(c, summary({ id: ID_C, author: "alice", replyTo: ID_B, replyToAuthor: "alice", text: `3/ ${LONG}` })); return c; };
+    const t = load({ path, posts: [A, B], summaries });
+    return { t, C };
+  };
+  const want = [{ text: LONG }, { text: "2/ and cache it." }];
+  {
+    const { t, C } = setup(`/alice/status/${ID_A}`);
+    const [a] = t.all();
+    t.see(a);
+    t.sandbox.location.pathname = `/alice/status/${ID_B}/photo/1`;
+    const c = t.add(C);
+    t.scan();
+    t.see(c);
+    t.sandbox.location.pathname = `/alice/status/${ID_A}`;
+    t.button(a, /^Brief$/).click();
+    assert.deepEqual(lastBrief(t.sent).post.posts, want, "a picture in another post kept the thread");
+  }
+  {
+    const { t, C } = setup("/home");
+    const [a, b] = t.all();
+    t.see(a);
+    t.see(b);
+    t.sandbox.location.pathname = `/alice/status/${ID_B}/photo/1`;
+    const c = t.add(C);
+    t.scan();
+    t.see(c);
+    t.sandbox.location.pathname = "/home";
+    t.button(a, /^Brief$/).click();
+    assert.deepEqual(lastBrief(t.sent).post.posts, want, "a picture opened from the feed kept the thread");
+  }
+}
+
 // 8b. The records were reset (another page) and X then redrew the post's badge: the Watch button comes
 // back, read again from the post.
 {
@@ -421,6 +461,25 @@ const todays = (a, text) => ({ key: a.dataset.jevKey, platform: "x", authorName:
   assert.deepEqual(t.buttons(a).map((x) => x.textContent), ["Brief", "Watch it for me · <1¢"]);
   t.see(a); // drawn once
   assert.equal(t.wrapOf(a).querySelectorAll(".sieve-x-watch").length, 1);
+}
+
+// 11b. Once Watch it for me was considered for a post, a hidden or error post isn't drawn again on
+// every dwell.
+{
+  for (const score of [{ ...SCORE, tier: "low", lowMode: "hide" }, { error: "no_key" }]) {
+    const summaries = new Map();
+    const V = (d) => { const a = article(d, { handle: "alice", id: ID_A, text: LONG }); summaries.set(a, summary({ id: ID_A, author: "alice", text: LONG, video: { mp4: MP4, seconds: 120 } })); return a; };
+    const t = load({ posts: [V], summaries, score });
+    const [a] = t.all();
+    t.see(a);
+    const w = t.wrapOf(a);
+    let draws = 0;
+    const orig = w.replaceChildren;
+    w.replaceChildren = function (...n) { draws++; return orig.apply(this, n); };
+    t.see(a);
+    t.see(a);
+    assert.equal(draws, 0, `not drawn again (${score.error || score.lowMode})`);
+  }
 }
 
 // 12. Switching X off closes the watch drawer, and an answer that arrives after that draws nothing.
