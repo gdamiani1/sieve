@@ -222,7 +222,7 @@ calls.length = 0;
 {
   const r = await classify();
   assert.equal(r.tier, "strong");
-  assert.equal(r.scorer, "jev", "the badge can say Jev");
+  assert.equal(r.scorer, "jev", "the record says Jev scored it");
 }
 assert.equal(went(), "jev");
 
@@ -242,7 +242,7 @@ calls.length = 0;
 {
   const r = await classify();
   assert.equal(r.tier, "low");
-  assert.equal(r.scorer, "openrouter", "a post Jev never saw is never labelled Jev");
+  assert.equal(r.scorer, "openrouter", "a post Jev never saw is never recorded as Jev's");
 }
 assert.equal(went(), "openrouter");
 assert.equal(calls.at(-1).auth, "Bearer or-stub");
@@ -297,7 +297,7 @@ cutOffFirst = true;
   assert.equal(store.stats.scoreCost, 0.00009);
 }
 
-// A saved post remembers who scored it, so the digest can say "Jev" only for Jev. Only the two known
+// A saved post remembers who scored it (the digest and the tags say "Sieve" either way). Only the two known
 // values are kept; anything else, or nothing (a watched video, which no scorer saw), is stored as no
 // scorer at all rather than guessed.
 reset({ orKey: "or-stub" });

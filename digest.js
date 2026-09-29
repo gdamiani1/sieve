@@ -238,11 +238,9 @@ async function load() {
       a.textContent = (p.platform === "reddit" ? "Reddit · " : "") + (p.authorName || "Unknown author");
       const m = document.createElement("div");
       m.className = "m";
-      // Who scored the post, from the record. A watched video was never scored (it is saved because you
-      // asked for it), so it gets no score at all. A post saved before scorers were recorded has none,
-      // and every such post was scored by Jev, since Jev was then the only scorer.
-      const who = p.scorer === "openrouter" ? "Sieve" : "Jev";
-      const score = p.kind === "video" ? "" : ` · ${who} ${p.worth.toFixed(2)}`;
+      // A watched video was never scored (it is saved because you asked for it), so it gets no score at
+      // all. Every other score reads "Sieve", whichever scorer answered, as the tags on the page do.
+      const score = p.kind === "video" ? "" : ` · Sieve ${p.worth.toFixed(2)}`;
       m.textContent = `${new Date(p.savedAt).toLocaleString()} · ${p.kind}${p.topic ? ` · ${p.topic}` : ""}${score}`;
       const t = document.createElement("div");
       t.className = "t";

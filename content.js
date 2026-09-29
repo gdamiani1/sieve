@@ -47,8 +47,8 @@
   };
   const ERRORS = {
     no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again",
-    key_rejected: "Jev: key rejected",
-    no_credit: "Jev: out of credit, check TypeSafe billing",
+    key_rejected: "Sieve: TypeSafe key rejected",
+    no_credit: "Sieve: out of TypeSafe credit, check TypeSafe billing",
     rate_limited: "Sieve: rate limited, will retry on next view",
     network: "Sieve: network error",
   };
@@ -144,8 +144,8 @@
       else if (r.lowMode === "fade") card.classList.add("jev-low");
       else if (r.lowMode === "hide") card.classList.add("jev-hidden");
       const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
-      badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}`;
-      badge.title = `${r.scorer === "jev" ? "Jev's" : "Sieve's"} read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.`;
+      badge.textContent = `Sieve ${r.worth.toFixed(2)} · ${bits}`;
+      badge.title = `Sieve's read of this post. It picks from fixed lists and writes nothing. Reading and replying is up to you.`;
       if (tier !== "low" && r.kind === "technique") {
         const actions = document.createElement("span");
         actions.className = "jev-actions";

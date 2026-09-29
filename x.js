@@ -42,7 +42,7 @@
   const LABEL = {
     technique: "technique to try", built_something: "built something", opinion: "opinion", question: "asks a question", news: "news", promo: "promo", personal: "personal",
   };
-  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again", key_rejected: "Sieve: key rejected", no_credit: "Sieve: out of TypeSafe credit" };
+  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again", key_rejected: "Sieve: TypeSafe key rejected", no_credit: "Sieve: out of TypeSafe credit, check TypeSafe billing" };
 
   let enabled = true;
   const results = new Map();
@@ -220,7 +220,7 @@
     if (r.tier === "low" && r.lowMode === "fade") post.classList.add("jev-low");
     if (r.tier !== "low") { post.classList.add(`sieve-x-${r.tier}`); wrap.classList.add(`jev-${r.tier}`); }
     const bits = [LABEL[r.kind], r.topic, r.reason].filter(Boolean).join(" · ");
-    badge.textContent = `${r.scorer === "jev" ? "Jev" : "Sieve"} ${r.worth.toFixed(2)} · ${bits}`;
+    badge.textContent = `Sieve ${r.worth.toFixed(2)} · ${bits}`;
     const actions = document.createElement("span");
     actions.className = "jev-actions";
     if (r.tier !== "low" && r.kind === "technique") {
