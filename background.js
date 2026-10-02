@@ -5,6 +5,7 @@ import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, briefMessagesWithPictures, parseBrief, threadLength } from "./brief-prompt.js";
 import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
+import { scoringKey, askJev } from "./jev.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -41,8 +42,7 @@ function once(id, fn) {
   return inflight.get(id);
 }
 
-const API = "https://api.typesafe.ai/v1/systemone";
-const PRICE_PER_MTOK = 0.042; // USD per million input tokens, output free
+const PRICE_PER_MTOK = 0.042; // USD per million input tokens of Jev direct, output free
 
 function stats(change) {
   return update("stats", ({ stats = { posts: 0, tokens: 0, strong: 0, maybe: 0 } }) => {
@@ -52,23 +52,19 @@ function stats(change) {
   });
 }
 
-// Which scorer answers: Jev when the person switched it on and saved a TypeSafe key, otherwise their
-// OpenRouter key. `useJev` is unset for everyone who installed before the switch existed, and for them a
-// saved TypeSafe key means on, so nobody who already scores with Jev is moved off it by an update.
+// Which key scores (jev.js): Jev through OpenRouter with the OpenRouter key, or Jev direct for someone with
+// only a TypeSafe key. The old `useJev` switch is gone; a stored value is left alone and ignored.
 async function scorer() {
-  const { apiKey, orKey, useJev } = await chrome.storage.local.get(["apiKey", "orKey", "useJev"]);
-  const jevOn = useJev ?? Boolean(apiKey);
-  if (jevOn && apiKey) return { jev: apiKey };
-  if (orKey) return { orKey };
-  return {};
+  return scoringKey(await chrome.storage.local.get(["apiKey", "orKey"]));
 }
 
-// Scoring always uses this model, not the one chosen for briefs: a feed is hundreds of posts a
-// day, and an expensive briefs model would be billed for every one of them. Its own constant, so changing
-// the briefs default for quality can't change what a feed costs without anyone noticing. Measured with
-// test/compare_scorers.mjs on 24 Sep 2026, at Jev's own 0.7/0.4 thresholds: LinkedIn 10 of 11 (Jev 10),
-// Reddit 6 of 6 (Jev 5), YouTube 6 of 6 (Jev 6), at about 5 to 9 US cents per 1,000 posts against Jev's
-// 3 to 4. Change it only after running it again.
+// The fallback scorer: a chat model through OpenRouter, used only when Jev on OpenRouter can't answer a
+// post (jev.js says when). Jev there has one provider, TypeSafe, so without this an outage at TypeSafe
+// would stop scoring for everyone. Its own constant, not the briefs model: a feed is hundreds of posts a
+// day, and an expensive briefs model would be billed for every one. Measured with test/compare_scorers.mjs
+// on 24 Sep 2026, at Jev's own 0.7/0.4 thresholds: LinkedIn 10 of 11 (Jev 10), Reddit 6 of 6 (Jev 5),
+// YouTube 6 of 6 (Jev 6), at about 5 to 9 US cents per 1,000 posts against Jev's 3 to 4. Change it only
+// after running it again.
 const SCORE_MODEL = "deepseek/deepseek-v4-flash";
 
 // One scoring call through OpenRouter, answering `questions` in Jev's shape (score-prompt.js).
@@ -106,66 +102,43 @@ async function classify(pageState, platform) {
   const state = platform === "youtube" ? youtubeState(pageState) : pageState;
   const { redditAbout = DEFAULT_REDDIT_ABOUT } = await chrome.storage.local.get("redditAbout");
   const use = await scorer();
-  if (!use.jev && !use.orKey) return { error: "no_key" };
+  if (!use) return { error: "no_key" };
   const prefs = await loadPrefs();
   const reddit = platform === "reddit";
   const questions = reddit ? redditQuestions(prefs) : platform === "youtube" ? youtubeQuestions(prefs) : linkedinQuestions(prefs, platform === "x" ? "X (Twitter)" : "LinkedIn");
   const jevState = reddit ? { ...state, reader_experience: redditAbout } : state;
   const text = [state.author, state.subreddit, state.title, state.body, state.post].filter(Boolean).join("\n");
-  if (!use.jev) {
-    const r = await scoreViaOpenRouter(use.orKey, questions, jevState);
+  let answers, hostile, who;
+  const jev = await askJev(use, jevState, questions);
+  if (jev.answers) {
+    if (jev.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + jev.cost; });
+    else if (use.via === "typesafe" && jev.tokens) await stats((s) => { s.tokens += jev.tokens; });
+    // The same plain-code check the chat scorer runs. Jev had none, and on test/hostile.json it rated one
+    // post that talks to the scorer 0.77 ("strong") and three more "maybe" (compare_scorers.mjs,
+    // SET=hostile, 24 Sep 2026). A post that does that lands low, whichever scorer read it.
+    hostile = postDirected(jevState);
+    answers = hostile ? Object.fromEntries(Object.entries(jev.answers).map(([k, v]) => [k, typeof v?.noul === "number" ? { ...v, noul: 0 } : v])) : jev.answers;
+    who = "jev";
+  } else if (jev.fallback && use.via === "openrouter") {
+    const r = await scoreViaOpenRouter(use.key, questions, jevState);
     if (r.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + r.cost; });
     if (r.error) return { error: r.error };
-    // The record keeps who scored (the page's tag always says "Sieve", whichever scorer answered).
-    const out = { ...verdict(r.answers, prefs, platform, text), scorer: "openrouter" };
-    // Sieve's own check found text aimed at AI tools: parseScore already set "worth" to 0, and this says
-    // why, unless the person's own always-show word put it there.
-    if (r.hostile && out.tier === "low" && !out.reason) out.reason = "text aimed at AI tools";
-    await stats((s) => {
-      s.posts += 1;
-      if (out.tier === "strong") s.strong += 1;
-      else if (out.tier === "maybe") s.maybe += 1;
-    });
-    return out;
+    ({ answers, hostile } = r);
+    who = "openrouter";
+  } else {
+    return { error: jev.error };
   }
-  const apiKey = use.jev;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let res;
-    try {
-      res = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: "jev-latest", state: jevState, questions }),
-      });
-    } catch {
-      return { error: "network" };
-    }
-    if (res.status === 429 && attempt === 0) {
-      const wait = Math.min(Number(res.headers.get("retry-after")) || 2, 10);
-      await new Promise((r) => setTimeout(r, wait * 1000));
-      continue;
-    }
-    if (res.status === 401) return { error: "key_rejected" };
-    if (res.status === 402 || res.status === 403) return { error: "no_credit" };
-    if (!res.ok) return { error: `http_${res.status}` };
-    const body = await res.json().catch(() => null);
-    if (!body?.answers) return { error: "unreadable" };
-    // The same plain-code check the OpenRouter path runs. Jev had none, and on test/hostile.json it rated
-    // one post that talks to the scorer 0.77 ("strong") and three more "maybe" (compare_scorers.mjs,
-    // SET=hostile, 24 Sep 2026). A post that does that lands low, whichever scorer read it.
-    const hostile = postDirected(jevState);
-    const answers = hostile ? Object.fromEntries(Object.entries(body.answers).map(([k, v]) => [k, typeof v?.noul === "number" ? { ...v, noul: 0 } : v])) : body.answers;
-    const out = { ...verdict(answers, prefs, platform, text), scorer: "jev" };
-    if (hostile && out.tier === "low" && !out.reason) out.reason = "text aimed at AI tools";
-    await stats((s) => {
-      s.posts += 1;
-      s.tokens += body.usage?.input_tokens || 0;
-      if (out.tier === "strong") s.strong += 1;
-      else if (out.tier === "maybe") s.maybe += 1;
-    });
-    return out;
-  }
-  return { error: "rate_limited" };
+  // The record keeps who scored (the page's tag always says "Sieve", whichever scorer answered).
+  const out = { ...verdict(answers, prefs, platform, text), scorer: who };
+  // Sieve's own check found text aimed at AI tools and set "worth" to 0: this says why, unless the
+  // person's own always-show word put it there.
+  if (hostile && out.tier === "low" && !out.reason) out.reason = "text aimed at AI tools";
+  await stats((s) => {
+    s.posts += 1;
+    if (out.tier === "strong") s.strong += 1;
+    else if (out.tier === "maybe") s.maybe += 1;
+  });
+  return out;
 }
 
 // "Watch it for me": the video model watches the whole video, the result is kept for the digest.

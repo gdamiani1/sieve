@@ -4,7 +4,8 @@
 //
 // It exists to set the OpenRouter path's thresholds from evidence (Jev's 0.7 and 0.4 were set against
 // Jev's calibrated probabilities, and a general model's are not calibrated the same way) and to measure
-// the cost per post. It spends real money on both keys: a few cents.
+// the cost per post. Jev goes through OpenRouter, as the extension sends it. It spends real money on the
+// OpenRouter key: a few cents.
 //
 //   node test/compare_scorers.mjs [model ...]
 //   SET=reddit node test/compare_scorers.mjs     (the invented Reddit posts from reddit_test.mjs)
@@ -19,7 +20,8 @@ import { DEFAULT_PREFS, linkedinQuestions, redditQuestions, youtubeQuestions } f
 import { scoreMessages, parseScore } from "../score-prompt.js";
 import { DEFAULT_MODEL, PROVIDER_PREFS } from "../models.js";
 import { DEFAULT_REDDIT_ABOUT } from "../prefs.js";
-import { typesafeKey, openrouterKey } from "./keys.mjs";
+import { openrouterKey } from "./keys.mjs";
+import { JEV_OPENROUTER } from "../jev.js";
 
 const models = process.argv.slice(2).length ? process.argv.slice(2) : [DEFAULT_MODEL, "google/gemini-2.5-flash-lite"];
 const prefs = DEFAULT_PREFS;
@@ -67,14 +69,14 @@ const WORTH = SET === "reddit" ? "answerable" : "worth";
 const TIERS = ["low", "maybe", "high"];
 
 async function jev(p) {
-  const r = await fetch("https://api.typesafe.ai/v1/systemone", {
+  const r = await fetch(JEV_OPENROUTER, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${typesafeKey()}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${openrouterKey()}` },
     body: JSON.stringify({ model: "jev-latest", state: p.state, questions }),
   });
   const b = await r.json();
   if (!r.ok) throw new Error(`Jev ${r.status}`);
-  return { worth: b.answers[WORTH].noul, kind: b.answers.kind.choice, cost: ((b.usage?.input_tokens || 0) * 0.042) / 1e6 };
+  return { worth: b.answers[WORTH].noul, kind: b.answers.kind.choice, cost: b.usage?.cost ?? ((b.usage?.input_tokens || 0) * 0.042) / 1e6 };
 }
 
 async function openrouter(model, p) {
