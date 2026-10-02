@@ -95,7 +95,7 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
-   - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 4 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
+   - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 5 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
    - **Have a TypeSafe key? (optional)**, closed under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
    - **Your facts for Reddit.** Only true, first-hand things. The scorer uses them to judge whether you could answer a thread.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
@@ -113,8 +113,8 @@ request to the model you picked, except scoring, which goes to Jev (or, as the f
 ## Cost (October 2026 prices)
 
 - Scoring with Jev through OpenRouter (the default): about 1,000 input tokens per post at $0.042 per million,
-  about 3 to 4 US cents per 1,000 posts, paid from your OpenRouter credit. Reading YouTube descriptions (26 Sep)
-  raises YouTube from about 3.5 to about 4 US cents per 1,000 videos (about 1,075 input tokens on average on 20
+  about 3 to 5 US cents per 1,000 posts, paid from your OpenRouter credit. Reading YouTube descriptions (26 Sep)
+  raises YouTube from about 3.7 to about 4.5 US cents per 1,000 videos (about 1,075 input tokens on average on 20
   real videos that all got a description, against 880 from the title alone). The description request itself
   is free: about 5 KB from YouTube per bare tile. With only a TypeSafe key, Jev direct has the same token
   price, billed by TypeSafe.
