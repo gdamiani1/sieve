@@ -5,7 +5,7 @@ import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey
 import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, briefMessagesWithPictures, parseBrief, threadLength } from "./brief-prompt.js";
 import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
-import { scoringKey, askJev } from "./jev.js";
+import { scoringKey, askJev, PRICE_PER_MTOK } from "./jev.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -41,8 +41,6 @@ function once(id, fn) {
   if (!inflight.has(id)) inflight.set(id, fn().finally(() => inflight.delete(id)));
   return inflight.get(id);
 }
-
-const PRICE_PER_MTOK = 0.042; // USD per million input tokens of Jev direct, output free
 
 function stats(change) {
   return update("stats", ({ stats = { posts: 0, tokens: 0, strong: 0, maybe: 0 } }) => {
@@ -110,9 +108,11 @@ async function classify(pageState, platform) {
   const text = [state.author, state.subreddit, state.title, state.body, state.post].filter(Boolean).join("\n");
   let answers, hostile, who;
   const jev = await askJev(use, jevState, questions);
+  // Counted whether or not the answer was usable: a 200 that couldn't be read was still billed. Through
+  // OpenRouter in dollars, as the chat scorer is; direct in tokens, priced in stats().
+  if (use.via === "openrouter" && jev.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + jev.cost; });
+  else if (use.via === "typesafe" && jev.tokens) await stats((s) => { s.tokens += jev.tokens; });
   if (jev.answers) {
-    if (jev.cost) await stats((s) => { s.scoreCost = (s.scoreCost || 0) + jev.cost; });
-    else if (use.via === "typesafe" && jev.tokens) await stats((s) => { s.tokens += jev.tokens; });
     // The same plain-code check the chat scorer runs. Jev had none, and on test/hostile.json it rated one
     // post that talks to the scorer 0.77 ("strong") and three more "maybe" (compare_scorers.mjs,
     // SET=hostile, 24 Sep 2026). A post that does that lands low, whichever scorer read it.
@@ -499,7 +499,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "classify") {
-    classify(msg.state, msg.platform).then(reply);
+    // A throw anywhere in scoring still answers, so the chip never sits on "pending".
+    classify(msg.state, msg.platform).then(reply, () => reply({ error: "unreadable" }));
     return true; // async reply
   }
 });

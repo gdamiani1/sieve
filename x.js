@@ -42,7 +42,7 @@
   const LABEL = {
     technique: "technique to try", built_something: "built something", opinion: "opinion", question: "asks a question", news: "news", promo: "promo", personal: "personal",
   };
-  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again", key_rejected: "Sieve: TypeSafe key rejected", no_credit: "Sieve: out of TypeSafe credit, check TypeSafe billing" };
+  const ERRORS = { no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again", key_rejected: "Sieve: TypeSafe key rejected", no_credit: "Sieve: out of TypeSafe credit, check TypeSafe billing", timeout: "Sieve: the scorer took too long, will retry on next view" };
 
   let enabled = true;
   const results = new Map();
@@ -330,7 +330,7 @@
     pending.add(p.key);
     send({ type: "classify", platform: "x", state: p.state }, (r) => {
       pending.delete(p.key);
-      if (!r || r.error === "rate_limited" || r.error === "network") return;
+      if (!r || r.error === "rate_limited" || r.error === "network" || r.error === "timeout") return;
       results.set(p.key, r);
       if (!r.error && r.tier === "strong") send({ type: "save", post: postRecord(p.key, r) });
       document.querySelectorAll(POST).forEach((el) => { if (el.dataset.jevKey === p.key) render(el, r); });

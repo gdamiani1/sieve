@@ -51,6 +51,7 @@
     no_credit: "Sieve: out of TypeSafe credit, check TypeSafe billing",
     rate_limited: "Sieve: rate limited, will retry on next view",
     network: "Sieve: network error",
+    timeout: "Sieve: the scorer took too long, will retry on next view",
   };
 
   const results = new Map(); // text hash -> result
@@ -137,7 +138,7 @@
     if (r.error) {
       badge.classList.add("jev-error");
       badge.textContent = ERRORS[r.error] || (r.error.startsWith("http_") ? `Sieve: the scoring service answered ${r.error.slice(5)}. Reload the page to try again` : `Sieve: ${r.error}`);
-      if (r.error === "rate_limited" || r.error === "network") results.delete(card.dataset.jevKey);
+      if (r.error === "rate_limited" || r.error === "network" || r.error === "timeout") results.delete(card.dataset.jevKey);
     } else {
       const tier = r.tier;
       if (tier !== "low") card.classList.add(`jev-${tier}`);

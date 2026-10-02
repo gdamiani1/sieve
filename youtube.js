@@ -50,6 +50,7 @@
     no_key: "Sieve: add your OpenRouter key in the extension settings", or_key_rejected: "Sieve: OpenRouter rejected the key. Paste a new one in the extension settings", or_no_credit: "Sieve: out of OpenRouter credit. Add credit at openrouter.ai", unreadable: "Sieve: couldn't read the score. Reload the page to try again",
     key_rejected: "Sieve: TypeSafe key rejected",
     no_credit: "Sieve: out of TypeSafe credit, check TypeSafe billing",
+    timeout: "Sieve: the scorer took too long, will retry on next view",
   };
 
   let enabled = true;
@@ -244,7 +245,7 @@
         if (stale()) return;
         pending.delete(key);
         if (!r) return;
-        if (r.error === "rate_limited" || r.error === "network") return;
+        if (r.error === "rate_limited" || r.error === "network" || r.error === "timeout") return;
         const scored = { ...r, read: { snippet: !!v.snippet, chapters: !!v.chapters, description: !!description } };
         results.set(key, scored);
         tiles().forEach((t) => { if (t.dataset.jevKey === key) render(t, v, scored); });

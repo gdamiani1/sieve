@@ -339,6 +339,101 @@ chatStatus = 402;
 assert.deepEqual(await classify(), { error: "or_no_credit" });
 assert.deepEqual(went(), ["systemone", "chat"]);
 
+// Jev's answers are checked before verdict() sees them: verdict() throws on a missing kind or topic, and a
+// probability sent as a string would dodge the hostile zeroing. A billed 200 that can't be read still
+// counts its cost, and on OpenRouter the post goes to the chat scorer; directly it's "unreadable".
+{
+  const bad = {
+    empty: {},
+    array: [],
+    "no kind": { worth: { noul: 0.9 }, topic: { choice: "t0" } },
+    "string noul": { worth: { noul: "0.9" }, topic: { choice: "t0" }, kind: { choice: "technique" } },
+    "NaN noul": { worth: { noul: NaN }, topic: { choice: "t0" }, kind: { choice: "technique" } },
+    "unknown kind": { worth: { noul: 0.9 }, topic: { choice: "t0" }, kind: { choice: "rant" } },
+  };
+  for (const [name, answers] of Object.entries(bad)) {
+    fresh({ orKey: "or-stub" });
+    sys.body = { answers, usage: { input_tokens: 1000, cost: 0.00004 } };
+    const r = await classify();
+    assert.equal(r.scorer, "openrouter", name);
+    assert.deepEqual(went(), ["systemone", "chat"], name);
+    assert.equal(store.stats.scoreCost, 0.0001, `${name}: the unreadable 200 and the chat call are both counted`);
+    fresh({ apiKey: "ts-stub" });
+    ts.body = { answers, usage: { input_tokens: 1000 } };
+    assert.deepEqual(await classify(), { error: "unreadable" }, name);
+    assert.deepEqual(went(), ["typesafe"], name);
+    assert.equal(store.stats.tokens, 1000, `${name}: billed tokens counted`);
+  }
+  // Out of range is clamped; a topic Jev made up is "other", which topicLabel can read.
+  const { cleanAnswers } = await import("../jev.js");
+  assert.deepEqual(cleanAnswers({ worth: { noul: 1.7 }, topic: { choice: "cooking" }, kind: { choice: "technique" } }, questions), { worth: { noul: 1 }, topic: { choice: "other" }, kind: { choice: "technique" } });
+  assert.equal(cleanAnswers({ worth: { noul: -0.3 }, topic: { choice: "t0" }, kind: { choice: "news" } }, questions).worth.noul, 0);
+  assert.equal(cleanAnswers({ worth: { noul: Infinity }, topic: { choice: "t0" }, kind: { choice: "news" } }, questions), null);
+  assert.equal(cleanAnswers(null, questions), null);
+  // A missing topic is "other" too, as parseScore does: verdict() needs one, and the score stands without it.
+  assert.deepEqual(cleanAnswers({ worth: { noul: 0.9 }, kind: { choice: "technique" } }, questions).topic, { choice: "other" });
+  fresh({ orKey: "or-stub" });
+  sys.body = { answers: { worth: { noul: 1.7 }, topic: { choice: "cooking" }, kind: { choice: "technique" } }, usage: { cost: 0.00004 } };
+  {
+    const r = await classify();
+    assert.equal(r.scorer, "jev");
+    assert.equal(r.worth, 1);
+    assert.equal(r.tier, "strong");
+  }
+  // A string probability on a post aimed at the scorer can't keep its score: the answer isn't Jev's to use.
+  fresh({ apiKey: "ts-stub" });
+  ts.body = { answers: { worth: { noul: "0.97" }, topic: { choice: "t0" }, kind: { choice: "technique" } } };
+  assert.deepEqual(await send({ type: "classify", platform: "linkedin", state: hostilePost }), { error: "unreadable" });
+}
+
+// OpenRouter's 200 without a dollar cost is priced from its input tokens at Jev's price.
+fresh({ orKey: "or-stub" });
+sys.body = { answers: JEV_ANSWERS, usage: { input_tokens: 1000 } };
+await classify();
+assert.equal(store.stats.scoreCost, 0.000042);
+assert.equal(store.stats.tokens, 0);
+
+// Jev direct that never answers says so, and doesn't fall back (there's no OpenRouter key).
+{
+  const { limits } = await import("../jev.js");
+  const real = limits.timeoutMs;
+  limits.timeoutMs = 20;
+  fresh({ apiKey: "ts-stub" });
+  ts.hang = true;
+  assert.deepEqual(await classify(), { error: "timeout" });
+  assert.deepEqual(went(), ["typesafe"]);
+  limits.timeoutMs = real;
+}
+
+// Retry-After: seconds as sent, 2 when it's missing, blank or a date, never more than the cap.
+{
+  const { retryWait, limits } = await import("../jev.js");
+  const at = (h) => retryWait({ headers: { get: () => h } });
+  assert.equal(at("0"), 0);
+  assert.equal(at("3"), 3);
+  assert.equal(at(null), 2);
+  assert.equal(at(""), 2);
+  assert.equal(at("Wed, 21 Oct 2026 07:28:00 GMT"), 2);
+  assert.equal(at("-5"), 2);
+  assert.equal(at("600"), 10);
+  // Through the worker: a long Retry-After is capped, so the second try comes without a real wait here.
+  const real = limits.maxWaitS;
+  limits.maxWaitS = 0;
+  fresh({ orKey: "or-stub" });
+  sys = { statuses: [429], retryAfter: "600" };
+  assert.equal((await classify()).scorer, "jev");
+  assert.deepEqual(went(), ["systemone", "systemone"]);
+  limits.maxWaitS = real;
+}
+
+// Anything that throws while scoring still answers the page, so no chip waits forever.
+{
+  const realGet = chrome.storage.local.get;
+  chrome.storage.local.get = async () => { throw new Error("storage gone"); };
+  assert.deepEqual(await classify(), { error: "unreadable" });
+  chrome.storage.local.get = realGet;
+}
+
 // Offline is offline: no fallback, which would only fail the same way.
 fresh({ orKey: "or-stub" });
 {
