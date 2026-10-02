@@ -1,6 +1,7 @@
 import { DEFAULT_MODEL } from "./models.js";
 import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs, DEFAULT_REDDIT_ABOUT } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL } from "./watch-prompt.js";
+import { scoringKey } from "./jev.js";
 
 const $ = (id) => document.getElementById(id);
 const lines = (id) => $(id).value.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -18,12 +19,10 @@ const readChecks = (container) => Object.fromEntries([...$(container).querySelec
 
 async function load() {
   const p = await loadPrefs();
-  const s = await chrome.storage.local.get(["apiKey", "orKey", "useJev", "model", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
+  const s = await chrome.storage.local.get(["apiKey", "orKey", "model", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Paste your TypeSafe key";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
-  // Unset for everyone who installed before the switch: a saved TypeSafe key means they already score
-  // with Jev, and an update doesn't move them off it (background.js scorer() reads it the same way).
-  showJev(s.useJev ?? Boolean(s.apiKey), Boolean(s.apiKey), Boolean(s.orKey));
+  showScorer(scoringKey(s)?.via, Boolean(s.apiKey));
   $("role").value = p.role;
   $("topics").value = p.topics.join("\n");
   $("linkedinOn").checked = p.linkedinOn;
@@ -84,20 +83,14 @@ $("saveAll").onclick = async () => {
   load();
 };
 
-// The switch shows the TypeSafe field, and says what happens with the switch on and no key yet.
-function showJev(on, hasKey, hasOrKey) {
-  $("useJev").checked = on;
-  $("jevKey").hidden = !on;
-  $("jevNote").textContent = on && !hasKey ? (hasOrKey ? "Until a TypeSafe key is saved, your OpenRouter key keeps scoring." : "Nothing scores your posts until a TypeSafe key or an OpenRouter key is saved.") : "";
+// Says which key scores (jev.js scoringKey() decides, as the worker does). The TypeSafe field opens itself
+// for someone who scores with it, and is never closed here, so it stays open for someone who opened it.
+function showScorer(via, hasKey) {
+  if (via === "typesafe") $("tsBox").open = true;
+  $("scoreStatus").textContent = via === "openrouter"
+    ? `Jev scores your posts through your OpenRouter key.${hasKey ? " The saved TypeSafe key isn't used." : ""}`
+    : via === "typesafe" ? "Jev scores your posts with your TypeSafe key." : "Nothing scores your posts until an OpenRouter key is saved.";
 }
-$("useJev").onchange = async () => {
-  const on = $("useJev").checked;
-  await chrome.storage.local.set({ useJev: on });
-  const { apiKey, orKey } = await chrome.storage.local.get(["apiKey", "orKey"]);
-  showJev(on, Boolean(apiKey), Boolean(orKey));
-  const kept = apiKey ? " A saved TypeSafe key is kept, unused." : "";
-  $("keyMsg").textContent = on ? (apiKey ? "Jev scores your posts." : "") : (orKey ? `Your OpenRouter key scores your posts.${kept}` : `Add an OpenRouter key above and it scores your posts.${kept}`);
-};
 
 $("saveKeys").onclick = async () => {
   const msgs = [];

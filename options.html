@@ -20,6 +20,9 @@ input[type=number]{width:90px}
 button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);color:#fff;font:600 13px/1 -apple-system,system-ui,sans-serif;cursor:pointer}
 .bar{position:sticky;bottom:0;background:var(--paper);padding:14px 0;display:flex;gap:12px;align-items:center;border-top:1px solid var(--line)}
 .msg{font-size:13px;color:var(--accent)}
+details{margin-top:14px}
+summary{cursor:pointer;font-weight:600;padding:4px 0}
+.status{font-size:13px;margin:12px 0 0}
 </style></head><body><main>
 <h1>Sieve settings</h1>
 <p class="lede">Tell Sieve who you are and what you want to see. Each post is scored against this; the rules at the bottom always win.</p>
@@ -27,15 +30,16 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <section>
 <h2>Keys</h2>
 <p class="hint">Stored only in this browser. Each key is checked before it's saved.</p>
-<label class="f" for="orkey">OpenRouter API key (scores posts, writes briefs and digests, and runs Watch it for me)</label>
-<input id="orkey" type="password" autocomplete="off">
-<div class="inline" style="margin-top:16px"><label><input id="useJev" type="checkbox" aria-controls="jevKey" aria-describedby="jevHint"> Score posts with Jev (optional)</label></div>
-<p class="hint" style="margin-top:4px" id="jevHint">Jev is TypeSafe's decision model, made for this kind of yes or no call. With a TypeSafe key, it scores your feed instead of your OpenRouter key. Scoring costs about 4 US cents per 1,000 posts with Jev, and 5 to 9 with your OpenRouter key.</p>
-<div id="jevKey" hidden>
+<label class="f" for="orkey">OpenRouter API key (scores posts with Jev, writes briefs and digests, and runs Watch it for me)</label>
+<input id="orkey" type="password" autocomplete="off" aria-describedby="orHint">
+<p class="hint" style="margin-top:6px" id="orHint">Scoring runs on Jev, TypeSafe's decision model, reached through this key: about 3 to 4 US cents per 1,000 posts.</p>
+<details id="tsBox">
+<summary>Have a TypeSafe key? (optional)</summary>
+<p class="hint" style="margin-top:8px" id="tsHint">Only used when no OpenRouter key is saved: then Sieve scores with Jev directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key.</p>
 <label class="f" for="key">TypeSafe API key</label>
-<input id="key" type="password" autocomplete="off">
-<p class="hint" style="margin-top:6px" id="jevNote" aria-live="polite"></p>
-</div>
+<input id="key" type="password" autocomplete="off" aria-describedby="tsHint">
+</details>
+<p class="status" id="scoreStatus" aria-live="polite"></p>
 <div style="margin-top:10px"><button id="saveKeys">Check and save keys</button> <span class="msg" id="keyMsg" aria-live="polite"></span></div>
 </section>
 
@@ -66,7 +70,7 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 <div class="inline"><label><input id="freshHours" type="number" min="1" max="168"> hours old</label><label><input id="freshComments" type="number" min="0" max="1000"> comments</label></div>
 <label class="f" for="redditAbout">My facts for Reddit (no business names or links)</label>
 <textarea id="redditAbout" rows="6"></textarea>
-<p class="hint" style="margin-top:6px">Only true, first-hand things. These facts go with every Reddit post that is scored (to Jev at TypeSafe, or to OpenRouter), so it can judge whether you could answer.</p>
+<p class="hint" style="margin-top:6px">Only true, first-hand things. These facts go with every Reddit post that is scored (to OpenRouter, which passes them to TypeSafe for Jev), so it can judge whether you could answer.</p>
 </section>
 
 <section>

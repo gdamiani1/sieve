@@ -5,10 +5,11 @@ developers, it turns techniques worth trying into briefs your coding agent (Clau
 Codex, Cursor and others) can try in your repo. It never clicks, comments or posts for you, and never installs
 or runs anything: a brief is text you copy.
 
-Scoring runs on [Jev](https://typesafe.ai), TypeSafe's decision model, when you add a TypeSafe key, or through
-your own OpenRouter key when you don't. (Sieve is an independent project, not made by TypeSafe.) Jev doesn't
-generate text: it picks from answers you define and returns a probability. Without it, your OpenRouter model is
-asked the same questions and answers in the same shape. Either way the scorer makes the narrow calls (is this
+Scoring runs on [Jev](https://typesafe.ai), TypeSafe's decision model, reached through your OpenRouter key (or
+directly, with a TypeSafe key, if you have one and no OpenRouter key). Sieve is an independent project, not made
+by TypeSafe. Jev doesn't generate text: it picks from answers you define and returns a probability. When
+OpenRouter can't reach Jev, a general model is asked the same questions through OpenRouter and answers in the
+same shape. Either way the scorer makes the narrow calls (is this
 worth reading? could I answer this?), plain code handles the rules, and
 you do the part that needs judgement.
 
@@ -80,8 +81,8 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
   has its own list.
 - **Text aimed at AI tools:** a post that talks to whatever scores it (asks to be rated highly, fakes a
   scoring field, tells a model what to answer) lands low with the reason "text aimed at AI tools", whichever
-  scorer read it. Plain code catches the forms that can't be anything else, and without Jev the model also
-  reports any passage aimed at it. The trade-off, chosen on purpose: a post about prompt injection that
+  scorer read it. Plain code catches the forms that can't be anything else, and when the general model scores
+  instead of Jev, it also reports any passage aimed at it. The trade-off, chosen on purpose: a post about prompt injection that
   quotes a payload without quote marks can land low too.
 - **Rules** that always win over the score: words that always show a post (a person, your company) and words that
   never do (crypto, webinar, "we're hiring").
@@ -94,28 +95,33 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
-   - **OpenRouter API key** (scoring posts, briefs, digests and Watch it for me). Default model `deepseek/deepseek-v4-flash`, which also always does the scoring: about 5 to 9 US cents per 1,000 posts. Checked against the API before it's saved.
-   - **Score posts with Jev** (optional): turn it on and add a **TypeSafe API key**, and Jev scores posts instead, for about 4 US cents per 1,000 posts. If you saved a TypeSafe key before this switch existed, it starts on.
+   - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 4 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
+   - **Have a TypeSafe key? (optional)**, closed under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
    - **Your facts for Reddit.** Only true, first-hand things. The scorer uses them to judge whether you could answer a thread.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
 
 Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services at most and
-nowhere else. Whichever scores your posts (TypeSafe with Jev on, OpenRouter otherwise) gets what is scored: a
+nowhere else. Scoring requests go to OpenRouter, which passes them to TypeSafe for Jev; when OpenRouter can't
+reach Jev, the same request goes through OpenRouter to a fixed general model (DeepSeek V4 Flash) instead; with
+only a TypeSafe key, they go straight to TypeSafe. Whoever receives a scoring request gets what is scored: a
 post's text (for YouTube, the title, channel and length, the text YouTube shows with the tile, and for a tile
 that shows none, the first 1,500 characters of the description), your role and topics, and on Reddit your
 Reddit facts. OpenRouter gets a post's text when you ask for a brief (with your role and topics), your saved posts (except any Sieve left out) when you ask for a digest, and a
 video's link, title and channel (with your role and topics) when you have it watched. OpenRouter passes each
-request to the model you picked, except scoring, which always uses DeepSeek V4 Flash to keep a feed cheap.
+request to the model you picked, except scoring, which goes to Jev (or, as the fallback, DeepSeek V4 Flash).
 
-## Cost (September 2026 prices)
+## Cost (October 2026 prices)
 
-- Scoring through OpenRouter (the default): about 6 US cents per 1,000 LinkedIn and X posts, 9 on Reddit (your
-  Reddit facts go with each post) and 5 on YouTube, with DeepSeek V4 Flash, measured on the invented sets with
-  `test/compare_scorers.mjs` on 24 Sep 2026. Reading YouTube descriptions (26 Sep) raises YouTube to at most
-  about 7 US cents per 1,000 videos, measured on 20 real videos that all got a description (about 1,075 input
-  tokens on average, against 880 from the title alone); with Jev, about 4 instead of 3.5. The description request itself is free: about 5 KB from
-  YouTube per bare tile.
-- Scoring with Jev (optional): about 1,000 input tokens per post at $0.042 per million: roughly 4 US cents per 1,000 posts.
+- Scoring with Jev through OpenRouter (the default): about 1,000 input tokens per post at $0.042 per million,
+  about 3 to 4 US cents per 1,000 posts, paid from your OpenRouter credit. Reading YouTube descriptions (26 Sep)
+  raises YouTube from about 3.5 to about 4 US cents per 1,000 videos (about 1,075 input tokens on average on 20
+  real videos that all got a description, against 880 from the title alone). The description request itself
+  is free: about 5 KB from YouTube per bare tile. With only a TypeSafe key, Jev direct has the same token
+  price, billed by TypeSafe.
+- The chat model is only a fallback, for when OpenRouter can't reach Jev: about 6 US cents per 1,000 LinkedIn
+  and X posts, 9 on Reddit (your Reddit facts go with each post) and 5 on YouTube (at most about 7 with
+  descriptions), with DeepSeek V4 Flash, measured on the invented sets with `test/compare_scorers.mjs` on 24
+  Sep 2026.
 - A digest of a day's posts: well under a cent.
 - A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
 
@@ -123,10 +129,12 @@ request to the model you picked, except scoring, which always uses DeepSeek V4 F
 
 The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/reddit_test.mjs`). Keys come from
 `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY`, or on macOS from Keychain items `typesafe-api-key` / `openrouter-api-key`.
+The live scoring scripts (`run_triage`, `reddit_test`, `compare_scorers`) reach Jev through OpenRouter, as the
+extension does, so they need only the OpenRouter key; `score_latency` also times Jev direct with the TypeSafe key.
 
     node test/rules_test.mjs        # the rules on top of the score (offline, no keys)
     node test/youtube_text_test.mjs # what a YouTube tile says beyond its title, and asking YouTube for the description (offline)
-    node test/score_test.mjs        # scoring without a TypeSafe key: the prompt, the parser, and which scorer answers (offline)
+    node test/score_test.mjs        # scoring through the real worker: which endpoint answers for each key, Jev's errors, the fallback to the chat scorer, cost, and the chat prompt and parser (offline)
     node test/watch_parse_test.mjs  # the video answer parser (offline)
     node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
     node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
@@ -144,12 +152,13 @@ The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/red
     node test/x_brief_worker_test.mjs # X briefs through the real worker: pictures, the vision model, threads (offline)
     node test/x_page_test.mjs       # x.js on a fake X page: threads, pictures, Watch it for me (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
-    node test/run_triage.mjs        # LinkedIn scoring (PREFS=file.json to score as someone else)
-    node test/reddit_test.mjs       # Reddit scoring
+    node test/run_triage.mjs        # LinkedIn scoring with Jev through OpenRouter (PREFS=file.json to score as someone else)
+    node test/reddit_test.mjs       # Reddit scoring with Jev through OpenRouter
     node test/digest_test.mjs       # a digest with three probes aimed at the summariser, checked (RUNS=3 to repeat), under 1 US cent
     node test/watch_test.mjs        # Watch it for me on one public video (VIDEO=url), about 1 cent
     node test/x_live_test.mjs       # an X picture brief on Flash-Lite and Flash, and an X video watched, under 1 US cent
-    node test/compare_scorers.mjs   # the invented sets scored by Jev and by OpenRouter side by side, with cost; SET=reddit, youtube or hostile (live, a few cents); TITLE_ONLY=1 with SET=youtube scores the tiles as 1.3.0 did
+    node test/compare_scorers.mjs   # the invented sets scored by Jev (through OpenRouter) and by OpenRouter chat models side by side, with cost; SET=reddit, youtube or hostile (live, a few cents); TITLE_ONLY=1 with SET=youtube scores the tiles as 1.3.0 did
+    node test/score_latency.mjs     # times Jev direct, Jev through OpenRouter and chat models on five invented Reddit posts, a cent or so
 
 On the invented set, Jev's LinkedIn scoring matched the intended tier on 7 of 8 (a "built a small tool" post
 scored high where it was labelled maybe) and Reddit on 5 of 6 (the shared-inbox question scored 0.52, maybe
@@ -171,7 +180,8 @@ instead of high).
 ## Files
 
 - `prefs.js`: default settings, the questions the scorer is asked (built from each user's settings) and the rules applied after.
-- `score-prompt.js`: the same questions as one OpenRouter prompt, and the answer back in Jev's shape, for scoring without a TypeSafe key.
+- `jev.js`: Jev, TypeSafe's decision model: which key scores (the OpenRouter key first, a TypeSafe key only without one) and one call to it, with each error and whether to fall back.
+- `score-prompt.js`: the same questions as one OpenRouter chat prompt, and the answer back in Jev's shape, for the fallback when OpenRouter can't reach Jev.
 - `models.js`: the default text model for briefs and digests, and the OpenRouter providers Sieve avoids.
 - `digest-prompt.js`: which saved posts go into a digest (flagged ones left out), the digest prompt, the Left out note and the final text.
 - `content.js` (LinkedIn), `x.js` (X), `reddit.js` (Reddit), `youtube.js` (YouTube), `background.js` (API calls, saving, reminder).
