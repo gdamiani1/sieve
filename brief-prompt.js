@@ -225,8 +225,37 @@ const POINTS_ON = /\b(?:below|following|follows)\b/i;
 const LEADS_ON = 80;
 const MAX_LED = 3;
 
+// A brief's text -> a test of whether it could name a planted name: the name, separators gone, has to
+// appear in the brief's text with separators gone, after NFKC and lowercasing (NFKC because namesRe
+// matches case-insensitively by Unicode rules: "ſnapdiff", with a long s, names snapdiff). Anything
+// namesRe matches passes, because namesRe only allows separators where the stripped text has none.
+// A set of the text's three-letter pieces turns most names away before the one indexOf, and answers
+// are kept per name: a post can hold tens of thousands of candidate names and a brief a long text,
+// and an indexOf for each took over a second.
+const SEPARATORS = /[-_.\s]/g;
+const briefMentions = (text) => {
+  const stripped = nfkc(text).toLowerCase().replace(SEPARATORS, "");
+  const grams = new Set();
+  for (let i = 0; i + 3 <= stripped.length; i++) grams.add(stripped.slice(i, i + 3));
+  const known = new Map();
+  return (name) => {
+    let yes = known.get(name);
+    if (yes === undefined) {
+      const bare = name.replace(SEPARATORS, "");
+      yes = true;
+      for (let i = 0; yes && i + 3 <= bare.length; i++) yes = grams.has(bare.slice(i, i + 3));
+      yes = yes && stripped.includes(bare);
+      known.set(name, yes);
+    }
+    return yes;
+  };
+};
+
 // A post -> the names (lowercase, no repeats, at most MAX_FOUND) that only its planted passages
 // mention: the tools, packages and keys a warned brief must never pass on. [] when there are none.
+// With `briefText` (the brief's steps and needs), only names that text could name are kept, and that
+// happens as they're collected, so names the brief never repeats take no room under MAX_FOUND: six
+// hundred junk names ahead of the real one can't push it out. Without it, every name is collected.
 //
 // A planted passage is one of two things:
 // - a brief-shaped JSON object. One pass with a stack pairs every "{" with its "}"; each pair that
@@ -248,7 +277,7 @@ const MAX_LED = 3;
 // A name counts only when it appears nowhere outside the planted passages, as a whole word with any
 // common ending: a post that recommends pytest in its own words keeps its pytest steps even if an
 // injection names pytest too, and "Reviewing" in the post keeps "the review bot" from naming anything.
-export function plantedNames(post = {}) {
+export function plantedNames(post = {}, briefText) {
   const parts = postParts(post).map(readable);
   const visible = parts.join("\n");
   const spans = [];
@@ -326,9 +355,10 @@ export function plantedNames(post = {}) {
   const rest = outside.join("\n");
   // names in name positions inside the planted text
   const found = new Set();
+  const inBrief = typeof briefText === "string" ? briefMentions(briefText) : () => true;
   const add = (n, stop = NOT_A_NAME) => {
     const name = n.toLowerCase().replace(/[.:/-]+$/, "");
-    if (name.length >= 3 && name.length <= 64 && /^\p{L}/u.test(name) && !stop.has(name)) found.add(name);
+    if (name.length >= 3 && name.length <= 64 && /^\p{L}/u.test(name) && !stop.has(name) && inBrief(name)) found.add(name);
   };
   for (const [s, e] of merged) {
     const planted = visible.slice(s, e);
@@ -355,16 +385,10 @@ export function plantedNames(post = {}) {
 
 // A warned brief -> the same brief without the try steps and needs that name a planted name (namesRe:
 // as a whole word, or spelled with other separators). CHECK_SOURCE is Sieve's own line and never goes.
-// With up to MAX_FOUND names, a regex for each would cost a quarter of a second to compile, so a name
-// first has to show up in the brief's own text with separators and case gone (one indexOf on one
-// string); only the names that do get a regex. Anything namesRe matches passes that test, because
-// namesRe only allows separators where the stripped text has none.
-const SEPARATORS = /[-_.\s]/g;
+// plantedNames is given the brief's own text (briefMentions), so it only returns names the brief could
+// name, and only those get a regex: a regex for each of hundreds of names cost a quarter of a second.
 const dropPlanted = (brief, post) => {
-  const planted = plantedNames(post);
-  if (!planted.length) return brief;
-  const stripped = [...brief.try, ...brief.needs].join("\n").toLowerCase().replace(SEPARATORS, "");
-  const names = planted.filter((n) => stripped.includes(n.replace(SEPARATORS, ""))).map(namesRe);
+  const names = plantedNames(post, [...brief.try, ...brief.needs].join("\n")).map(namesRe);
   if (!names.length) return brief;
   const clear = (s) => !names.some((re) => re.test(s));
   return { ...brief, try: brief.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: brief.needs.filter(clear) };
