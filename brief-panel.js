@@ -1,6 +1,11 @@
 // Shared by the LinkedIn, X and YouTube scripts: shows a technique brief and copies it as a prompt for
 // a coding agent. Listed before them in the manifest, so all it does is define one global.
 (() => {
+  // Opt-in usage stats: tells the worker a prompt was copied. The worker counts it only if the user said
+  // yes; no text goes with it. A reloaded extension leaves this page's script orphaned, so a failure is ignored.
+  const counted = () => {
+    try { chrome.runtime.sendMessage({ type: "count", name: "prompt_copied", where: "brief" }).catch(() => {}); } catch {}
+  };
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -74,6 +79,7 @@
       const ok = await copy(b.prompt);
       busy = false;
       if (ok) {
+        counted();
         clearTimeout(timer);
         btn.textContent = "Copied";
         btn.classList.add("is-copied");

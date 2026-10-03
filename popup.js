@@ -24,4 +24,24 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn"]) {
 $("settings").onclick = () => chrome.runtime.openOptionsPage();
 $("digest").onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL("digest.html") });
 $("reset").onclick = async () => { await chrome.storage.local.remove("stats"); load(); };
+// The one usage-stats question: shown until it's answered, only in a build that can send (analytics.js).
+async function ask() {
+  const s = await chrome.runtime.sendMessage({ type: "stats", action: "status" }).catch(() => null);
+  $("ask").hidden = !(s && s.available && s.consent === null);
+}
+const answer = (on) => async () => {
+  $("askYes").disabled = $("askNo").disabled = true;
+  $("askErr").textContent = "";
+  const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on }).catch(() => null);
+  if (r && !r.error) {
+    $("ask").hidden = true;
+    $("askThanks").textContent = "Thanks. You can change this in Settings.";
+    return;
+  }
+  $("askErr").textContent = (r && r.error) || "Sieve couldn't change usage stats. Reload the extension and try again.";
+  $("askYes").disabled = $("askNo").disabled = false;
+};
+$("askYes").onclick = answer(true);
+$("askNo").onclick = answer(false);
+ask();
 load();

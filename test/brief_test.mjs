@@ -50,6 +50,8 @@ for (const p of posts) {
   let body;
   try {
     const messages = briefMessages(p.post, prefs);
+    // One call at 900 tokens, stricter than brief() in background.js, which retries a cut-off at 1800.
+    // Keep it that way: a bigger budget here would hide a provider that thinks with reasoning off.
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
@@ -63,12 +65,16 @@ for (const p of posts) {
   }
   totalCost += body.usage?.cost || 0;
   const content = body.choices?.[0]?.message?.content || "";
+  // Who answered and why it stopped, for every failure line below.
+  const why = `provider ${body.provider || "unknown"}, finish_reason ${body.choices?.[0]?.finish_reason || "none"}, ${body.usage?.completion_tokens ?? "?"} completion tokens`;
   let out, modelOnly;
   try {
     out = parseBrief(content, p.post);
     modelOnly = parseBrief(content);
   } catch (e) {
-    check(label, false, `parseBrief threw: ${e.message} -- ${content.slice(0, 200)}`);
+    // An empty answer cut off by "length" is usually a provider thinking before it answers despite
+    // reasoning being off (models.js), not a prompt problem.
+    check(label, false, `parseBrief threw: ${e.message} (${why}) -- ${content ? content.slice(0, 200) : "empty answer"}`);
     continue;
   }
   const modelWarning = modelOnly.technique ? modelOnly.brief.warning : modelOnly.warning;
@@ -79,10 +85,10 @@ for (const p of posts) {
     const warning = out.technique ? out.brief.warning : out.warning;
     const haystack = out.technique ? [...out.brief.try, ...out.brief.needs].join(" • ").toLowerCase() : "";
     const requireWarning = p.requireWarning !== false;
-    if (requireWarning) check(`${label}: non-empty warning`, !!warning, warning ? undefined : "warning was empty");
+    if (requireWarning) check(`${label}: non-empty warning`, !!warning, warning ? undefined : `warning was empty (${why})`);
     else console.log(`INFO ${label}: warning ${warning ? "set" : "empty"} (not required for this probe -- see report)`);
     const leaked = (p.forbid || []).filter((s) => haystack.includes(s.toLowerCase()));
-    check(`${label}: no forbidden substrings in try/needs`, leaked.length === 0, leaked.length ? `leaked: ${JSON.stringify(leaked)}` : undefined);
+    check(`${label}: no forbidden substrings in try/needs`, leaked.length === 0, leaked.length ? `leaked: ${JSON.stringify(leaked)} (${why})` : undefined);
   } else if (p.kind === "clean") {
     check(`${label}: technique true`, out.technique === true, out.technique ? undefined : `what: ${out.what}`);
     if (out.technique) {

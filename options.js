@@ -109,3 +109,34 @@ $("saveKeys").onclick = async () => {
   load();
 };
 load();
+
+// Usage stats (analytics.js): shown only in a build that can send. The switch acts at once.
+function showStats(s) {
+  if (!s || !s.available) return;
+  $("statsSection").hidden = false;
+  $("statsOn").checked = s.consent === true;
+  const p = $("statsCode");
+  p.hidden = !s.installCode;
+  p.replaceChildren();
+  if (s.installCode) {
+    const b = document.createElement("strong");
+    b.textContent = s.installCode;
+    p.append("Your install code: ", b, ". Tell me this code only if you want me to recognise your install.");
+  }
+}
+const readStats = () => chrome.runtime.sendMessage({ type: "stats", action: "status" }).then(showStats, () => {});
+readStats();
+// The popup can answer the question while this tab is open.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.statsConsent) readStats();
+});
+$("statsOn").onchange = async () => {
+  const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on: $("statsOn").checked }).catch(() => null);
+  if (r && !r.error) {
+    $("statsMsg").textContent = "";
+    showStats(r);
+  } else {
+    $("statsMsg").textContent = (r && r.error) || "Sieve couldn't change usage stats. Reload the extension and try again.";
+    readStats();
+  }
+};

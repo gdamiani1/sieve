@@ -6,6 +6,7 @@ import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normal
 import { briefMessages, briefMessagesWithPictures, parseBrief, threadLength } from "./brief-prompt.js";
 import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
 import { scoringKey, askJev, PRICE_PER_MTOK } from "./jev.js";
+import { count, setConsent, status, startStats } from "./analytics.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -249,6 +250,7 @@ async function watch(req) {
     text: `${req.title}\n\n${out.summary}\n\nLearnings:\n${out.learnings.map((l) => "- " + l).join("\n")}`,
     topic: "", kind: "video", worth: 1,
   });
+  await count("video_watched", { platform });
   return withPrompt(out);
 }
 
@@ -315,7 +317,8 @@ async function brief(req) {
   // One retry with more room: an unreadable answer is usually a cut-off. The whole attempt loop runs
   // inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still records whatever was
   // spent before it, exactly once -- and never writes stats at all when nothing was spent.
-  let parsed = null, cost = 0, lastError = "";
+  let parsed = null, cost = 0;
+  const failed = []; // "cut off" or "unreadable", one per attempt that gave no brief
   // Capped well above anything a real post could carry, so a bogus photoCount from the page can't blow
   // up the sentence the model reads ("has 4,000,000,000 pictures").
   const photoCount = Math.min(1000, Math.max(photos.length, Number.isInteger(p.photoCount) ? p.photoCount : 0));
@@ -357,17 +360,23 @@ async function brief(req) {
         // A cut-off answer can still parse (a partial JSON object often reads fine), so a truncated
         // first attempt is retried for a full answer rather than kept as if it were complete. The
         // last attempt is accepted regardless: it's the best answer available.
-        if (cutOff && i < attempts.length - 1) { lastError = "cut off"; continue; }
+        if (cutOff && i < attempts.length - 1) { failed.push("cut off"); continue; }
         parsed = parsedAnswer;
         break;
       } catch {
-        lastError = cutOff ? "cut off" : "unreadable";
+        failed.push(cutOff ? "cut off" : "unreadable");
       }
     }
   } finally {
     if (cost) await stats((s) => { s.draftCost = (s.draftCost || 0) + cost; });
   }
-  if (!parsed) return { error: `The model's brief was ${lastError} twice. Try again, or switch model in settings.` };
+  if (!parsed) {
+    // Cut off both times is almost always a provider thinking before it answers (models.js), which
+    // another try often avoids: OpenRouter picks a provider per request.
+    if (failed.every((f) => f === "cut off")) return { error: "The model ran out of room before it finished the brief, twice. Some OpenRouter providers think before answering even when Sieve asks them not to. Try again, or pick another model in Sieve's settings." };
+    const why = failed.every((f) => f === "unreadable") ? "unreadable twice" : "cut off once and unreadable once";
+    return { error: `The model's brief was ${why}. Try again, or switch model in settings.` };
+  }
   if (!parsed.technique) {
     const cap200 = (s) => Array.from(cleanText(s)).slice(0, 200).join("");
     const parts = ["No technique to try in this post, so no brief was written."];
@@ -388,6 +397,7 @@ async function brief(req) {
     await save(plain, { replace: true });
   } catch {}
   await stats((s) => { s.briefs = (s.briefs || 0) + 1; });
+  await count("brief_made", { platform });
   return briefReply(rec);
 }
 
@@ -410,6 +420,7 @@ const savedPosts = (saved) => (Array.isArray(saved) ? saved : []).filter((p) => 
 // message path stays as it was: the first save wins and later saves of the same post are no-ops.
 function save(post, { replace = false } = {}) {
   const clean = { ...post, platform: platformOf(post.platform), authorUrl: webUrl(post.authorUrl), postUrl: webUrl(post.postUrl), text: String(post.text ?? "").slice(0, 4000), worth: typeof post.worth === "number" ? post.worth : 0, scorer: post.scorer === "jev" || post.scorer === "openrouter" ? post.scorer : undefined };
+  let added = false;
   return update("saved", ({ saved: stored }) => {
     const saved = savedPosts(stored);
     const existing = saved.findIndex((p) => p.key === clean.key && platformOf(p.platform) === clean.platform);
@@ -422,8 +433,9 @@ function save(post, { replace = false } = {}) {
     }
     const cutoff = Date.now() - KEEP_DAYS * 864e5;
     const next = [{ ...clean, savedAt: Date.now() }, ...saved.filter((p) => p.savedAt > cutoff)].slice(0, MAX_SAVED);
+    added = true;
     return { saved: next };
-  });
+  }).then(() => (added ? count("post_saved", { platform: clean.platform }) : undefined));
 }
 
 async function openrouter(messages, maxTokens) {
@@ -467,10 +479,18 @@ async function digest(since) {
     digests: [d, ...(Array.isArray(digests) ? digests : [])].slice(0, 60),
     lastDigestAt: Math.max(Number(lastDigestAt) || 0, startedAt),
   }));
+  await count("digest_made");
   return d;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+// Opt-in usage stats (analytics.js): nothing is counted or sent before the user says yes.
+startStats();
+
+// Only Sieve's own pages (the popup and settings, which opens in a tab) may change the usage-stats
+// answer; a content script runs on a feed page, whose URL is that page's.
+const fromExtensionPage = (sender) => typeof sender?.url === "string" && sender.url.startsWith(chrome.runtime.getURL(""));
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "save") {
     if (!msg.post || typeof msg.post !== "object") {
       reply({ error: "No post to save." });
@@ -498,9 +518,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     once(`digest:${msg.since}`, () => digest(msg.since)).then(reply, () => reply({ error: "Sieve couldn't make the digest. Try again, and if it keeps failing, reload the extension." }));
     return true;
   }
+  if (msg.type === "count") {
+    // Only the two actions that happen in a page; everything else is counted here, where it runs.
+    const counted = msg.name === "prompt_copied" ? count("prompt_copied", { where: msg.where }) : msg.name === "library_exported" ? count("library_exported") : undefined;
+    Promise.resolve(counted).then(() => reply({ ok: true }));
+    return true;
+  }
+  if (msg.type === "stats") {
+    if (msg.action === "consent" && !fromExtensionPage(sender)) {
+      reply({ error: "Usage stats can only be changed from Sieve's popup or settings." });
+      return true;
+    }
+    const done = msg.action === "consent" ? setConsent(!!msg.on).then(status) : status();
+    done.then(reply, () => reply({ error: "Sieve couldn't change usage stats. Reload the extension and try again." }));
+    return true;
+  }
   if (msg.type === "classify") {
-    // A throw anywhere in scoring still answers, so the chip never sits on "pending".
-    classify(msg.state, msg.platform).then(reply, () => reply({ error: "unreadable" }));
+    // A throw anywhere in scoring still answers, so the chip never sits on "pending". A verdict (not an
+    // error) counts as one scored post; the general model is "fallback" in the stats.
+    classify(msg.state, msg.platform).then(async (r) => {
+      if (r && !r.error) await count("posts_scored", { platform: platformOf(msg.platform), scorer: r.scorer === "jev" ? "jev" : "fallback" });
+      return r;
+    }).then(reply, () => reply({ error: "unreadable" }));
     return true; // async reply
   }
 });

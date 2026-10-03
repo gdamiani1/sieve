@@ -78,14 +78,29 @@ const NOUN = String.raw`(?:(?:(?:ai\s+directed|ai\s+aimed|hidden|injected)\s+)?(
 const TAIL = String.raw`(?:\s+(?:was\s+|were\s+)?(?:found|detected|present|identified))?(?:\s+in\s+(?:this|the)\s+(?:post|video|source|text))?`;
 const NONE_SENTENCE = new RegExp(String.raw`^(?:${LEAD}(?:no|nothing|none)\s+${NOUN}${TAIL}|(?:the post|this post|the video|this video|the source|it)\s+(?:does not|doesn t|doesnt)\s+(?:contain|have|include)\s+(?:any\s+)?${NOUN}${TAIL})$`);
 
+// A sentence that only calls the post ordinary or harmless: "It is a straightforward tip from the
+// author to human readers.", "This is an ordinary post.", "It is harmless." Some models add one after
+// the "nothing found" sentence. Built from a closed vocabulary (no "but", "except", "that", "tells",
+// "AI", "agents"), so a sentence that says what a passage asks, quotes it, or hedges never matches.
+const PLAIN = String.raw`(?:straightforward|ordinary|normal|regular|plain|harmless|benign|innocuous|genuine|typical|simple|standard|legitimate|clean|practical|technical|short|brief|helpful|useful|informational|informative|educational|personal|human written)`;
+const KIND = String.raw`(?:tip|tips|post|video|advice|tutorial|explanation|guide|announcement|opinion|discussion|write up|thread|demo|walkthrough|technique|description|story|update|example|recommendation|piece|text|content)`;
+const READERS = String.raw`(?:human\s+)?(?:readers|people|developers|humans|viewers|engineers|users|its audience|an audience)`;
+const ORDINARY_SENTENCE = new RegExp(String.raw`^(?:(?:it|this|the post|this post|the video|this video|the source|the content)\s+(?:is|reads as|looks like|seems|seems to be|appears to be)|it s|this s)\s+(?:just\s+|simply\s+|only\s+)?(?:an?\s+)?(?:${PLAIN}(?:\s+and)?\s+)*(?:${PLAIN}|${KIND})(?:\s+(?:from|by)\s+(?:the|its)\s+(?:author|creator|poster|writer))?(?:\s+(?:to|for|written for|meant for|aimed at|addressed to)\s+${READERS})?$`);
+
+const bareOf = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}/]+/gu, " ").trim();
+const deniesAll = (bare) => !bare || NONE_SHORT.test(bare) || NONE_SENTENCE.test(bare);
+
 // A model's free-text warning -> "" when the whole thing amounts to "nothing found", the cleaned text
-// otherwise. Lowercases and reduces to letters, digits and "/" before matching, so wording, case and
+// otherwise. "Nothing found" is either the whole warning, or a first sentence that says so followed
+// only by sentences that call the post ordinary (ORDINARY_SENTENCE); any other sentence keeps the
+// warning. Lowercases and reduces to letters, digits and "/" before matching, so wording, case and
 // punctuation never affect the decision. Exported so parseBrief (brief-prompt.js) can apply the exact
 // same rule to a technique:false answer, which never goes through normalizeBrief.
 export function normalizeWarning(w) {
   const warning = clean(w);
-  const bare = warning.toLowerCase().replace(/[^\p{L}\p{N}/]+/gu, " ").trim();
-  if (!bare || NONE_SHORT.test(bare) || NONE_SENTENCE.test(bare)) return "";
+  if (deniesAll(bareOf(warning))) return "";
+  const [first, ...rest] = warning.split(/(?<=[.!?])\s+/).map(bareOf);
+  if (first && rest.length && deniesAll(first) && rest.every((s) => ORDINARY_SENTENCE.test(s))) return "";
   // A warning is shown to the developer, never fetched, but a raw link in it is still a link a
   // developer could paste into a browser without a second thought. Redacting it is a no-op the second
   // time through: nothing left afterward matches "http(s)://" or "www.".

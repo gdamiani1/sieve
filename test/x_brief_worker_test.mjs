@@ -29,9 +29,12 @@ globalThis.chrome = {
 };
 const requests = [];
 const BRIEF = JSON.stringify({ technique: true, what: "Run 3 to 5 git worktrees in parallel.", says: [], checks: [], needs: ["git"], try: ["Make two worktrees"], success: "Two sessions run at once.", skill: { worth: true, why: "Daily." }, warning: "" });
+// Answers queued in `replies` ({ content, finish_reason }) are used first, one per request; then BRIEF.
+const replies = [];
 globalThis.fetch = async (_url, init) => {
   requests.push(JSON.parse(init.body));
-  return { status: 200, ok: true, json: async () => ({ choices: [{ message: { content: BRIEF }, finish_reason: "stop" }], usage: { cost: 0.0002 } }) };
+  const { content = BRIEF, finish_reason = "stop" } = replies.shift() || {};
+  return { status: 200, ok: true, json: async () => ({ choices: [{ message: { content }, finish_reason }], usage: { cost: 0.0002 } }) };
 };
 await import("../background.js");
 const send = (msg) => new Promise((resolve) => listener(msg, {}, resolve));
@@ -215,5 +218,40 @@ const [rSingle, rThread] = await Promise.all([
 assert.equal(rSingle.error, undefined, rSingle.error);
 assert.equal(rThread.error, undefined, rThread.error);
 assert.equal(requests.length, 2, "a single-post and a thread brief of the same post each get their own request, in flight together");
+
+// A provider that thinks before answering despite reasoning being off spends the whole budget and
+// answers nothing (finish_reason "length"): retried once with more room, and when that runs out too the
+// user is told what happened, not just "cut off twice".
+reset();
+requests.length = 0;
+replies.push({ content: "", finish_reason: "length" }, { content: "", finish_reason: "length" });
+r = await send({ type: "brief", post: post({ key: "66661" }) });
+assert.deepEqual(requests.map((q) => q.max_tokens), [900, 1800]);
+assert.equal(r.error, "The model ran out of room before it finished the brief, twice. Some OpenRouter providers think before answering even when Sieve asks them not to. Try again, or pick another model in Sieve's settings.");
+
+// The retry with more room is enough: the brief comes back as usual.
+reset();
+requests.length = 0;
+replies.push({ content: "", finish_reason: "length" });
+r = await send({ type: "brief", post: post({ key: "66662" }) });
+assert.equal(r.error, undefined, r.error);
+assert.equal(requests.length, 2);
+
+// Both answers unreadable: the old wording.
+reset();
+requests.length = 0;
+replies.push({ content: "Sure! Here is the brief." }, { content: "Sure! Here is the brief." });
+r = await send({ type: "brief", post: post({ key: "66663" }) });
+assert.equal(r.error, "The model's brief was unreadable twice. Try again, or switch model in settings.");
+
+// One of each, in either order: the error says so instead of naming only the last attempt.
+for (const pair of [[{ content: "", finish_reason: "length" }, { content: "nope" }], [{ content: "nope" }, { content: "", finish_reason: "length" }]]) {
+  reset();
+  requests.length = 0;
+  replies.push(...pair);
+  r = await send({ type: "brief", post: post({ key: "66664" }) });
+  assert.equal(r.error, "The model's brief was cut off once and unreadable once. Try again, or switch model in settings.");
+}
+replies.length = 0;
 
 console.log("x_brief_worker_test: ok");

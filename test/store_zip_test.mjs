@@ -4,7 +4,7 @@
 // against a throwaway git repo, then against this repo's own HEAD.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -242,8 +242,133 @@ try {
   assert.ok(!nonAsciiZip.includes(Buffer.from('"caf\\303\\251.js"')), "not left C-quoted, which -z avoids");
   git("revert", "--no-edit", "HEAD");
 
+  // Usage stats: a commit with analytics-config.js needs the local file, or --no-analytics.
+  const preConfig = git("rev-parse", "HEAD").trim();
+  write("analytics-config.js", 'export const MEASUREMENT_ID = "";\nexport const API_SECRET = "";\n');
+  git("add", "-A");
+  git("commit", "-q", "-m", "config");
+  const localFile = join(repo, "analytics-config.local.js");
+  const stats = (name, ...extra) => run("--repo", repo, "--out", join(tmp, name), ...extra);
+  const statsZip = (name) => join(tmp, name, "sieve-9.9.9.zip");
+  const inZip = (name) => execFileSync("unzip", ["-p", statsZip(name), "analytics-config.js"], { encoding: "utf8" });
+  const goodId = 'export const MEASUREMENT_ID = "G-ABC123XYZ";';
+  const goodSecret = 'export const API_SECRET = "s3cr3t_Value-1";';
+
+  r = stats("stats-missing");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /analytics-config\.local\.js is missing/);
+
+  r = stats("stats-off", "--no-analytics");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(inZip("stats-off"), /MEASUREMENT_ID = ""/);
+  assert.match(r.stdout, /usage stats off/);
+
+  write("analytics-config.local.js", `// mine\n${goodId}\n${goodSecret}\n`);
+  r = stats("stats-on");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(inZip("stats-on"), /G-ABC123XYZ/);
+  assert.match(inZip("stats-on"), /s3cr3t_Value-1/);
+  assert.match(r.stdout, /usage stats on/);
+  assert.ok(!r.stdout.includes("s3cr3t_Value-1"), "the secret is never printed");
+  const onList = execFileSync("unzip", ["-Z1", statsZip("stats-on")], { encoding: "utf8" }).split("\n");
+  assert.equal(onList.filter((f) => f === "analytics-config.js").length, 1, "the real file replaces the entry, no duplicate");
+  assert.ok(!onList.some((f) => f.includes(".local.")), "the local file itself is never packaged");
+
+  // CRLF line endings, a BOM, no trailing newline and extra comments are all fine.
+  write("analytics-config.local.js", `\uFEFF// a\r\n\r\n${goodId}\r\n// b\r\n${goodSecret}`);
+  r = stats("stats-crlf");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!inZip("stats-crlf").includes("\r"), "the packaged file is normalized");
+  assert.match(inZip("stats-crlf"), /G-ABC123XYZ/);
+
+  // Anything else is refused, and the refusal never echoes the file.
+  const badCases = [
+    `${goodId}\nexport const API_SECRET = "x1x1x1";\nfetch("https://evil.example");\n`,
+    `${goodId}\n`,
+    `${goodId}\nexport const API_SECRET = "abc\\"def12";\n`,
+    `${goodId}\nexport const API_SECRET = "abc\\\\def12";\n`,
+    `export const MEASUREMENT_ID = "g-abc123xyz";\n${goodSecret}\n`,
+    `export const MEASUREMENT_ID = "G-ABC\\"1234";\n${goodSecret}\n`,
+    `${goodId}\nexport const API_SECRET = "short";\n`,
+    `${goodId}\nexport const API_SECRET = "s3cr3t_Value-1"; fetch("x");\n`,
+  ];
+  for (const [i, text] of badCases.entries()) {
+    write("analytics-config.local.js", text);
+    r = stats(`stats-bad-${i}`);
+    assert.notEqual(r.status, 0, `refused bad case ${i}`);
+    assert.match(r.stderr, /analytics-config\.local\.js must hold only/);
+    assert.ok(!r.stderr.includes("s3cr3t_Value-1") && !r.stderr.includes("evil.example"), "no file contents in the error");
+    assert.ok(!existsSync(statsZip(`stats-bad-${i}`)), "nothing is written when it refuses");
+  }
+
+  write("analytics-config.local.js", 'export const MEASUREMENT_ID = "G-INSTAGRAM1";\nexport const API_SECRET = "abcdefgh";\n');
+  r = stats("stats-word");
+  assert.notEqual(r.status, 0, "the forbidden-word check reads the local file too");
+  assert.match(r.stderr, /analytics-config\.local\.js mentions a word/);
+  assert.ok(!existsSync(statsZip("stats-word")));
+
+  // A symlink in place of the file is refused, even when it points at a good file.
+  const target = join(tmp, "elsewhere.js");
+  writeFileSync(target, `${goodId}\n${goodSecret}\n`);
+  rmSync(localFile);
+  symlinkSync(target, localFile);
+  r = stats("stats-link");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /analytics-config\.local\.js is a symlink/);
+  rmSync(localFile);
+
+  // --no-analytics still works with the file present, and ignores it.
+  write("analytics-config.local.js", `${goodId}\n${goodSecret}\n`);
+  r = stats("stats-off2", "--no-analytics");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(inZip("stats-off2"), /MEASUREMENT_ID = ""/);
+  rmSync(localFile);
+
+  // zip's environment can't change the result, and two "on" builds of one commit are byte-identical.
+  write("analytics-config.local.js", `${goodId}\n${goodSecret}\n`);
+  const envRun = (name, env) => spawnSync(process.execPath, [script, "--repo", repo, "--out", join(tmp, name)], { encoding: "utf8", env: { ...process.env, ...env } });
+  r = envRun("stats-env", { ZIPOPT: "-d", ZIP: "-d" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(inZip("stats-env"), /G-ABC123XYZ/, "never 'on' with the wrong contents");
+  assert.match(r.stdout, /usage stats on/);
+  r = stats("stats-repro-a");
+  assert.equal(r.status, 0, r.stderr);
+  await new Promise((res) => setTimeout(res, 2100));
+  r = stats("stats-repro-b");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(readFileSync(statsZip("stats-repro-a")).equals(readFileSync(statsZip("stats-repro-b"))), "the same commit builds the same bytes");
+
+  // When putting the config in fails (a fake unzip that exits 1, first on PATH), an existing zip is
+  // untouched, no .tmp file is left, and no sieve-stats-* folder is left in the temp directory.
+  const fakeBin = join(tmp, "fake-bin");
+  mkdirSync(fakeBin);
+  writeFileSync(join(fakeBin, "unzip"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  assert.equal(stats("stats-fail").status, 0);
+  const failZip = statsZip("stats-fail");
+  const before = readFileSync(failZip);
+  const statsDirs = () => readdirSync(tmpdir()).filter((f) => f.startsWith("sieve-stats-")).sort();
+  const dirsBefore = statsDirs();
+  r = spawnSync(process.execPath, [script, "--repo", repo, "--out", join(tmp, "stats-fail"), "--force"], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /couldn't put/);
+  assert.ok(readFileSync(failZip).equals(before), "the existing zip is byte-identical");
+  assert.ok(!existsSync(`${failZip}.tmp`), "no .tmp file is left");
+  assert.deepEqual(statsDirs(), dirsBefore, "no sieve-stats folder is left");
+  rmSync(localFile);
+
+  // A committed *.local.* file is refused.
+  write("analytics-config.local.js", `${goodId}\n${goodSecret}\n`);
+  git("add", "-f", "analytics-config.local.js");
+  git("commit", "-q", "-m", "local committed");
+  r = stats("stats-local-committed", "--no-analytics");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /analytics-config\.local\.js is committed: local files never go into the package/);
+  git("revert", "--no-edit", "HEAD");
+  rmSync(localFile, { force: true });
+  git("reset", "-q", "--hard", preConfig);
+
   // This repo's own HEAD makes a clean package.
-  r = run("--out", join(tmp, "real"));
+  r = run("--out", join(tmp, "real"), "--no-analytics");
   assert.equal(r.status, 0, r.stderr);
   const real = unzipList(r.stdout.match(/store-zip: (\S+\.zip)/)[1]);
   assert.ok(real.includes("manifest.json") && real.includes("background.js") && real.includes("watch-drawer.js"));

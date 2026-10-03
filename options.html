@@ -122,5 +122,14 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
 <div class="inline"><label><input id="remind" type="checkbox"> Remind me at</label><input id="rtime" type="time"></div>
 </section>
 
+<section id="statsSection" hidden>
+<h2>Usage stats</h2>
+<div class="inline"><label><input id="statsOn" type="checkbox"> <strong>Send daily usage counts to the developer, through Google Analytics</strong></label></div>
+<p class="hint" style="margin-top:8px">Counts only: how many posts were scored, saved, briefed, copied as prompts, watched, put in digests and exported each day, per platform, with the extension version and which scorer answered. Never post text, links, names, titles, facts, keys or anything you type. Sent once a day, only for days you used Sieve, with a random ID made on this computer. Turning it off stops sending and deletes the ID and any counts not yet sent.</p>
+<p class="hint" style="margin:0 0 8px;font-size:12.5px">Saved as soon as you change it.</p>
+<p class="status" id="statsMsg" role="status" style="color:var(--alert);margin:8px 0 0"></p>
+<p class="status" id="statsCode" hidden></p>
+</section>
+
 <div class="bar"><button id="saveAll">Save settings</button><span class="msg" id="saveMsg"></span></div>
 </main><script type="module" src="options.js"></script></body></html>

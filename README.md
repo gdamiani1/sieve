@@ -125,6 +125,24 @@ request to the model you picked, except scoring, which goes to Jev (or, as the f
 - A digest of a day's posts: well under a cent.
 - A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
 
+## Usage stats
+
+Off by default. The popup asks once, and Settings > Usage stats turns it on or off. Consent can only be
+changed from Sieve's own pages (the popup or settings), never from a script on a feed page. Only after a yes, once a day, the extension sends Google Analytics
+counts for each finished day you used it: posts scored, saved, briefed, copied as a prompt, watched, put
+in a digest and exported, per platform, with the extension version, which scorer answered, and a random
+install ID made in your browser. Never post text, links, names, titles, facts, keys or anything you type.
+Turning it off deletes the ID and any unsent counts. All of it is in `analytics.js`, with a comment at the
+top saying exactly this.
+
+It's a plain POST to the GA4 Measurement Protocol from the service worker, so no Google script is loaded
+and no permission is needed. The Measurement ID and API secret ship inside the store package, so they
+aren't secret; the events are kept narrow so made-up ones can only inflate counts. A build from this repo
+has empty values in `analytics-config.js` and sends nothing. The store package gets the real values from
+an untracked `analytics-config.local.js`: `node tools/store-zip.mjs` refuses without that file, rebuilds
+the config from its two checked lines (so nothing else in the file ships), and `--no-analytics` leaves
+the values out.
+
 ## Tests
 
 The tests use invented posts (`test/sample.json`, `test/hostile.json`, `test/reddit_test.mjs`). Keys come from
@@ -145,6 +163,8 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
     node test/watch_drawer_test.mjs # the "watched for you" drawer, built line by line like youtube.js used to (offline)
     node test/video_platform_test.mjs # Watch it for me on a platform other than YouTube (offline)
+    node test/analytics_test.mjs        # opt-in usage stats: counting, consent, the daily send (offline)
+    node test/analytics_worker_test.mjs # the worker counts actions only after a yes (offline)
     node test/store_zip_test.mjs    # the store package: leaves out tests and tools, refuses forbidden words and missing loads (offline)
     node test/fake_dom_test.mjs     # the fake DOM test helper itself (offline)
     node test/x_post_data_test.mjs  # X's page data: full text, reply chain, pictures and video (offline)
@@ -208,7 +228,9 @@ existing zip unless you pass `--force`. It packages committed files only, leavin
 problem, when a packaged file's name or bytes mention a word it must never contain, when it loads a file
 that's missing from the package, when a `.gitattributes` file exists anywhere the commit or the repo could
 apply one, or when `manifest.json` uses a key store-zip doesn't check yet. The word check is a tripwire
-against committing the owner's personal copy by mistake, not a guarantee. Commit first, then build.
+against committing the owner's personal copy by mistake, not a guarantee. When the commit has `analytics-config.js`, the zip needs the untracked
+`analytics-config.local.js` (see Usage stats), or `--no-analytics` to ship the empty one. A committed
+`*.local.*` file is refused. Commit first, then build.
 
 ## License
 
