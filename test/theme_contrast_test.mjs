@@ -21,7 +21,7 @@ const TEXT = [
   ["ink", "paper"], ["ink", "card"], ["ink", "field"], ["ink", "panel"],
   ["muted", "paper"], ["muted", "card"], ["muted", "panel"],
   ["accent", "paper"], ["accent", "card"], ["accent", "panel"],
-  ["on-accent", "accent"], ["ink-soft", "card"],
+  ["on-accent", "accent"], ["ink-soft", "card"], ["ink-soft", "paper"],
   ["alert", "alert-tint"], ["alert", "card"], ["alert", "paper"], ["alert", "panel"],
 ];
 
@@ -61,7 +61,14 @@ for (const bg of ["card", "panel", "paper"]) {
   assert.ok(c >= 3, `dark: field-edge on ${bg} is ${c.toFixed(2)}, under 3`);
 }
 
-const COLOUR = /(?<!&)#[0-9a-f]{3}(?:[0-9a-f]{3})?(?:[0-9a-f]{2})?\b|\b(?:rgba?|hsla?)\(|\b(?:white|black)\b(?!-)/gi;
+const COLOUR = /(?<!&)#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b(?!-)/gi;
+// The regex itself. str.match with /g is stateless, unlike COLOUR.test.
+for (const yes of ["#fff8", "#fff", "#c9c1b3", "#c9c1b3cc", "oklch(", "color(", "lab(", "hwb(", "rgb(", "hsla(", "white;", "color:black"]) {
+  assert.ok(yes.match(COLOUR), `COLOUR should match ${yes}`);
+}
+for (const no of ["white-space", "&#10;", "#msg{", "#export{", "#today{", "#day", "#week"]) {
+  assert.equal(no.match(COLOUR), null, `COLOUR should not match ${no}`);
+}
 
 for (const page of PAGES) {
   const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
@@ -79,9 +86,9 @@ for (const page of PAGES) {
     assert.ok(name in LIGHT, `${page}: var(--${name}) is not a token`);
   }
 
-  // No colour outside the two token blocks: not in the rest of the style, not in an inline style="".
+  // No colour outside the two token blocks: not in the rest of the style, not in an inline style=""/''.
   const rest = style.replace(light[0], "").replace(dark[0], "");
-  const inline = [...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1]).join("\n");
+  const inline = [...html.matchAll(/style=(["'])(.*?)\1/gs)].map((m) => m[2]).join("\n");
   const stray = [...`${rest}\n${inline}`.matchAll(COLOUR)].map((m) => m[0]);
   assert.deepEqual(stray, [], `${page}: colours outside the token blocks: ${stray.join(", ")}`);
 }
