@@ -18,6 +18,7 @@ globalThis.chrome = {
   } },
   alarms: {
     create: (name, info) => { alarms.set(name, info); },
+    get: async (name) => alarms.get(name),
     clear: async (name) => alarms.delete(name),
     onAlarm: { addListener: (fn) => { alarmListener = fn; } },
   },
@@ -194,6 +195,74 @@ try {
   store.statsDays = { "2026-10-02": { "digest_made": 1 } };
   await alarmListener({ name: a.STATS_ALARM });
   assert.equal(posts.length, 1);
+
+  // A day needing two batches: batch 2 fails once; the retry sends only what batch 1 did not.
+  reset();
+  a.setClockForTests(at("2026-10-03T10:00:00"));
+  await a.setConsent(true);
+  const keys30 = [];
+  for (const p of ["linkedin", "x", "reddit", "youtube", "other"]) {
+    for (const sc of ["jev", "fallback", "other"]) keys30.push(`posts_scored|${p}|${sc}`);
+    for (const n of ["post_saved", "brief_made", "video_watched"]) keys30.push(`${n}|${p}`);
+  }
+  assert.equal(new Set(keys30).size, 30);
+  store.statsDays = { "2026-10-02": Object.fromEntries(keys30.map((k) => [k, 1])) };
+  let nth = 0;
+  answer = () => new Response(null, { status: ++nth === 2 ? 500 : 204 });
+  await a.sendDue();
+  assert.deepEqual(posts.map((q) => q.body.events.length), [25, 5], "batch 2 failed");
+  assert.equal(Object.keys(store.statsDays["2026-10-02"]).length, 5, "only the unsent five remain");
+  await a.sendDue();
+  assert.deepEqual(posts.map((q) => q.body.events.length), [25, 5, 5]);
+  assert.equal(posts.filter((_, i) => i !== 1).reduce((n, q) => n + q.body.events.length, 0), 30, "30 events sent once each");
+  assert.deepEqual(store.statsDays, {}, "day gone");
+
+  // A count that lands while a send is in flight is kept.
+  reset();
+  a.setClockForTests(at("2026-10-03T10:00:00"));
+  await a.setConsent(true);
+  store.statsDays = { "2026-10-02": { digest_made: 1 } };
+  globalThis.fetch = async (url, init) => {
+    posts.push({ url, init, body: JSON.parse(init.body) });
+    store.statsDays["2026-10-02"].digest_made += 1; // arrives mid-send
+    return new Response(null, { status: 204 });
+  };
+  await a.sendDue();
+  assert.deepEqual(store.statsDays, { "2026-10-02": { digest_made: 1 } }, "the late count stays");
+  globalThis.fetch = async (url, init) => { posts.push({ url, init, body: JSON.parse(init.body) }); return answer(); };
+
+  // count never throws; inherited names are not events, in counting or in stored data.
+  reset();
+  a.setClockForTests(at("2026-10-03T10:00:00"));
+  await a.setConsent(true);
+  await a.count("constructor");
+  await a.count("brief_made", null);
+  assert.deepEqual(store.statsDays, { "2026-10-03": { "brief_made|other": 1 } });
+  store.statsDays = { "2026-10-02": { "constructor|x": 1, digest_made: 1 } };
+  await a.sendDue();
+  assert.deepEqual(posts[0].body.events.map((e) => e.name), ["digest_made"]);
+  assert.deepEqual(store.statsDays, {}, "rubbish does not keep a day alive");
+
+  // A statsDays that is not a plain object is treated as empty.
+  for (const bad of [null, "text", [1, 2]]) {
+    reset();
+    a.setClockForTests(at("2026-10-03T10:00:00"));
+    await a.setConsent(true);
+    store.statsDays = bad;
+    await a.sendDue();
+    assert.equal(posts.length, 0);
+    await a.count("digest_made");
+    assert.deepEqual(store.statsDays, { "2026-10-03": { digest_made: 1 } });
+  }
+
+  // startStats leaves an existing alarm alone.
+  reset();
+  await a.setConsent(true);
+  const mine = { delayInMinutes: 99 };
+  alarms.set(a.STATS_ALARM, mine);
+  a.startStats();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(alarms.get(a.STATS_ALARM), mine, "existing alarm not recreated");
 
   console.log("analytics_test: ok");
 } finally {
