@@ -32,11 +32,32 @@ const real = (f) => fileURLToPath(new URL(`../${f}`, import.meta.url));
 copyFileSync(real("analytics.js"), join(dir, "analytics.js"));
 writeFileSync(join(dir, "analytics-config.js"), 'export const MEASUREMENT_ID = "G-TEST123";\nexport const API_SECRET = "secret-test";\n');
 const a = await import(pathToFileURL(join(dir, "analytics.js")).href);
+const emptyDir = mkdtempSync(join(tmpdir(), "sieve-analytics-empty-"));
+copyFileSync(real("analytics.js"), join(emptyDir, "analytics.js"));
+writeFileSync(join(emptyDir, "analytics-config.js"), 'export const MEASUREMENT_ID = "";\nexport const API_SECRET = "";\n');
+const empty = await import(pathToFileURL(join(emptyDir, "analytics.js")).href);
 
 const at = (iso) => () => new Date(iso).getTime(); // local time
 const reset = () => { for (const k of Object.keys(store)) delete store[k]; alarms.clear(); posts.length = 0; answer = () => new Response(null, { status: 204 }); };
 
 try {
+  // A build with empty IDs (the GitHub one): nothing is stored, scheduled or sent, even after a yes.
+  for (const k of Object.keys(store)) delete store[k];
+  alarms.clear();
+  posts.length = 0;
+  empty.setClockForTests(() => new Date("2026-10-03T10:00:00").getTime());
+  await empty.count("brief_made", { platform: "x" });
+  await empty.setConsent(true);
+  store.statsDays = { "2026-10-02": { digest_made: 1 } };
+  const before = structuredClone(store);
+  await empty.sendDue();
+  assert.deepEqual(store, before, "empty config leaves storage alone");
+  assert.equal(alarms.size, 0, "empty config sets no alarm");
+  assert.equal(posts.length, 0, "empty config sends nothing");
+  delete store.statsDays;
+  assert.deepEqual(await empty.status(), { available: false, consent: null, installCode: "" });
+  assert.deepEqual(store, {}, "empty config: setConsent wrote nothing");
+
   // Before consent: nothing counted, nothing stored, no card answer yet.
   reset();
   a.setClockForTests(at("2026-10-03T10:00:00"));
@@ -177,4 +198,5 @@ try {
   console.log("analytics_test: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });
+  rmSync(emptyDir, { recursive: true, force: true });
 }

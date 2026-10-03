@@ -69,6 +69,7 @@ export function count(name, detail = {}) {
 // Yes makes a new install ID (a new one every time it's turned on). No deletes the ID and every count
 // not yet sent, and remembers the answer so the popup doesn't ask again.
 export function setConsent(on) {
+  if (!available()) return Promise.resolve(); // a build without IDs has nothing to turn on
   return serial(async () => {
     const { statsConsent } = await chrome.storage.local.get("statsConsent");
     if (on) {
