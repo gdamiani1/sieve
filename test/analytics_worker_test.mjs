@@ -17,7 +17,7 @@ globalThis.chrome = {
     set: async (obj) => { Object.assign(store, structuredClone(obj)); },
     remove: async (keys) => { for (const k of [keys].flat()) delete store[k]; },
   }, onChanged: event },
-  runtime: { onMessage: { addListener: (fn) => { listener = fn; } }, onInstalled: event, onStartup: event, getManifest: () => ({ version: "1.4.1" }) },
+  runtime: { onMessage: { addListener: (fn) => { listener = fn; } }, onInstalled: event, onStartup: event, getManifest: () => ({ version: "1.4.1" }), getURL: (p) => "chrome-extension://test/" + p },
   alarms: { onAlarm: event, get: async () => undefined, clear: async () => {}, create: () => {} },
   notifications: { onClicked: event, create: () => {} },
   tabs: { create: () => {} },
@@ -32,8 +32,10 @@ globalThis.fetch = async (url, init) => {
   if (String(url) === JEV_OPENROUTER) {
     return reply(jevStatus, jevStatus === 200 ? { answers: { worth: { noul: 0.9 }, topic: { choice: "t0" }, kind: { choice: "technique" } }, usage: { cost: 0.00004 } } : { error: { message: "down" } });
   }
-  const [system, user] = JSON.parse(init.body).messages.map((m) => m.content);
-  const content = system.includes('"topic":') ? '{"worth":0.2,"topic":"other","kind":"news","angle":"none"}'
+  const body = JSON.parse(init.body);
+  const user = body.messages.at(-1).content;
+  // Scoring is the only request the worker sends at temperature 0 (briefs 0.2 or 0.5, digests 0.3).
+  const content = body.temperature === 0 ? '{"worth":0.2,"topic":"other","kind":"news","angle":"none"}'
     : user.includes("Golden sets") ? "## What people built or tested\n- Ran golden sets on every prompt change [Jane]"
     : JSON.stringify({ technique: true, what: "a technique", try: ["Try it"], skill: { worth: false, why: "" }, warning: "" });
   return reply(200, { choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0 } });
@@ -45,16 +47,23 @@ for (const f of readdirSync(src)) if (f.endsWith(".js")) copyFileSync(join(src, 
 writeFileSync(join(dir, "analytics-config.js"), 'export const MEASUREMENT_ID = "G-TEST123";\nexport const API_SECRET = "secret-test";\n');
 await import(pathToFileURL(join(dir, "background.js")).href);
 
-const ask = (msg) => new Promise((resolve) => { listener(msg, {}, resolve); });
-const today = () => Object.values(store.statsDays || {})[0] || {};
+const ask = (msg, sender = { url: "chrome-extension://test/popup.html" }) => new Promise((resolve) => { listener(msg, sender, resolve); });
+const pad = (n) => String(n).padStart(2, "0");
+const today = () => { const d = new Date(); return (store.statsDays || {})[`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`] || {}; };
 const post = (platform, key) => ({ platform, key, text: `A post about a technique ${key}`, authorName: "Someone" });
 
 try {
+  // The cases run in order and share state (storage, the saved posts and today's counts).
   // Not asked yet: the popup sees the question; actions count nothing.
   assert.deepEqual(await ask({ type: "stats", action: "status" }), { available: true, consent: null, installCode: "" });
   await ask({ type: "brief", post: post("x", "k1") });
   await ask({ type: "count", name: "prompt_copied", where: "brief" });
   assert.equal(store.statsDays, undefined);
+
+  // A page on a feed (a content script) can't answer for the user.
+  const refused = await ask({ type: "stats", action: "consent", on: true }, { tab: { id: 1 }, url: "https://www.linkedin.com/feed/" });
+  assert.equal(refused.error, "Usage stats can only be changed from Sieve's popup or settings.");
+  assert.equal(store.statsConsent, undefined);
 
   // Yes from the popup.
   const st = await ask({ type: "stats", action: "consent", on: true });

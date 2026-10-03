@@ -486,7 +486,11 @@ async function digest(since) {
 // Opt-in usage stats (analytics.js): nothing is counted or sent before the user says yes.
 startStats();
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+// Only Sieve's own pages (the popup and settings, which opens in a tab) may change the usage-stats
+// answer; a content script runs on a feed page, whose URL is that page's.
+const fromExtensionPage = (sender) => typeof sender?.url === "string" && sender.url.startsWith(chrome.runtime.getURL(""));
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "save") {
     if (!msg.post || typeof msg.post !== "object") {
       reply({ error: "No post to save." });
@@ -521,6 +525,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "stats") {
+    if (msg.action === "consent" && !fromExtensionPage(sender)) {
+      reply({ error: "Usage stats can only be changed from Sieve's popup or settings." });
+      return true;
+    }
     const done = msg.action === "consent" ? setConsent(!!msg.on).then(status) : status();
     done.then(reply, () => reply({ error: "Sieve couldn't change usage stats. Reload the extension and try again." }));
     return true;
@@ -530,8 +538,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     // error) counts as one scored post; the general model is "fallback" in the stats.
     classify(msg.state, msg.platform).then(async (r) => {
       if (r && !r.error) await count("posts_scored", { platform: platformOf(msg.platform), scorer: r.scorer === "jev" ? "jev" : "fallback" });
-      reply(r);
-    }, () => reply({ error: "unreadable" }));
+      return r;
+    }).then(reply, () => reply({ error: "unreadable" }));
     return true; // async reply
   }
 });
