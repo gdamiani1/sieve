@@ -227,7 +227,9 @@ existing zip unless you pass `--force`. It packages committed files only, leavin
 problem, when a packaged file's name or bytes mention a word it must never contain, when it loads a file
 that's missing from the package, when a `.gitattributes` file exists anywhere the commit or the repo could
 apply one, or when `manifest.json` uses a key store-zip doesn't check yet. The word check is a tripwire
-against committing the owner's personal copy by mistake, not a guarantee. Commit first, then build.
+against committing the owner's personal copy by mistake, not a guarantee. When the commit has `analytics-config.js`, the zip needs the untracked
+`analytics-config.local.js` (see Usage stats), or `--no-analytics` to ship the empty one. A committed
+`*.local.*` file is refused. Commit first, then build.
 
 ## License
 
