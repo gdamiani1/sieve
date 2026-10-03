@@ -315,7 +315,8 @@ async function brief(req) {
   // One retry with more room: an unreadable answer is usually a cut-off. The whole attempt loop runs
   // inside try/finally, so a mid-loop return (a 401, a 402, a bad status) still records whatever was
   // spent before it, exactly once -- and never writes stats at all when nothing was spent.
-  let parsed = null, cost = 0, lastError = "";
+  let parsed = null, cost = 0;
+  const failed = []; // "cut off" or "unreadable", one per attempt that gave no brief
   // Capped well above anything a real post could carry, so a bogus photoCount from the page can't blow
   // up the sentence the model reads ("has 4,000,000,000 pictures").
   const photoCount = Math.min(1000, Math.max(photos.length, Number.isInteger(p.photoCount) ? p.photoCount : 0));
@@ -357,17 +358,23 @@ async function brief(req) {
         // A cut-off answer can still parse (a partial JSON object often reads fine), so a truncated
         // first attempt is retried for a full answer rather than kept as if it were complete. The
         // last attempt is accepted regardless: it's the best answer available.
-        if (cutOff && i < attempts.length - 1) { lastError = "cut off"; continue; }
+        if (cutOff && i < attempts.length - 1) { failed.push("cut off"); continue; }
         parsed = parsedAnswer;
         break;
       } catch {
-        lastError = cutOff ? "cut off" : "unreadable";
+        failed.push(cutOff ? "cut off" : "unreadable");
       }
     }
   } finally {
     if (cost) await stats((s) => { s.draftCost = (s.draftCost || 0) + cost; });
   }
-  if (!parsed) return { error: `The model's brief was ${lastError} twice. Try again, or switch model in settings.` };
+  if (!parsed) {
+    // Cut off both times is almost always a provider thinking before it answers (models.js), which
+    // another try often avoids: OpenRouter picks a provider per request.
+    if (failed.every((f) => f === "cut off")) return { error: "The model ran out of room before it finished the brief, twice. Some OpenRouter providers think before answering even when Sieve asks them not to. Try again, or pick another model in Sieve's settings." };
+    const why = failed.every((f) => f === "unreadable") ? "unreadable twice" : "cut off once and unreadable once";
+    return { error: `The model's brief was ${why}. Try again, or switch model in settings.` };
+  }
   if (!parsed.technique) {
     const cap200 = (s) => Array.from(cleanText(s)).slice(0, 200).join("");
     const parts = ["No technique to try in this post, so no brief was written."];
