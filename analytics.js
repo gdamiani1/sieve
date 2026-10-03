@@ -99,8 +99,9 @@ export async function status() {
   return { available: available(), consent, installCode: consent ? codeOf(statsClientId) : "" };
 }
 
-// Sends every finished day, oldest first, and removes each one only once GA has taken all of it. A day
-// too old for GA is dropped unsent. On any failure it stops; the next alarm tries again.
+// Sends every finished day, oldest first, and removes each one only once GA has answered every request
+// for it with a 2xx (which means received, not necessarily kept). A day too old for GA is dropped
+// unsent. On any failure it stops; the next alarm tries again.
 let sending = null;
 export function sendDue() {
   sending ||= send().catch(() => {}).finally(() => { sending = null; });

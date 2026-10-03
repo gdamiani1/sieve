@@ -128,7 +128,7 @@ request to the model you picked, except scoring, which goes to Jev (or, as the f
 ## Usage stats
 
 Off by default. The popup asks once, and Settings > Usage stats turns it on or off. Consent can only be
-changed from the popup or settings. Only after a yes, once a day, the extension sends Google Analytics
+changed from Sieve's own pages (the popup or settings), never from a script on a feed page. Only after a yes, once a day, the extension sends Google Analytics
 counts for each finished day you used it: posts scored, saved, briefed, copied as a prompt, watched, put
 in a digest and exported, per platform, with the extension version, which scorer answered, and a random
 install ID made in your browser. Never post text, links, names, titles, facts, keys or anything you type.
