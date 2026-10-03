@@ -281,6 +281,7 @@ $("export").onclick = async () => {
     a.href = url;
     a.download = exportFilename();
     a.click();
+    // Counts a started export: the download's result isn't reported.
     counted("library_exported");
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     $("msg").classList.remove("alert");

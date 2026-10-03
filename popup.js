@@ -30,8 +30,16 @@ async function ask() {
   $("ask").hidden = !(s && s.available && s.consent === null);
 }
 const answer = (on) => async () => {
-  await chrome.runtime.sendMessage({ type: "stats", action: "consent", on }).catch(() => null);
-  ask();
+  $("askYes").disabled = $("askNo").disabled = true;
+  $("askErr").textContent = "";
+  const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on }).catch(() => null);
+  if (r && !r.error) {
+    $("ask").hidden = true;
+    $("askThanks").textContent = "Thanks. You can change this in Settings.";
+    return;
+  }
+  $("askErr").textContent = (r && r.error) || "Sieve couldn't change usage stats. Reload the extension and try again.";
+  $("askYes").disabled = $("askNo").disabled = false;
 };
 $("askYes").onclick = answer(true);
 $("askNo").onclick = answer(false);

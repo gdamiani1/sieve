@@ -124,9 +124,19 @@ function showStats(s) {
     p.append("Your install code: ", b, ". Tell me this code only if you want me to recognise your install.");
   }
 }
-chrome.runtime.sendMessage({ type: "stats", action: "status" }).then(showStats, () => {});
+const readStats = () => chrome.runtime.sendMessage({ type: "stats", action: "status" }).then(showStats, () => {});
+readStats();
+// The popup can answer the question while this tab is open.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.statsConsent || changes.statsClientId)) readStats();
+});
 $("statsOn").onchange = async () => {
-  const s = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on: $("statsOn").checked }).catch(() => null);
-  if (s && !s.error) showStats(s);
-  else $("statsOn").checked = !$("statsOn").checked;
+  const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on: $("statsOn").checked }).catch(() => null);
+  if (r && !r.error) {
+    $("statsMsg").textContent = "";
+    showStats(r);
+  } else {
+    $("statsMsg").textContent = (r && r.error) || "Sieve couldn't change usage stats. Reload the extension and try again.";
+    $("statsOn").checked = !$("statsOn").checked;
+  }
 };
