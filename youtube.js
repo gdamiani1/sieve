@@ -89,14 +89,21 @@
     return [...document.querySelectorAll(TILE)].filter((el) => !el.parentElement?.closest(TILE) && el.querySelector('a[href*="/watch?v="]'));
   }
 
-  function read(el) {
-    const link = el.querySelector('a[href*="/watch?v="]');
-    const id = videoId(link.getAttribute("href"));
+  // A playlist or course tile links to its first video. It is scored as itself, under its own key, so
+  // it never shares a verdict with that video's own tile, and never with that video's description.
+  function linkOf(el) {
+    const href = el.querySelector('a[href*="/watch?v="]')?.getAttribute("href");
+    const id = href && videoId(href);
     if (!id) return null;
-    // A playlist or course tile links to its first video. It is scored as itself, under its own key, so
-    // it never shares a verdict with that video's own tile, and never with that video's description.
     let list = "";
-    try { list = new URL(link.getAttribute("href"), location.origin).searchParams.get("list") || ""; } catch {}
+    try { list = new URL(href, location.origin).searchParams.get("list") || ""; } catch {}
+    return { id, list, key: list ? `${id}|${list}` : id };
+  }
+
+  function read(el) {
+    const l = linkOf(el);
+    if (!l) return null;
+    const { id, list } = l;
     const titleEl = el.querySelector("#video-title, h3 a, h3, a[title]");
     const title = (titleEl?.getAttribute("title") || titleEl?.textContent || "").trim();
     const channel = (el.querySelector('ytd-channel-name a, a[href^="/@"]')?.textContent || "").trim();
@@ -109,7 +116,7 @@
     const summary = chapters.length ? "" : el.querySelector("ytd-expandable-metadata-renderer #collapsed-title")?.textContent || "";
     const snippets = [...el.querySelectorAll(".metadata-snippet-text, .metadata-snippet-text-navigation, #description-text")].map((s) => s.textContent);
     const more = T ? T.tileText({ snippets, chapters, summary }) : { snippet: "", chapters: "" };
-    return { id, key: list ? `${id}|${list}` : id, playlist: !!list, url: `https://www.youtube.com/watch?v=${id}`, title, channel, seconds: badge ? toSeconds(badge) : 0, ...more };
+    return { id, key: l.key, playlist: !!list, url: `https://www.youtube.com/watch?v=${id}`, title, channel, seconds: badge ? toSeconds(badge) : 0, ...more };
   }
 
   function thumbOf(el) {
@@ -121,14 +128,34 @@
     tiles().forEach((el) => { el.classList.remove("jev-low", "jev-hidden", "sieve-yt-strong"); delete el.dataset.jevKey; });
   }
 
+  // YouTube reuses a tile element for another video when the feed refreshes. What Sieve drew there was
+  // for the old video: the chip (with its Watch button) and the tile's classes go, and so does its key.
+  function undecorate(el) {
+    el.querySelectorAll(".sieve-yt-chip").forEach((c) => c.remove());
+    el.classList.remove("jev-low", "jev-hidden", "sieve-yt-strong");
+    delete el.dataset.jevKey;
+  }
+
+  // True when the tile now shows another video than the one Sieve keyed it for. It is cleared, and, since
+  // a tile already on screen gets no new IntersectionObserver event, checked again after the usual dwell.
+  function recycled(el) {
+    const key = el.dataset.jevKey;
+    if (!key || linkOf(el)?.key === key) return false;
+    undecorate(el);
+    clearTimeout(timers.get(el));
+    if (visible.has(el)) timers.set(el, setTimeout(() => check(el), DWELL_MS));
+    return true;
+  }
+
   function render(el, v, r) {
     const thumb = thumbOf(el);
     if (!thumb) return;
-    thumb.querySelector(":scope > .sieve-yt-chip")?.remove();
+    el.querySelectorAll(".sieve-yt-chip").forEach((c) => c.remove()); // any chip, whichever video it was for
     el.classList.remove("jev-low", "jev-hidden", "sieve-yt-strong");
     if (getComputedStyle(thumb).position === "static") thumb.style.position = "relative";
     const chip = document.createElement("div");
     chip.className = "sieve-yt-chip";
+    chip.dataset.key = v.key; // the video this chip was drawn for: scan() replaces a chip whose key isn't the tile's
     for (const ev of ["click", "mousedown", "mouseup", "pointerdown"]) chip.addEventListener(ev, (e) => { e.stopPropagation(); if (ev === "click") e.preventDefault(); });
     if (r.error) {
       chip.textContent = ERRORS[r.error] || (String(r.error).startsWith("http_") ? `Sieve: the scoring service answered ${r.error.slice(5)}` : "Sieve: error");
@@ -218,8 +245,9 @@
     if (retired) return;
     if (!enabled) return;
     const v = read(tile);
-    if (!v) return;
+    if (!v) { if (tile.dataset.jevKey && tile.dataset.jevKey !== linkOf(tile)?.key) undecorate(tile); return; }
     const key = v.key;
+    if (tile.dataset.jevKey && tile.dataset.jevKey !== key) undecorate(tile); // another video in a reused tile
     tile.dataset.jevKey = key;
     if (results.has(key)) return render(tile, v, results.get(key));
     if (pending.has(key)) return;
@@ -248,7 +276,8 @@
         if (r.error === "rate_limited" || r.error === "network" || r.error === "timeout") return;
         const scored = { ...r, read: { snippet: !!v.snippet, chapters: !!v.chapters, description: !!description } };
         results.set(key, scored);
-        tiles().forEach((t) => { if (t.dataset.jevKey === key) render(t, v, scored); });
+        // Not on a tile YouTube has since given another video, before scan() noticed.
+        tiles().forEach((t) => { if (t.dataset.jevKey === key && linkOf(t)?.key === key) render(t, v, scored); });
       });
     });
   }
@@ -268,8 +297,9 @@
     markDark();
     for (const t of tiles()) {
       if (!t.dataset.jevWatched) { t.dataset.jevWatched = "1"; seen.observe(t); }
+      if (recycled(t)) continue;
       const key = t.dataset.jevKey;
-      if (key && results.has(key) && !thumbOf(t)?.querySelector(":scope > .sieve-yt-chip")) { const v = read(t); if (v) render(t, v, results.get(key)); }
+      if (key && results.has(key) && thumbOf(t)?.querySelector(":scope > .sieve-yt-chip")?.dataset.key !== key) { const v = read(t); if (v) render(t, v, results.get(key)); }
     }
     watchPage();
   }

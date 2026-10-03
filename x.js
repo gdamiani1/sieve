@@ -194,6 +194,17 @@
     return w;
   }
 
+  // X can draw another post in an article element it already used. check() notes the post's own link on
+  // the element; when the link changes, what Sieve drew there (the wrap above it, with any brief or Watch
+  // button, and the classes) was for the old post and goes.
+  function undecorate(post) {
+    const w = post.previousElementSibling;
+    if (w?.classList.contains("sieve-x-wrap")) w.remove();
+    post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
+    delete post.dataset.jevKey;
+  }
+  const reused = (post) => post.dataset.sieveXLink !== undefined && permalink(post) !== post.dataset.sieveXLink;
+
   function clearAll() {
     document.querySelectorAll(".sieve-x-wrap").forEach((w) => w.remove());
     document.getElementById("sieve-drawer")?.remove(); // a Watch it for me drawer opened from X
@@ -312,6 +323,8 @@
     if (!enabled) return;
     const p = extract(post);
     const rec = readRecord(post); // before any early return: a thread's short posts are still part of it
+    if (reused(post) || (post.dataset.jevKey && post.dataset.jevKey !== p?.key)) undecorate(post); // another post in this element
+    post.dataset.sieveXLink = permalink(post);
     if (!p) { if (rec?.video && !isAd(post, textOf(post))) renderWatchOnly(post, rec); return; }
     post.dataset.jevKey = p.key;
     states.set(p.key, p.state);
@@ -333,13 +346,16 @@
       if (!r || r.error === "rate_limited" || r.error === "network" || r.error === "timeout") return;
       results.set(p.key, r);
       if (!r.error && r.tier === "strong") send({ type: "save", post: postRecord(p.key, r) });
-      document.querySelectorAll(POST).forEach((el) => { if (el.dataset.jevKey === p.key) render(el, r); });
+      // Not on an element X has since given another post, before scan() noticed.
+      document.querySelectorAll(POST).forEach((el) => { if (el.dataset.jevKey === p.key && !reused(el)) render(el, r); });
     });
   }
 
   const timers = new WeakMap();
+  const visible = new WeakSet(); // posts on screen now: a reused one gets no new IntersectionObserver event
   const seen = new IntersectionObserver((entries) => {
     for (const e of entries) {
+      if (e.isIntersecting) visible.add(e.target); else visible.delete(e.target);
       if (e.isIntersecting) timers.set(e.target, setTimeout(() => check(e.target), DWELL_MS));
       else clearTimeout(timers.get(e.target));
     }
@@ -355,6 +371,13 @@
         // On a post's page, every post is read as it appears, so a thread scrolled past quickly is still
         // whole when Brief is pressed (X removes posts from the page as they scroll away).
         if (enabled && onPostPage()) readRecord(post);
+      }
+      if (reused(post)) {
+        undecorate(post);
+        delete post.dataset.sieveXLink;
+        clearTimeout(timers.get(post));
+        if (visible.has(post)) timers.set(post, setTimeout(() => check(post), DWELL_MS));
+        return;
       }
       const r = post.dataset.jevKey && results.get(post.dataset.jevKey);
       const prev = post.previousElementSibling;

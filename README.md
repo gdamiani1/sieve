@@ -151,6 +151,7 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/x_thread_test.mjs     # X threads: checking page summaries, finding the thread, brief and watch requests (offline)
     node test/x_brief_worker_test.mjs # X briefs through the real worker: pictures, the vision model, threads (offline)
     node test/x_page_test.mjs       # x.js on a fake X page: threads, pictures, Watch it for me (offline)
+    node test/recycled_tiles_test.mjs # a YouTube tile or X post element reused for another video or post: the old verdict goes, the new one is scored (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring with Jev through OpenRouter (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring with Jev through OpenRouter
