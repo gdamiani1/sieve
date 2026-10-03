@@ -161,13 +161,13 @@ editor ide ci pipeline workflow task tasks job jobs log logs logging monitoring 
 schema query graph dashboard error errors security scan scanner snapshot snapshots compare comparison check checks
 benchmark benchmarking profiler coverage mock mocks fixture fixtures release version`.split(/\s+/));
 // Names are collected up to MAX_FOUND, the ones also mentioned outside the planted passages are
-// filtered out, and only then is the list cut to MAX_PLANTED. Cutting first let fifty decoy names,
-// each also mentioned in the post's own words, push the real one out.
+// filtered out, and all the rest are passed on, with no smaller cap: cutting at fifty let fifty decoy
+// names (mentioned in the post's own words, or made up and mentioned nowhere else) push the real one
+// out. dropPlanted stays cheap with that many (see there).
 // Right after an install or fetch-and-run command only the articles and pronouns are left out: a
 // package called "reviewer" or "memory" is a name there ("npx reviewer", "pip install memory").
 const NOT_A_PACKAGE = new Set(ARTICLES.split(/\s+/));
 const MAX_FOUND = 500;
-const MAX_PLANTED = 50;
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const WORD_BEFORE = String.raw`(?<![\p{L}\p{N}_])`;
@@ -225,7 +225,7 @@ const POINTS_ON = /\b(?:below|following|follows)\b/i;
 const LEADS_ON = 80;
 const MAX_LED = 3;
 
-// A post -> the names (lowercase, no repeats, at most MAX_PLANTED) that only its planted passages
+// A post -> the names (lowercase, no repeats, at most MAX_FOUND) that only its planted passages
 // mention: the tools, packages and keys a warned brief must never pass on. [] when there are none.
 //
 // A planted passage is one of two things:
@@ -335,8 +335,12 @@ export function plantedNames(post = {}) {
     for (const m of planted.matchAll(AFTER_COMMAND)) {
       // the package's own name: no scope or path (take what follows the last "/"), no version (cut at
       // "@", "=", "<", ">", "~" or "!" after the first character), and its first part before "-" or "_"
+      // After "uses:" only a real Action reference counts, and one always has a "/" or "@"
+      // ("evilcorp/snapdiff-action@v1"), so "the approach uses: golden files" names nothing. "go get"
+      // is everyday English ("go get the review done"), so what follows it takes the whole stop list.
+      if (/^uses/i.test(m[0]) && !/[/@]/.test(m[1])) continue;
       const full = m[1].split("/").pop().replace(/(?<=.)[@=<>~!].*$/, "").replace(/^@/, "");
-      add(full, NOT_A_PACKAGE);
+      add(full, /^go\s/i.test(m[0]) ? NOT_A_NAME : NOT_A_PACKAGE);
       const head = full.split(/[-_]/)[0];
       if (head !== full && /^\p{L}{3,}$/u.test(head)) add(head);
     }
@@ -346,13 +350,21 @@ export function plantedNames(post = {}) {
   }
   const lower = rest.toLowerCase();
   const words = new Set(lower.match(/[\p{L}\p{N}_]+/gu));
-  return [...found].slice(0, MAX_FOUND).filter((name) => !mentioned(lower, words, name)).slice(0, MAX_PLANTED);
+  return [...found].slice(0, MAX_FOUND).filter((name) => !mentioned(lower, words, name));
 }
 
 // A warned brief -> the same brief without the try steps and needs that name a planted name (namesRe:
 // as a whole word, or spelled with other separators). CHECK_SOURCE is Sieve's own line and never goes.
+// With up to MAX_FOUND names, a regex for each would cost a quarter of a second to compile, so a name
+// first has to show up in the brief's own text with separators and case gone (one indexOf on one
+// string); only the names that do get a regex. Anything namesRe matches passes that test, because
+// namesRe only allows separators where the stripped text has none.
+const SEPARATORS = /[-_.\s]/g;
 const dropPlanted = (brief, post) => {
-  const names = plantedNames(post).map(namesRe);
+  const planted = plantedNames(post);
+  if (!planted.length) return brief;
+  const stripped = [...brief.try, ...brief.needs].join("\n").toLowerCase().replace(SEPARATORS, "");
+  const names = planted.filter((n) => stripped.includes(n.replace(SEPARATORS, ""))).map(namesRe);
   if (!names.length) return brief;
   const clear = (s) => !names.some((re) => re.test(s));
   return { ...brief, try: brief.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: brief.needs.filter(clear) };

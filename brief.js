@@ -135,9 +135,12 @@ const LINKISH = new RegExp([
 //   same item ("Set up the snapdiff CLI"). "script" and "action" are not tool nouns here: "Set up a
 //   simple script that runs your model" and "Set up a GitHub Action that runs the evals" are the
 //   developer's own work.
-// A step whose "Don't", "Do not" or "Never" governs the install verb itself is not an install step:
+// A clause whose "Don't", "Do not" or "Never" governs the install verb itself is not an install step:
 // "Don't install anything new; use your existing test runner" is the kind of step a warned brief should
-// keep. "Don't forget to install the snapdiff CLI" and "Don't skip this: install ..." still go.
+// keep. Only that clause is let off, up to the first ";", "." or ",": the rest of the step is checked
+// like any other, so "Don't install anything; just download the snapdiff binary" still goes. So do
+// "Don't forget to install the snapdiff CLI" and "Don't skip this: install ...", where the "don't"
+// governs another verb.
 const TOOL_NOUNS = String.raw`(?:CLI|package|tool|plugin|extension|SDK|library|binary|binaries|server|module|bot)s?`;
 const GET_NOUNS = String.raw`(?:CLI|package|tool|plugin|extension|SDK|library|binary|binaries|module|bot)s?`;
 const NEAR = String.raw`\s+(?:\S+\s+){0,3}?`;
@@ -151,11 +154,11 @@ const INSTALL_WORDS = new RegExp([
 ].join("|"), "i");
 const SET_UP = /\b(?:set\s*-?\s*up|setup|configure|initiali[sz]e|init)\b/i;
 const TOOL_NOUN_AFTER = new RegExp(String.raw`\b${TOOL_NOUNS}\b`, "i");
-const DONT = /^\W*(?:don['’]?t|do\s+not|never)\s+(?:re)?install\b/i;
+const DONT = /^\W*(?:don['’]?t|do\s+not|never)\s+(?:re)?install\b[^;.,]*/i;
 // Whether a step tells the reader to install a tool. The set-up rule looks for a tool noun after the
 // first set-up word only: if one follows any of them, one follows the first, and it reads the step once.
 const installish = (s) => {
-  if (DONT.test(s)) return false;
+  s = s.replace(DONT, "");
   if (INSTALL_WORDS.test(s)) return true;
   const i = s.search(SET_UP);
   return i >= 0 && TOOL_NOUN_AFTER.test(s.slice(i));
