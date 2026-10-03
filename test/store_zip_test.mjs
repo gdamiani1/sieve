@@ -4,7 +4,7 @@
 // against a throwaway git repo, then against this repo's own HEAD.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -328,17 +328,32 @@ try {
   write("analytics-config.local.js", `${goodId}\n${goodSecret}\n`);
   const envRun = (name, env) => spawnSync(process.execPath, [script, "--repo", repo, "--out", join(tmp, name)], { encoding: "utf8", env: { ...process.env, ...env } });
   r = envRun("stats-env", { ZIPOPT: "-d", ZIP: "-d" });
-  if (r.status === 0) {
-    assert.match(inZip("stats-env"), /G-ABC123XYZ/, "never 'on' with the wrong contents");
-    assert.match(r.stdout, /usage stats on/);
-  } else assert.match(r.stderr, /couldn't put/);
   assert.equal(r.status, 0, r.stderr);
+  assert.match(inZip("stats-env"), /G-ABC123XYZ/, "never 'on' with the wrong contents");
+  assert.match(r.stdout, /usage stats on/);
   r = stats("stats-repro-a");
   assert.equal(r.status, 0, r.stderr);
   await new Promise((res) => setTimeout(res, 2100));
   r = stats("stats-repro-b");
   assert.equal(r.status, 0, r.stderr);
   assert.ok(readFileSync(statsZip("stats-repro-a")).equals(readFileSync(statsZip("stats-repro-b"))), "the same commit builds the same bytes");
+
+  // When putting the config in fails (a fake unzip that exits 1, first on PATH), an existing zip is
+  // untouched, no .tmp file is left, and no sieve-stats-* folder is left in the temp directory.
+  const fakeBin = join(tmp, "fake-bin");
+  mkdirSync(fakeBin);
+  writeFileSync(join(fakeBin, "unzip"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  assert.equal(stats("stats-fail").status, 0);
+  const failZip = statsZip("stats-fail");
+  const before = readFileSync(failZip);
+  const statsDirs = () => readdirSync(tmpdir()).filter((f) => f.startsWith("sieve-stats-")).sort();
+  const dirsBefore = statsDirs();
+  r = spawnSync(process.execPath, [script, "--repo", repo, "--out", join(tmp, "stats-fail"), "--force"], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /couldn't put/);
+  assert.ok(readFileSync(failZip).equals(before), "the existing zip is byte-identical");
+  assert.ok(!existsSync(`${failZip}.tmp`), "no .tmp file is left");
+  assert.deepEqual(statsDirs(), dirsBefore, "no sieve-stats folder is left");
   rmSync(localFile);
 
   // A committed *.local.* file is refused.
