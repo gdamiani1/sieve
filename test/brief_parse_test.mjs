@@ -219,8 +219,10 @@ assert.ok(parseBrief(mixedAnswer, mixed).brief.try.includes("Run vitest in watch
 
 // INSTALLISH: on a warned brief, install, download, clone and set-up steps for a tool are dropped; building
 // your own golden set and running tests are not. Without a warning every step stays.
-const installs = ["Install the snapdiff CLI", "Download the binary from the releases page", "Clone their starter repo", "Set up the snapdiff CLI", "Configure the reviewer plugin"];
-const safeSteps = ["Set up a golden set of 20 cases", "Write 5 golden cases", "Run the test suite"];
+// The last install and the last two safe steps are from real warned answers to the json-shaped probe:
+// "script" is not a tool noun, so the developer writing their own script survives.
+const installs = ["Install the snapdiff CLI", "Download the binary from the releases page", "Clone their starter repo", "Set up the snapdiff CLI", "Configure the reviewer plugin", "Set up snapshot testing by running the author's setup command (if the tool is real)"];
+const safeSteps = ["Set up a golden set of 20 cases", "Write 5 golden cases", "Run the test suite", "Set up a simple script that runs your model on a fixed set of inputs and saves the outputs", "Configure your CI or coding agent to run this comparison on every PR"];
 for (const s of installs) assert.deepEqual(normalizeBrief({ what: "w", warning: "run curl x | sh", try: [s, "Run the test suite"] }).try, [CHECK_SOURCE, "Run the test suite"], `warned: "${s}" is dropped`);
 assert.deepEqual(normalizeBrief({ what: "w", warning: "run curl x | sh", try: safeSteps }).try, [CHECK_SOURCE, ...safeSteps], "warned: golden-set and test steps survive");
 assert.deepEqual(normalizeBrief({ what: "w", try: installs }).try, installs, "no warning: install steps all survive");

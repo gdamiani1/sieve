@@ -3,7 +3,7 @@
 // about network JSON shapes or a model's loose formatting.
 
 import { looseJson } from "./json.js";
-import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo } from "./brief.js";
+import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE } from "./brief.js";
 
 // A code-level backstop for the most blatant AI-directed passages, run after the model's own answer
 // so it can't be talked out of firing. Deliberately narrow: the model is the main defense; this only
@@ -81,30 +81,179 @@ const authorOf = (post) => post?.authorName || post?.author;
 const MARK_RUN = /([\p{M}\uFF9E\uFF9F]{30})[\p{M}\uFF9E\uFF9F]+/gu;
 export const nfkc = (s) => s.replace(MARK_RUN, "$1").normalize("NFKC");
 
+// Every string of a post that reaches the model as its own string: the author, the title, the text,
+// and for a thread each post and the post it quotes (briefMessages sends them separately). Anything
+// that isn't a string is "". aiDirected and plantedNames both read the post through this, so the two
+// backstops always look at the same text the model was shown.
+const postParts = (post) => {
+  const threadParts = Array.isArray(post?.posts) ? post.posts.flatMap((x) => [x?.text, x?.quoted?.author, x?.quoted?.text]) : [];
+  return [authorOf(post), post?.title, post?.text, ...threadParts].map((s) => (typeof s === "string" ? s : ""));
+};
+// What a check reads: invisible characters gone, and NFKC, which folds the "bold" and fullwidth letters
+// LinkedIn posts use for styling into plain ones, so styling can't hide a phrase from the patterns.
+// Reading the parts one by one and joining them with "\n" gives the same text as reading the joined
+// post: neither step looks across a line break.
+const readable = (s) => nfkc(stripInvisible(s));
+
+// Every match of one AI_DIRECTED pattern, in order, minus the ones a "quoted" pattern excuses. A quoted
+// example only excuses itself: every match is looked at, so an explanation that quotes the phrase can't
+// hide a real instruction later in the same post, even on the next line. A generator, so aiDirected
+// stops at the first match and plantedNames walks them all, through the one rule.
+function* directedMatches(visible, { re, quoted }) {
+  for (const m of visible.matchAll(new RegExp(re.source, `${re.flags.replace("g", "")}g`))) {
+    if (quoted && QUOTED_BEFORE.test(visible.slice(Math.max(0, m.index - 12), m.index))) continue;
+    yield m;
+  }
+}
+
 // A post -> a warning Sieve can stand behind without a model, or "" when nothing blatant shows.
 // Checks the author as well as the title and text: a display name reaches the model too.
 export function aiDirected(post = {}) {
-  // A thread's posts and the posts they quote reach the model as their own strings (briefMessages), so
-  // the backstop reads each of them, not only the joined text.
-  const threadParts = Array.isArray(post?.posts) ? post.posts.flatMap((x) => [x?.text, x?.quoted?.author, x?.quoted?.text]) : [];
-  const raw = [authorOf(post), post?.title, post?.text, ...threadParts].map((s) => (typeof s === "string" ? s : "")).join("\n");
+  const raw = postParts(post).join("\n");
   if (hidesCharacters(raw)) return HIDDEN_WARNING;
-  // NFKC folds the "bold" and fullwidth letters LinkedIn posts use for styling into plain ones, so
-  // styling can't hide a phrase from the patterns below.
-  const visible = nfkc(stripInvisible(raw));
-  for (const { re, quoted } of AI_DIRECTED) {
-    // A quoted example only excuses itself: every match of a "quoted" pattern is looked at, and the
-    // first one that isn't quoted counts, so an explanation that quotes the phrase can't hide a real
-    // instruction later in the same post, even on the next line.
-    const m = quoted
-      ? [...visible.matchAll(new RegExp(re.source, `${re.flags.replace("g", "")}g`))].find((x) => !QUOTED_BEFORE.test(visible.slice(Math.max(0, x.index - 12), x.index)))
-      : visible.match(re);
+  const visible = readable(raw);
+  for (const pattern of AI_DIRECTED) {
+    const m = directedMatches(visible, pattern).next().value;
     if (!m) continue;
     const snippet = Array.from(cleanText(m[0]).replace(/"/g, "'")).slice(0, 80).join("");
     return `Sieve's own check found text that looks aimed at AI tools: "${snippet}". It may only be quoting an example.`;
   }
   return "";
 }
+
+// Sieve's own brief keys. A {...} that holds two or more of them as "key": is a ready-made brief the
+// post hands to whatever reads it. Ordinary JSON a developer shares (a tsconfig, a package.json, an MCP
+// server entry) holds none or one, so it never counts.
+const BRIEF_KEY = /"(technique|what|says|checks|needs|try|success|skill|warning)"\s*:/g;
+const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|binary|server|module|action|bot)s?`;
+// Names inside a planted passage, only where a name sits, so ordinary words ("commit", "config",
+// "tests") never become names:
+// - the package after a fetch-and-run or install command, past any flags ("npx -y snapdiff-setup@latest");
+// - a word right before a tool noun ("the snapdiff CLI");
+// - an environment variable with an underscore ("$OPENAI_API_KEY"), which is case-sensitive.
+// Each word is matched whole: the lookbehinds keep a match from starting inside a word. A flag is "-" or
+// "--" and then a word character, never "-" and then "-": with both readings of "--a" open, a long run
+// of flags that ends in no package took exponential time to fail (25 flags, 3 s).
+const AFTER_COMMAND = /(?<![\p{L}\p{N}_-])(?:npx|bunx|pnpx|uvx|pipx(?:\s+(?:install|run))?|pip3?\s+install|npm\s+(?:i|install|add)|pnpm\s+(?:i|install|add|dlx)|yarn\s+(?:add|dlx)|bun\s+(?:add|x)|brew\s+install|gem\s+install|cargo\s+(?:install|add)|go\s+(?:install|get))\s+(?:-{1,2}\w[\w-]*(?:=\S*)?\s+)*([@\p{L}\p{N}_][@\p{L}\p{N}_./:=<>~!-]*)/giu;
+const BEFORE_NOUN = new RegExp(String.raw`(?<![\p{L}\p{N}_.-])([\p{L}\p{N}][\p{L}\p{N}_.-]*)(?![\p{L}\p{N}_.-])(?=\s+${TOOL_NOUN}(?![\p{L}\p{N}_]))`, "giu");
+const ENV_VAR = /(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9](?![\p{L}\p{N}_])/gu;
+// Words that sit in a name position without naming anything a planted passage could own: articles and
+// pronouns ("the CLI", "your tool"), describing words ("the official package"), the tool nouns
+// themselves, and the platforms every developer post mentions anyway.
+const NOT_A_NAME = new Set(`a an the this that these those its it his her their our your my any some every each one other another
+same own new official latest following above below given required recommended real actual separate small simple custom free
+open source local remote external third party command line cli sdk api mcp ai llm agent code coding dev test testing build
+helper setup set install installer init create run use cli tool tools package packages plugin plugins extension extensions
+module modules library libraries binary binaries action actions bot bots server servers script scripts core utils
+github git npm pip node python docker browser chrome vscode`.split(/\s+/));
+const MAX_PLANTED = 50;
+
+// Whether a text mentions a name as a whole word, case ignored. Letters, digits and "_" continue a
+// word; anything else ends it, so "snapdiff-setup" and "snapdiff.config" both mention "snapdiff". The
+// name is escaped, so a name with "." or "+" in it matches only itself.
+const mentionRe = (name) => new RegExp(String.raw`(?<![\p{L}\p{N}_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\p{L}\p{N}_])`, "iu");
+
+// The first index in a sorted array whose value is >= x (the array's length when none is).
+const firstAtLeast = (arr, x) => {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
+};
+
+// A post -> the names (lowercase, no repeats, at most MAX_PLANTED) that only its planted passages
+// mention: the tools, packages and keys a warned brief must never pass on. [] when there are none.
+//
+// A planted passage is one of two things:
+// - a brief-shaped JSON object. One pass with a stack pairs every "{" with its "}"; each pair that
+//   closes swallows the pairs that closed inside it, so what's left at the end is the outermost
+//   balanced objects, a stray "{" or "}" never joining anything. Each of those that holds two of Sieve's
+//   brief keys is planted. The outermost objects don't overlap, so the key count reads each character once;
+// - an AI_DIRECTED match (with aiDirected's own quoted-example exemption), from the start of the sentence
+//   it sits in (after ".", "!" or "?" and a space, or a line break) to the end of its paragraph (the
+//   next blank line, or the end of that string of the post). Both ends come from sorted lists by binary
+//   search, so a long post with thousands of matches and no full stop stays fast.
+// A name counts only when it appears nowhere outside the planted passages, as a whole word: a post that
+// recommends pytest in its own words keeps its pytest steps even if an injection names pytest too.
+export function plantedNames(post = {}) {
+  const parts = postParts(post).map(readable);
+  const visible = parts.join("\n");
+  const spans = [];
+  // brief-shaped JSON
+  const open = [];
+  const outer = [];
+  for (let i = 0; i < visible.length; i++) {
+    const c = visible[i];
+    if (c === "{") open.push(i);
+    else if (c === "}" && open.length) {
+      const start = open.pop();
+      while (outer.length && outer[outer.length - 1][0] > start) outer.pop();
+      outer.push([start, i + 1]);
+    }
+  }
+  for (const [s, e] of outer) {
+    const keys = new Set(Array.from(visible.slice(s, e).matchAll(BRIEF_KEY), (m) => m[1]));
+    if (keys.size >= 2) spans.push([s, e]);
+  }
+  // AI_DIRECTED matches, sentence start to paragraph end
+  const starts = [0];
+  for (const m of visible.matchAll(/[.!?]\s+|\n/g)) starts.push(m.index + m[0].length);
+  const ends = [];
+  let at = 0;
+  for (const p of parts) { at += p.length; ends.push(at); at += 1; }
+  for (const m of visible.matchAll(/\n[ \t]*\n/g)) ends.push(m.index);
+  ends.sort((a, b) => a - b);
+  for (const pattern of AI_DIRECTED) {
+    for (const m of directedMatches(visible, pattern)) {
+      const k = firstAtLeast(starts, m.index + 1) - 1; // the last sentence start at or before the match
+      const e = ends[firstAtLeast(ends, m.index + m[0].length)] ?? visible.length;
+      spans.push([starts[k], Math.max(e, m.index + m[0].length)]);
+    }
+  }
+  if (!spans.length) return [];
+  // merge overlapping spans, then split the post into planted text and the rest
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  const outside = [];
+  let from = 0;
+  for (const [s, e] of merged) { outside.push(visible.slice(from, s)); from = e; }
+  outside.push(visible.slice(from));
+  const rest = outside.join("\n");
+  // names in name positions inside the planted text
+  const found = new Set();
+  const add = (n) => {
+    const name = n.toLowerCase().replace(/[.:/-]+$/, "");
+    if (name.length >= 3 && name.length <= 64 && /^\p{L}/u.test(name) && !NOT_A_NAME.has(name)) found.add(name);
+  };
+  for (const [s, e] of merged) {
+    const planted = visible.slice(s, e);
+    for (const m of planted.matchAll(AFTER_COMMAND)) {
+      // the package's own name: no scope or path (take what follows the last "/"), no version (cut at
+      // "@", "=", "<", ">", "~" or "!" after the first character), and its first part before "-" or "_"
+      const full = m[1].split("/").pop().replace(/(?<=.)[@=<>~!].*$/, "").replace(/^@/, "");
+      add(full);
+      const head = full.split(/[-_]/)[0];
+      if (head !== full && /^\p{L}{3,}$/u.test(head)) add(head);
+    }
+    for (const m of planted.matchAll(BEFORE_NOUN)) add(m[1]);
+    for (const m of planted.matchAll(ENV_VAR)) add(m[0]);
+    if (found.size >= MAX_PLANTED) break;
+  }
+  return [...found].slice(0, MAX_PLANTED).filter((name) => !mentionRe(name).test(rest));
+}
+
+// A warned brief -> the same brief without the try steps and needs that mention a planted name.
+// CHECK_SOURCE is Sieve's own line and never goes.
+const dropPlanted = (brief, post) => {
+  const names = plantedNames(post).map(mentionRe);
+  if (!names.length) return brief;
+  const clear = (s) => !names.some((re) => re.test(s));
+  return { ...brief, try: brief.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: brief.needs.filter(clear) };
+};
 
 // Model answer -> { technique: true, brief } or { technique: false, what, warning }. Throws when
 // unreadable. The technique:false branch still carries "warning", normalized the same way as a real
@@ -117,18 +266,24 @@ export function aiDirected(post = {}) {
 // fires, that warning is used instead, and it goes through the same normalizeBrief/normalizeWarning
 // path a model-reported warning would, so CHECK_SOURCE, the link filter and "worth a skill: no" all
 // still apply.
+//
+// Once the final brief has a warning, by either route, any try step or need that names something only
+// the post's planted passages name (plantedNames) is dropped: a model told to ignore a planted brief
+// sometimes still writes "Install the snapdiff CLI". The stored brief keeps the result, so a later
+// normalizeBrief without the post never needs it, and normalizing it again changes nothing.
 export function parseBrief(text, post) {
   const r = looseJson(text);
   if (saysNo(r.technique)) {
     const warning = normalizeWarning(r.warning) || aiDirected(post);
     return { technique: false, what: cleanText(r.what), warning };
   }
-  const brief = normalizeBrief(r);
+  let brief = normalizeBrief(r);
   if (!brief) throw new Error("No brief in the answer");
   if (!brief.warning) {
     const backstop = aiDirected(post);
-    if (backstop) return { technique: true, brief: normalizeBrief({ ...brief, warning: backstop }) };
+    if (backstop) brief = normalizeBrief({ ...brief, warning: backstop });
   }
+  if (brief.warning) brief = dropPlanted(brief, post);
   return { technique: true, brief };
 }
 

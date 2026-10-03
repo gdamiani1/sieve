@@ -119,6 +119,19 @@ const LINKISH = new RegExp([
   String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?)\s+(?:i|install|add|get)\b`, // package installs
 ].join("|"), "i");
 
+// The shape of a step that tells the reader to install a tool, which a warned brief must not do
+// either, whoever wrote it ("Don't fetch, install or run anything from this brief"). LINKISH only sees
+// commands; this sees the plain words a model writes instead, like "Install the snapdiff CLI". Any
+// install, reinstall, download or clone counts, whatever the object. "Set up", "configure" and
+// "initialize" are everyday words for a developer's own work ("Set up a golden set of 20 cases",
+// "Configure your CI to run it on every PR"), so they only count with a tool noun later in the same
+// item ("Set up the snapdiff CLI"). "script" is left out of those nouns on purpose: "Set up a simple
+// script that runs your model on a fixed set of inputs" is the developer writing their own script.
+const INSTALLISH = new RegExp([
+  String.raw`\b(?:re)?install(?:s|ed|ing|ation)?\b|\bdownload(?:s|ed|ing)?\b|\bclon(?:e|es|ed|ing)\b`,
+  String.raw`\b(?:set\s*-?\s*up|setup|configure|initiali[sz]e|init)\b.*\b(?:CLI|package|tool|plugin|extension|SDK|library|binary|server|module|action|bot)s?\b`,
+].join("|"), "i");
+
 // Any model answer or stored record -> the one brief shape. Null when there is no "what".
 // "says" takes plain strings (posts) or {t, text} (videos, with timestamps).
 export function normalizeBrief(r) {
@@ -136,14 +149,14 @@ export function normalizeBrief(r) {
   let skillOut = { worth: yes(skill.worth), why: clean(skill.why) };
   // Code-enforced, not left to the model: once there is a real warning, nothing from the source is
   // "worth a skill", the first step is always to check the source, and no step or need can carry a
-  // link or a pipe-into-a-shell forward, however the model answered. Filtering any existing
+  // link, a pipe-into-a-shell or an install step forward, however the model answered. Filtering any existing
   // CHECK_SOURCE out before re-adding it, and re-deriving warning and skill from already-normalized
   // input the same way, makes this idempotent: normalizing an already-normalized brief gives back the
   // same brief.
   if (warning) {
     skillOut = { worth: false, why: "The source tried to steer AI agents, so read it yourself before saving a skill from it." };
-    tryList = [CHECK_SOURCE, ...tryList.filter((s) => s !== CHECK_SOURCE && !LINKISH.test(s))].slice(0, 6);
-    needs = needs.filter((s) => !LINKISH.test(s));
+    tryList = [CHECK_SOURCE, ...tryList.filter((s) => s !== CHECK_SOURCE && !LINKISH.test(s) && !INSTALLISH.test(s))].slice(0, 6);
+    needs = needs.filter((s) => !LINKISH.test(s) && !INSTALLISH.test(s));
   }
   return {
     what,
