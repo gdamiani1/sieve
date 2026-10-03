@@ -15,13 +15,14 @@
 // git, written by the owner). Without that file it refuses, unless --no-analytics says to ship the empty
 // one. The local file must be a regular file (not a symlink) holding exactly the two exports and
 // comments, and passes the same word check. The package gets a rebuilt copy of those two lines.
-// Errors never print the file's contents.
+// Errors never print the file's contents. A committed *.local.* file is refused. The zip is
+// reproducible: the swapped-in file gets the commit's time.
 //
 // The word check is a tripwire against committing the owner's personal copy by mistake, not a guarantee:
 // it reads raw bytes and paths, so a word that's encoded (say, as UTF-16), spelled with an escaped
 // character, or split across concatenated strings won't be caught.
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +76,9 @@ try {
 
 if (rawFiles.some((f) => f === ".gitattributes" || f.endsWith("/.gitattributes")))
   fail(".gitattributes in the commit: store-zip doesn't support it, because git archive would apply it after the checks");
+
+const committedLocal = rawFiles.find((f) => /\.local\./.test(f));
+if (committedLocal) fail(`${committedLocal} is committed: local files never go into the package`);
 
 // A repo-local info/attributes file is never committed, so the check above can't see it, but git
 // archive still applies it. store-zip refuses rather than silently build a package an attribute rule
@@ -164,16 +168,31 @@ try {
   fail("git archive failed");
 }
 if (statsConfig !== null) {
-  // Adding a file with the same name replaces the archive's empty analytics-config.js entry.
+  // Adding a file with the same name replaces the archive's empty analytics-config.js entry. zip runs
+  // without ZIP/ZIPOPT from the environment, then the entry is read back and the entry count checked.
   const over = mkdtempSync(join(tmpdir(), "sieve-stats-"));
+  let putOk = false;
   try {
-    writeFileSync(join(over, "analytics-config.js"), statsConfig);
-    execFileSync("/usr/bin/zip", ["-q", zipTmp, "analytics-config.js"], { cwd: over });
+    const staged = join(over, "analytics-config.js");
+    writeFileSync(staged, statsConfig);
+    const when = Number(git("show", "-s", "--format=%ct", sha).toString().trim());
+    utimesSync(staged, when, when);
+    const env = { ...process.env };
+    delete env.ZIP;
+    delete env.ZIPOPT;
+    execFileSync("/usr/bin/zip", ["-q", "-X", zipTmp, "analytics-config.js"], { cwd: over, env, stdio: "ignore" });
+    const back = execFileSync("unzip", ["-p", zipTmp, "analytics-config.js"], { maxBuffer: 1024 * 1024 }).toString("utf8");
+    const entries = execFileSync("unzip", ["-Z1", zipTmp], { maxBuffer: 64 * 1024 * 1024 }).toString("utf8")
+      .split("\n").filter((f) => f && !f.endsWith("/"));
+    putOk = back === statsConfig && entries.length === files.length;
   } catch {
-    try { rmSync(zipTmp, { force: true }); } catch {}
-    fail("couldn't put analytics-config.local.js into the package");
+    putOk = false;
   } finally {
     rmSync(over, { recursive: true, force: true });
+  }
+  if (!putOk) {
+    try { rmSync(zipTmp, { force: true }); } catch {}
+    fail("couldn't put analytics-config.local.js into the package");
   }
 }
 renameSync(zipTmp, zip);

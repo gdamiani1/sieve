@@ -243,6 +243,7 @@ try {
   git("revert", "--no-edit", "HEAD");
 
   // Usage stats: a commit with analytics-config.js needs the local file, or --no-analytics.
+  const preConfig = git("rev-parse", "HEAD").trim();
   write("analytics-config.js", 'export const MEASUREMENT_ID = "";\nexport const API_SECRET = "";\n');
   git("add", "-A");
   git("commit", "-q", "-m", "config");
@@ -322,7 +323,34 @@ try {
   assert.equal(r.status, 0, r.stderr);
   assert.match(inZip("stats-off2"), /MEASUREMENT_ID = ""/);
   rmSync(localFile);
+
+  // zip's environment can't change the result, and two "on" builds of one commit are byte-identical.
+  write("analytics-config.local.js", `${goodId}\n${goodSecret}\n`);
+  const envRun = (name, env) => spawnSync(process.execPath, [script, "--repo", repo, "--out", join(tmp, name)], { encoding: "utf8", env: { ...process.env, ...env } });
+  r = envRun("stats-env", { ZIPOPT: "-d", ZIP: "-d" });
+  if (r.status === 0) {
+    assert.match(inZip("stats-env"), /G-ABC123XYZ/, "never 'on' with the wrong contents");
+    assert.match(r.stdout, /usage stats on/);
+  } else assert.match(r.stderr, /couldn't put/);
+  assert.equal(r.status, 0, r.stderr);
+  r = stats("stats-repro-a");
+  assert.equal(r.status, 0, r.stderr);
+  await new Promise((res) => setTimeout(res, 2100));
+  r = stats("stats-repro-b");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(readFileSync(statsZip("stats-repro-a")).equals(readFileSync(statsZip("stats-repro-b"))), "the same commit builds the same bytes");
+  rmSync(localFile);
+
+  // A committed *.local.* file is refused.
+  write("analytics-config.local.js", `${goodId}\n${goodSecret}\n`);
+  git("add", "-f", "analytics-config.local.js");
+  git("commit", "-q", "-m", "local committed");
+  r = stats("stats-local-committed", "--no-analytics");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /analytics-config\.local\.js is committed: local files never go into the package/);
   git("revert", "--no-edit", "HEAD");
+  rmSync(localFile, { force: true });
+  git("reset", "-q", "--hard", preConfig);
 
   // This repo's own HEAD makes a clean package.
   r = run("--out", join(tmp, "real"), "--no-analytics");
