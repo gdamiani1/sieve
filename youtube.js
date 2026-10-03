@@ -301,6 +301,14 @@
       const key = t.dataset.jevKey;
       if (key && results.has(key) && thumbOf(t)?.querySelector(":scope > .sieve-yt-chip")?.dataset.key !== key) { const v = read(t); if (v) render(t, v, results.get(key)); }
     }
+    // A tile that no longer links to a video (an ad, a Short, a post) isn't in tiles(): what Sieve drew
+    // for its old video goes. Its key stays, so if the same link comes back it's drawn from the result
+    // without a new call (and another video's link is caught by recycled()).
+    document.querySelectorAll("[data-jev-key]").forEach((t) => {
+      if (linkOf(t)) return;
+      t.querySelectorAll(".sieve-yt-chip").forEach((c) => c.remove());
+      t.classList.remove("jev-low", "jev-hidden", "sieve-yt-strong");
+    });
     watchPage();
   }
 

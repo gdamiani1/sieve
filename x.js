@@ -195,7 +195,7 @@
   }
 
   // X can draw another post in an article element it already used. check() notes the post's own link on
-  // the element; when the link changes, what Sieve drew there (the wrap above it, with any brief or Watch
+  // the element; when no post link in it is that link any more, what Sieve drew there (the wrap above it, with any brief or Watch
   // button, and the classes) was for the old post and goes.
   function undecorate(post) {
     const w = post.previousElementSibling;
@@ -203,7 +203,9 @@
     post.classList.remove("jev-low", "jev-hidden", "sieve-x-strong", "sieve-x-maybe");
     delete post.dataset.jevKey;
   }
-  const reused = (post) => post.dataset.sieveXLink !== undefined && permalink(post) !== post.dataset.sieveXLink;
+  // A post first checked before its link was drawn ("") isn't counted, nor one whose quoted post's
+  // timestamp happens to render first: either would wipe an open Brief.
+  const reused = (post) => !!post.dataset.sieveXLink && !statusLinks(post).some((l) => l.href === post.dataset.sieveXLink);
 
   function clearAll() {
     document.querySelectorAll(".sieve-x-wrap").forEach((w) => w.remove());

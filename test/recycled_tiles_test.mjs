@@ -5,8 +5,8 @@
 // with the worker stubbed. youtube-text.js isn't loaded: without it no description is asked for.
 //
 // The fake DOM has no selector engine, so this file adds a small one (tags, #id, .class, [attr], [attr="v"],
-// [attr*="v"], [attr^="v"], :scope, descendant and child combinators, comma lists), on its own copy of the
-// Element class, plus the few element helpers the two scripts reach for.
+// [attr*="v"], [attr^="v"], :scope, descendant and child combinators, comma lists), patched onto fake-dom's
+// Element prototype as x_page_test does, plus the few element helpers the two scripts reach for.
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
@@ -276,6 +276,64 @@ const chipText = (t) => chips(t).map((c) => c.textContent);
   assert.equal(chips(a)[0].dataset.key, EVALS.id, "a chip drawn for another video is replaced");
 }
 
+// 4b. A tile that stops linking to a video (here a Short): the old chip and classes go, nothing is scored.
+// When the same video's link comes back, it's drawn from the result already in hand, without a new call.
+const toShort = (t) => { t.querySelector("ytd-thumbnail").children[0].setAttribute("href", "/shorts/abc"); t.querySelector("#video-title").setAttribute("href", "/shorts/abc"); };
+{
+  const p = load({ ...YT, items: [tile(EVALS)] });
+  const [t] = p.els;
+  p.see(t);
+  await flush();
+  toShort(t);
+  p.scan();
+  await flush();
+  assert.equal(chips(t).length, 0, "no chip, and no Watch button for the old video");
+  assert.ok(!t.classList.contains("sieve-yt-strong"));
+  assert.deepEqual(p.classified, [EVALS.title], "a Short isn't scored");
+
+  show(t, EVALS);
+  p.scan();
+  await flush();
+  assert.deepEqual(chipText(t), ["Sieve 0.79 · talkWatch it for me · ~3¢"]);
+  assert.ok(t.classList.contains("sieve-yt-strong"));
+  assert.deepEqual(p.classified, [EVALS.title], "redrawn from the result, no new call");
+}
+
+// 4c. A hidden low tile becomes a Short: it isn't left hidden.
+{
+  const p = load({ ...YT, items: [tile(LAKERS)], scores: { ...YT_SCORES, [LAKERS.title]: { ...YT_SCORES[LAKERS.title], lowMode: "hide" } } });
+  const [t] = p.els;
+  p.see(t);
+  await flush();
+  assert.ok(t.classList.contains("jev-hidden"));
+  toShort(t);
+  p.scan();
+  assert.ok(!t.classList.contains("jev-hidden"));
+  assert.deepEqual(p.classified, [LAKERS.title]);
+}
+
+// 4d. A, then B, then A again while A's answer is still out: A is drawn once, on this tile, and B's late
+// answer draws nothing.
+{
+  const p = load({ ...YT, items: [tile(EVALS), tile(CACHE)], hold: true });
+  const [t, other] = p.els;
+  p.see(t);
+  await flush();
+  show(t, LAKERS);
+  p.scan();
+  await flush();
+  show(t, EVALS);
+  p.scan();
+  await flush();
+  assert.deepEqual(p.held.map((h) => h.what), [EVALS.title, LAKERS.title], "A isn't asked for twice");
+  p.release(EVALS.title);
+  assert.deepEqual(chipText(t), ["Sieve 0.79 · talkWatch it for me · ~3¢"]);
+  p.release(LAKERS.title);
+  assert.equal(chips(t).length, 1);
+  assert.equal(chips(t)[0].dataset.key, EVALS.id);
+  assert.equal(chips(other).length, 0, "the other tile, never seen, has nothing");
+}
+
 // ======== X ========
 const ID_A = "2017742741636321619";
 const ID_B = "2017742743125299476";
@@ -351,6 +409,23 @@ const badge = (a) => { const w = a.previousElementSibling; return w?.classList.c
   p.scan();
   p.release(TEXT_B);
   assert.match(badge(a), /^Sieve 0\.12 · opinion/);
+}
+
+// 8. A post first checked before X drew its link: the link appearing later isn't a reuse, and an open
+// Brief stays.
+{
+  const p = load({ ...X, items: [article({ handle: "alice", id: ID_A, text: TEXT_A })] });
+  const [a] = p.els;
+  const link = a.querySelector("a");
+  link.removeAttribute("href");
+  p.see(a);
+  const wrap = a.previousElementSibling;
+  assert.match(badge(a), /^Sieve 0\.91/);
+  link.setAttribute("href", `/alice/status/${ID_A}`);
+  p.scan();
+  assert.equal(a.previousElementSibling, wrap, "the same wrap, not redrawn");
+  assert.ok(a.classList.contains("sieve-x-strong"));
+  assert.deepEqual(p.classified, [TEXT_A]);
 }
 
 console.log("recycled tiles: all checks passed");
