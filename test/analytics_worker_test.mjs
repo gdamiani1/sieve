@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { copyFileSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { JEV_OPENROUTER } from "../jev.js";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const store = { orKey: "stub", saved: [{ key: "d1", platform: "linkedin", authorName: "Jane", text: "Golden sets caught 3 regressions.", savedAt: Date.now() }] };
@@ -24,15 +25,18 @@ globalThis.chrome = {
 // Every fetch is OpenRouter here; a GA request would be a bug in this test (nothing is due today).
 // A post gets a brief answer; the digest request gets a digest.
 const gaCalls = [];
+let jevStatus = 200; // a test sets 500 to make Jev fail, so the chat scorer answers
+const reply = (status, body) => ({ status, ok: status >= 200 && status < 300, headers: { get: () => null }, json: async () => body });
 globalThis.fetch = async (url, init) => {
   if (String(url).includes("google-analytics")) { gaCalls.push(url); return new Response(null, { status: 204 }); }
-  const user = JSON.parse(init.body).messages.at(-1).content;
-  const isDigest = user.includes("Golden sets");
-  const content = isDigest
-    ? "## What people built or tested\n- Ran golden sets on every prompt change [Jane]"
+  if (String(url) === JEV_OPENROUTER) {
+    return reply(jevStatus, jevStatus === 200 ? { answers: { worth: { noul: 0.9 }, topic: { choice: "t0" }, kind: { choice: "technique" } }, usage: { cost: 0.00004 } } : { error: { message: "down" } });
+  }
+  const [system, user] = JSON.parse(init.body).messages.map((m) => m.content);
+  const content = system.includes('"topic":') ? '{"worth":0.2,"topic":"other","kind":"news","angle":"none"}'
+    : user.includes("Golden sets") ? "## What people built or tested\n- Ran golden sets on every prompt change [Jane]"
     : JSON.stringify({ technique: true, what: "a technique", try: ["Try it"], skill: { worth: false, why: "" }, warning: "" });
-  const body = { choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0 } };
-  return { status: 200, ok: true, json: async () => body };
+  return reply(200, { choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0 } });
 };
 
 const src = fileURLToPath(new URL("..", import.meta.url));
@@ -78,6 +82,31 @@ try {
   const before = c["brief_made|x"];
   await ask({ type: "brief", post: { platform: "x", key: "k4" } }); // no text: an error
   assert.equal(today()["brief_made|x"], before);
+
+  // A brief shown again from the cache counts nothing.
+  await ask({ type: "brief", post: post("x", "k2") });
+  assert.equal(today()["brief_made|x"], 1);
+
+  // A watched video shown again from the cache counts nothing.
+  store.watched = { Abc_1234567: { id: "Abc_1234567", platform: "youtube", title: "A video", at: Date.now() } };
+  await ask({ type: "watch", platform: "youtube", id: "Abc_1234567" });
+  assert.equal(Object.keys(today()).some((k) => k.startsWith("video_watched")), false);
+
+  // Scoring counts a verdict by who answered; a missing key is an error and counts nothing.
+  const scored = { type: "classify", platform: "linkedin", state: { author: "Dana", post: "We ran golden sets." } };
+  assert.ok(!(await ask(scored)).error);
+  assert.equal(today()["posts_scored|linkedin|jev"], 1);
+  jevStatus = 500;
+  assert.equal((await ask(scored)).scorer, "openrouter");
+  jevStatus = 200;
+  assert.equal(today()["posts_scored|linkedin|fallback"], 1);
+  assert.equal(today()["posts_scored|linkedin|jev"], 1);
+  const orKey = store.orKey;
+  delete store.orKey; delete store.apiKey;
+  assert.deepEqual(await ask(scored), { error: "no_key" });
+  store.orKey = orKey;
+  assert.equal(today()["posts_scored|linkedin|jev"], 1);
+  assert.equal(today()["posts_scored|linkedin|fallback"], 1);
 
   // A digest counts once.
   await ask({ type: "digest", since: 0 });
