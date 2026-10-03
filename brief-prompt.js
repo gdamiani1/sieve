@@ -134,13 +134,18 @@ const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|bi
 // "tests") never become names:
 // - the package after a fetch-and-run or install command, past any flags ("npx -y snapdiff-setup@latest"),
 //   or after a GitHub Actions "uses:" ("uses: evilcorp/snapdiff-action@v1");
-// - a word right before a tool noun ("the snapdiff CLI");
+// - a word right before a tool noun ("the snapdiff CLI"), also when quotes or markdown wrap it ("the
+//   `snapdiff` CLI", "the **snapdiff** CLI"): a run of them may sit between the word and the noun, and
+//   the lookbehind already lets one sit before the word. A lone apostrophe after the word, with no
+//   mark before it, is a possessive ("the developers' tools"), not a quote, and names nothing;
 // - an environment variable with an underscore ("$OPENAI_API_KEY"), which is case-sensitive.
 // Each word is matched whole: the lookbehinds keep a match from starting inside a word. A flag is "-" or
 // "--" and then a word character, never "-" and then "-": with both readings of "--a" open, a long run
 // of flags that ends in no package took exponential time to fail (25 flags, 3 s).
 const AFTER_COMMAND = /(?<![\p{L}\p{N}_-])(?:(?:npx|bunx|pnpx|uvx|pipx(?:\s+(?:install|run))?|pip3?\s+install|npm\s+(?:i|install|add)|pnpm\s+(?:i|install|add|dlx)|yarn\s+(?:add|dlx)|bun\s+(?:add|x)|brew\s+install|gem\s+install|cargo\s+(?:install|add)|go\s+(?:install|get))\s+(?:-{1,2}\w[\w-]*(?:=\S*)?\s+)*|uses:\s*)([@\p{L}\p{N}_][@\p{L}\p{N}_./:=<>~!-]*)/giu;
-const BEFORE_NOUN = new RegExp(String.raw`(?<![\p{L}\p{N}_.-])([\p{L}\p{N}][\p{L}\p{N}_.-]*)(?![\p{L}\p{N}_.-])(?=\s+${TOOL_NOUN}(?![\p{L}\p{N}_]))`, "giu");
+const WRAP = "[`'\"*\u2018\u2019\u201C\u201D]";
+const WRAP_MARK = new RegExp(WRAP);
+const BEFORE_NOUN = new RegExp(String.raw`(?<![\p{L}\p{N}_.-])([\p{L}\p{N}][\p{L}\p{N}_.-]*)(?![\p{L}\p{N}_.-])(?=(${WRAP}*)\s+${TOOL_NOUN}(?![\p{L}\p{N}_]))`, "giu");
 const ENV_VAR = /(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9](?![\p{L}\p{N}_])/gu;
 // Words that sit in a name position without naming anything a planted passage could own: articles and
 // pronouns ("the CLI", "your tool"), describing words ("the official package"), the tool nouns
@@ -378,7 +383,10 @@ export function plantedNames(post = {}, briefText, { planted = [] } = {}) {
       const head = full.split(/[-_]/)[0];
       if (head !== full && /^\p{L}{3,}$/u.test(head)) add(head);
     }
-    for (const m of passage.matchAll(BEFORE_NOUN)) add(m[1]);
+    for (const m of passage.matchAll(BEFORE_NOUN)) {
+      if (/^['\u2019]$/.test(m[2]) && !WRAP_MARK.test(passage[m.index - 1] ?? "")) continue;
+      add(m[1]);
+    }
     for (const m of passage.matchAll(ENV_VAR)) add(m[0]);
     if (found.size >= MAX_FOUND) break;
   }
