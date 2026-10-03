@@ -109,3 +109,24 @@ $("saveKeys").onclick = async () => {
   load();
 };
 load();
+
+// Usage stats (analytics.js): shown only in a build that can send. The switch acts at once.
+function showStats(s) {
+  if (!s || !s.available) return;
+  $("statsSection").hidden = false;
+  $("statsOn").checked = s.consent === true;
+  const p = $("statsCode");
+  p.hidden = !s.installCode;
+  p.replaceChildren();
+  if (s.installCode) {
+    const b = document.createElement("strong");
+    b.textContent = s.installCode;
+    p.append("Your install code: ", b, ". Tell me this code only if you want me to recognise your install.");
+  }
+}
+chrome.runtime.sendMessage({ type: "stats", action: "status" }).then(showStats, () => {});
+$("statsOn").onchange = async () => {
+  const s = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on: $("statsOn").checked }).catch(() => null);
+  if (s && !s.error) showStats(s);
+  else $("statsOn").checked = !$("statsOn").checked;
+};
