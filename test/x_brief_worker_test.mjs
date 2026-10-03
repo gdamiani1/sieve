@@ -280,4 +280,22 @@ replies.length = 0;
   assert.doesNotMatch(r.prompt, /Left out|snapdiff/);
 }
 
+// The reply only carries the checked leftOut: a stored record's own list never rides along unchecked.
+{
+  const rec = (key, extra) => ({ key, platform: "x", title: "T", author: "A", url: "https://x.com/a/status/1", at: Date.now(), what: "W", try: ["Keep a golden set"], ...extra });
+  reset({ briefs: {
+    "x:88881": rec("88881", { warning: "", leftOut: ["evil"] }),
+    "x:88882": rec("88882", { warning: "AI-directed text.", leftOut: ["<b>x</b>", 5] }),
+    "x:88883": rec("88883", { warning: "AI-directed text.", leftOut: ["Snapdiff", "snapdiff"] }),
+  } });
+  r = await send({ type: "brief", post: post({ key: "88881" }) });
+  assert.equal(r.error, undefined, r.error);
+  assert.ok(!("leftOut" in r), "no warning: no leftOut in the reply");
+  r = await send({ type: "brief", post: post({ key: "88882" }) });
+  assert.ok(!("leftOut" in r), "bad shapes: no leftOut in the reply");
+  assert.equal(r.leftOutLine, "");
+  r = await send({ type: "brief", post: post({ key: "88883" }) });
+  assert.deepEqual(r.leftOut, ["snapdiff"], "the normalized list");
+}
+
 console.log("x_brief_worker_test: ok");

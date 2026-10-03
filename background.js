@@ -13,8 +13,11 @@ import { count, setConsent, status, startStats } from "./analytics.js";
 // `leftOutLine` is the line the panel shows after a warning (brief.js leftOutLine), "" when there is
 // none: worked out here because the panel is a classic content script and can't import brief.js.
 function briefReply(rec) {
+  // The record's own leftOut is left behind: the reply carries only the list normalizeBrief checked.
   const b = normalizeBrief(rec);
-  return b ? { ...rec, ...b, prompt: briefPrompt(rec), leftOutLine: leftOutLine(b) } : null;
+  if (!b) return null;
+  const { leftOut: _unchecked, ...plain } = rec;
+  return { ...plain, ...b, prompt: briefPrompt(rec), leftOutLine: leftOutLine(b) };
 }
 
 // A watched video with a brief also carries the ready-to-copy prompt, the same normalized brief, and

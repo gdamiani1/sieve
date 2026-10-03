@@ -196,4 +196,19 @@ assert.match(bare.drawn(), /div\.sieve-d-brief\n {4}p\n {6}"Sieve couldn't show 
   assert.equal(box.children[1].className, "sieve-b-what", "nor does a missing one");
 }
 
+// A 64-letter name or a long token in a warning wraps inside the 400 px drawer: the warning and the
+// left-out line sit outside .sieve-b, so they need their own overflow-wrap. Same on the digest page.
+{
+  const css = readFileSync(new URL("../content.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const cls of ["sieve-b-warn", "sieve-b-note"]) {
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, sel, body]) => sel.split(",").some((x) => x.trim() === `.${cls}`) && /overflow-wrap:\s*anywhere/.test(body));
+    assert.ok(rules.length, `content.css: .${cls} wraps anywhere`);
+  }
+  const html = readFileSync(new URL("../digest.html", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const cls of ["warn", "note"]) {
+    const rules = [...html.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, sel, body]) => sel.split(",").some((x) => x.trim() === `.brief .${cls}`) && /overflow-wrap:\s*anywhere/.test(body));
+    assert.ok(rules.length, `digest.html: .brief .${cls} wraps anywhere`);
+  }
+}
+
 console.log("watch drawer: all checks passed");

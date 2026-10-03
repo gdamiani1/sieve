@@ -426,7 +426,10 @@ export const dropPlanted = (brief, post, { planted = [] } = {}) => {
   };
   const out = { ...rest, try: rest.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: rest.needs.filter(clear) };
   // Only plain name shapes, the same test normalizeBrief applies, so normalizing the result changes nothing.
-  const leftOut = [...hit].sort((a, b) => a - b).map((i) => names[i]).filter(isLeftOutName).slice(0, MAX_LEFT_OUT);
+  // A name that is another hit name plus "-" or "_" and more ("snapdiff-setup" beside "snapdiff") is the
+  // same tool to a reader: only the base name is listed.
+  const found = [...hit].sort((a, b) => a - b).map((i) => names[i]).filter(isLeftOutName);
+  const leftOut = found.filter((n) => !found.some((m) => m !== n && (n.startsWith(`${m}-`) || n.startsWith(`${m}_`)))).slice(0, MAX_LEFT_OUT);
   return leftOut.length ? { ...out, leftOut } : out;
 };
 

@@ -125,6 +125,8 @@ ol.sieve-b-list { list-style-type: decimal; }
 .sieve-b-note.sieve-b-note-warn { color: #14120e; }
 /* The left-out line right after a warning: close under it, with the warning's own gap before what follows. */
 .sieve-b-warn + .sieve-b-note { margin: -2px 0 8px; }
+/* The drawer's own warning and left-out line sit outside .sieve-b: a long name or token must still wrap. */
+.sieve-b-warn, .sieve-b-note { overflow-wrap: anywhere; }
 .sieve-b-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .sieve-b-fail { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #fff0ea; color: #9a2a00; }
 .sieve-b-fallback { display: block; width: 100%; box-sizing: border-box; height: 140px; margin-top: 6px; padding: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; color: #14120e; background: #fff; border: 1px solid #c9c1b3; border-radius: 8px; resize: vertical; }

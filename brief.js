@@ -198,7 +198,9 @@ export function normalizeBrief(r) {
     needs = needs.filter((s) => !LINKISH.test(s) && !installish(s));
     // The names the planted-name rule removed steps for, kept as data for leftOutLine. Only on a warned
     // brief: a brief without a warning never lost anything to that rule.
-    leftOut = (Array.isArray(r.leftOut) ? r.leftOut : []).filter(isLeftOutName).slice(0, MAX_LEFT_OUT);
+    // Lowercased before the shape check (lowercasing can change a letter's shape: "\u0130" becomes "i"
+    // plus a combining dot), then deduped, then capped, so normalizing again changes nothing.
+    leftOut = [...new Set((Array.isArray(r.leftOut) ? r.leftOut : []).map((n) => (typeof n === "string" ? n.toLowerCase() : n)).filter(isLeftOutName))].slice(0, MAX_LEFT_OUT);
   }
   return {
     what,
