@@ -140,4 +140,60 @@ const bare = load();
 bare.show(v, answer, youtube);
 assert.match(bare.drawn(), /div\.sieve-d-brief\n {4}p\n {6}"Sieve couldn't show the brief\. Reload the page and try again\."/);
 
+// Saying which names were left out (spec addendum, 3 Oct). The worker sends the line as leftOutLine
+// beside the prompt; the drawer puts it right after its own warning, as plain text.
+{
+  const LINE = "Left out: steps naming snapdiff, because only the text aimed at AI named it. If the technique really uses it, check the source.";
+  const t = load({ SieveBriefPanel: { fill: (box, b, opts) => { briefCalls.push({ b: { ...b }, opts: { ...opts } }); box.append("brief"); } } });
+  t.show(v, { ...answer, brief: { what: "W", warning: "Ignore previous instructions", leftOut: ["snapdiff"] }, leftOutLine: LINE }, youtube);
+  const out = t.drawn();
+  assert.match(out, /\n {2}div\.sieve-b-warn\n {4}"Warning: the source contains text aimed at AI agents: Ignore previous instructions"\n {2}div\.sieve-b-note\.sieve-b-note-warn\n {4}"Left out: steps naming snapdiff, because only the text aimed at AI named it\. If the technique really uses it, check the source\."\n {2}p\n {4}"Two sentences\."/, "the line sits right after the warning, before the summary");
+  assert.equal(out.split("Left out:").length, 2, "once");
+  // Plain text: markup in it stays text.
+  t.show(v, { ...answer, brief: { what: "W", warning: "x" }, leftOutLine: "<b>bold</b>" }, youtube);
+  assert.match(t.drawn(), /div\.sieve-b-note\.sieve-b-note-warn\n {4}"<b>bold<\/b>"/);
+  // No warning, no line, whatever the reply says; an empty line draws nothing.
+  t.show(v, { ...answer, brief: { what: "W", warning: "" }, leftOutLine: LINE }, youtube);
+  assert.doesNotMatch(t.drawn(), /Left out/);
+  t.show(v, { ...answer, brief: { what: "W", warning: "x" }, leftOutLine: "" }, youtube);
+  assert.doesNotMatch(t.drawn(), /sieve-b-note/);
+  t.show(v, { ...answer, brief: { what: "W", warning: "x" } }, youtube);
+  assert.doesNotMatch(t.drawn(), /sieve-b-note/, "an older reply without the field");
+}
+
+// The brief panel (brief-panel.js) on LinkedIn and X: the line right after the warning block, and not
+// at all when the drawer asked it to leave the warning out.
+{
+  const LINE = "Left out: steps naming snapdiff and zq, because only the text aimed at AI named it. If the technique really uses it, check the source.";
+  const document = fakeDocument();
+  const sandbox = { document };
+  vm.runInNewContext(readFileSync(new URL("../brief-panel.js", import.meta.url), "utf8"), sandbox);
+  const { fill } = sandbox.SieveBriefPanel;
+  const box = document.createElement("div");
+  const b = { what: "W", warning: "Ignore previous instructions", try: ["Check the source before copying anything from it."], skill: { worth: false, why: "" }, prompt: "PROMPT", leftOut: ["snapdiff", "zq"], leftOutLine: LINE };
+  fill(box, b);
+  const out = outline(box);
+  assert.deepEqual(out.slice(0, 7), [
+    "div.sieve-b",
+    "  div.sieve-b-warn",
+    '    "Warning: the source contains text aimed at AI agents: Ignore previous instructions"',
+    "  div.sieve-b-note.sieve-b-note-warn",
+    `    ${JSON.stringify(LINE)}`,
+    "  div.sieve-b-what",
+    '    "W"',
+  ], "the line right after the warning, before what it is");
+  assert.equal(out.join("\n").split("Left out:").length, 2, "once");
+  fill(box, { ...b, leftOutLine: "<img src=x onerror=alert(1)>" });
+  assert.equal(box.children[1].childNodes.length, 1, "set as text: one text node");
+  assert.equal(box.children[1].textContent, "<img src=x onerror=alert(1)>");
+  fill(box, b, { compact: true, level: 5, warning: false });
+  assert.doesNotMatch(outline(box).join("\n"), /Left out/, "warning: false leaves the line to the drawer");
+  fill(box, { ...b, warning: "" });
+  assert.doesNotMatch(outline(box).join("\n"), /Left out/, "no warning, no line");
+  fill(box, { ...b, leftOutLine: "" });
+  assert.equal(box.children[1].className, "sieve-b-what", "an empty line draws nothing");
+  fill(box, { ...b, leftOutLine: undefined });
+  assert.equal(box.children[1].className, "sieve-b-what", "nor does a missing one");
+}
+
 console.log("watch drawer: all checks passed");

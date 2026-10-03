@@ -201,4 +201,30 @@ notes.length = 0;
 await alarm({ name: "daily-digest" });
 assert.equal(notes.length, 0);
 
+// The daily learnings page (digest.js) against the fake DOM: a warned brief that lost steps to the
+// planted-name rule shows the left-out line right after its .warn div, as plain text.
+{
+  const { fakeDocument, outline } = await import("./fake-dom.mjs");
+  const document = fakeDocument();
+  for (const id of ["today", "day", "week", "export", "msg", "reddit", "briefs", "videos", "digests", "savedSum", "saved"]) {
+    const n = document.createElement(id === "msg" ? "span" : "section");
+    n.id = id;
+    document.body.append(n);
+  }
+  globalThis.document = document;
+  globalThis.chrome.runtime.sendMessage = async () => ({});
+  const at = Date.now();
+  reset({ briefs: {
+    "x:1": { key: "1", platform: "x", title: "Evals", author: "A", url: "https://x.com/a/status/1", at, what: "W1", warning: "AI-directed text.", try: ["Keep a golden set"], leftOut: ["snapdiff", "zq"] },
+    "x:2": { key: "2", platform: "x", title: "Plain", author: "B", url: "https://x.com/b/status/2", at: at - 1000, what: "W2", warning: "", try: ["Keep a golden set"], leftOut: ["snapdiff"] },
+    "x:3": { key: "3", platform: "x", title: "Hostile", author: "C", url: "https://x.com/c/status/3", at: at - 2000, what: "W3", warning: "AI-directed text.", leftOut: ["<b>x</b>"] },
+  } });
+  await import("../digest.js");
+  await new Promise((r) => setTimeout(r, 20));
+  const briefsBox = document.getElementById("briefs");
+  const out = outline(briefsBox).join("\n");
+  assert.match(out, /\n {6}div\.warn\n {8}"Warning: the source contains text aimed at AI agents: AI-directed text\."\n {6}div\.note\n {8}"Left out: steps naming snapdiff and zq, because only the text aimed at AI named it\. If the technique really uses it, check the source\."\n {6}div\.w\n {8}"W1"/, "the line right after .warn, before what it is");
+  assert.equal(out.split("Left out:").length, 2, "only the warned brief with valid names gets the line");
+}
+
 console.log("digest worker: all offline checks passed");
