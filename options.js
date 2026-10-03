@@ -128,7 +128,7 @@ const readStats = () => chrome.runtime.sendMessage({ type: "stats", action: "sta
 readStats();
 // The popup can answer the question while this tab is open.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes.statsConsent || changes.statsClientId)) readStats();
+  if (area === "local" && changes.statsConsent) readStats();
 });
 $("statsOn").onchange = async () => {
   const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on: $("statsOn").checked }).catch(() => null);
@@ -137,6 +137,6 @@ $("statsOn").onchange = async () => {
     showStats(r);
   } else {
     $("statsMsg").textContent = (r && r.error) || "Sieve couldn't change usage stats. Reload the extension and try again.";
-    $("statsOn").checked = !$("statsOn").checked;
+    readStats();
   }
 };
