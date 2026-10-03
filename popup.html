@@ -8,8 +8,15 @@ table{margin:12px 0;border-collapse:collapse;width:100%}td{padding:2px 0}td:last
 .btns{display:flex;gap:8px}button{flex:1;padding:8px;border:0;border-radius:7px;background:#2433f5;color:#fff;font-weight:600;cursor:pointer}
 button.alt{background:#fff;color:#14120e;border:1px solid #c9c1b3}
 .small{margin-top:8px;font-size:12px;color:#6b655b;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+.ask{background:#f6f3ee;border:1px solid #c9c1b3;border-radius:9px;padding:10px 12px;margin:0 0 12px}
+.ask h2{font-size:13.5px;margin:0 0 4px}.ask p{margin:0 0 10px;font-size:12.5px}
 </style></head><body>
 <h1><img src="icons/icon48.png" alt="">Sieve</h1>
+<div class="ask" id="ask" hidden role="region" aria-labelledby="askTitle">
+<h2 id="askTitle">Send usage counts?</h2>
+<p>Once a day, Sieve can send me counts of what you used it for, like posts scored and briefs made, through Google Analytics. Never post text, links, names or keys. It shows me whether Sieve is worth building on. Nothing is sent unless you say yes, and you can turn it off in settings at any time.</p>
+<div class="btns"><button type="button" id="askYes">Yes, send counts</button><button type="button" id="askNo" class="alt">No thanks</button></div>
+</div>
 <label><input id="linkedinOn" type="checkbox"> LinkedIn</label>
 <label><input id="xOn" type="checkbox"> X</label>
 <label><input id="redditOn" type="checkbox"> Reddit</label>
