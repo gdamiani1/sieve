@@ -38,12 +38,16 @@
   // is the heading level of the section labels (4 by default; 5 inside a drawer section that is itself a
   // level 4 heading). `warning: false` leaves out the warning block here, for the watch drawer
   // (watch-drawer.js), which already shows it right after the verdict; LinkedIn and X have no such line
-  // of their own, so they keep it.
+  // of their own, so they keep it. The left-out line (`b.leftOutLine`) goes with the warning block.
   // Without a prompt there is nothing to copy, so the Copy button and its note are left out.
   function fill(box, b, { compact = false, level = 4, warning = true } = {}) {
     box.replaceChildren();
     box.classList.add("sieve-b");
-    if (warning && b.warning) box.append(el("div", "sieve-b-warn", `Warning: the source contains text aimed at AI agents: ${b.warning}`));
+    if (warning && b.warning) {
+      box.append(el("div", "sieve-b-warn", `Warning: the source contains text aimed at AI agents: ${b.warning}`));
+      // Which planted names cost the brief steps (worked out by the worker, brief.js leftOutLine).
+      if (typeof b.leftOutLine === "string" && b.leftOutLine) box.append(el("div", "sieve-b-note sieve-b-note-warn", b.leftOutLine));
+    }
     box.append(el("div", "sieve-b-what", b.what));
     const section = (title, items, format, ordered) => {
       if (!Array.isArray(items) || !items.length) return;

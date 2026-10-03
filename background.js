@@ -2,7 +2,7 @@ import { loadPrefs, linkedinQuestions, redditQuestions, youtubeQuestions, verdic
 import { DEFAULT_VIDEO_MODEL, MAX_MINUTES, watchMessages, parseWatch } from "./watch-prompt.js";
 import { DEFAULT_MODEL, PROVIDER_PREFS } from "./models.js";
 import { digestMessages, pickDigestPosts, digestText, allLeftOutError, onePerKey, leftOutOfDigest, noteName } from "./digest-prompt.js";
-import { briefPrompt, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
+import { briefPrompt, leftOutLine, addBrief, findBrief, removeBrief, videoBriefRecord, normalizeBrief, cleanText, platformOf, firstLine, videoPlatform, videoRecordKey, watchedKey } from "./brief.js";
 import { briefMessages, briefMessagesWithPictures, parseBrief, threadLength } from "./brief-prompt.js";
 import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
 import { scoringKey, askJev, PRICE_PER_MTOK } from "./jev.js";
@@ -10,15 +10,18 @@ import { count, setConsent, status, startStats } from "./analytics.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
+// `leftOutLine` is the line the panel shows after a warning (brief.js leftOutLine), "" when there is
+// none: worked out here because the panel is a classic content script and can't import brief.js.
 function briefReply(rec) {
   const b = normalizeBrief(rec);
-  return b ? { ...rec, ...b, prompt: briefPrompt(rec) } : null;
+  return b ? { ...rec, ...b, prompt: briefPrompt(rec), leftOutLine: leftOutLine(b) } : null;
 }
 
-// A watched video with a brief also carries the ready-to-copy prompt, and the same normalized brief.
+// A watched video with a brief also carries the ready-to-copy prompt, the same normalized brief, and
+// the left-out line for the drawer.
 const withPrompt = (w) => {
   const rec = videoBriefRecord(w);
-  return rec ? { ...w, brief: normalizeBrief(w.brief), prompt: briefPrompt(rec) } : w;
+  return rec ? { ...w, brief: normalizeBrief(w.brief), prompt: briefPrompt(rec), leftOutLine: leftOutLine(rec) } : w;
 };
 
 // Read-modify-write on storage, one at a time. Only this worker writes these keys, so a queue here

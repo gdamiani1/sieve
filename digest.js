@@ -1,4 +1,4 @@
-import { briefPrompt, platformName, cleanText, recentBriefs } from "./brief.js";
+import { briefPrompt, platformName, cleanText, recentBriefs, leftOutLine } from "./brief.js";
 import { buildExport, exportFilename } from "./export.js";
 
 // Opt-in usage stats: the worker counts these only if the user said yes. No text goes with them.
@@ -190,6 +190,14 @@ function briefList(briefs) {
       warn.className = "warn";
       warn.textContent = `Warning: the source contains text aimed at AI agents: ${nb.warning}`;
       div.append(warn);
+      // Which planted names cost the brief steps, right after the warning.
+      const line = leftOutLine(nb);
+      if (line) {
+        const left = document.createElement("div");
+        left.className = "note";
+        left.textContent = line;
+        div.append(left);
+      }
     }
     const w = document.createElement("div");
     w.className = "w";

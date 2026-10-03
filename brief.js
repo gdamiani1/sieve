@@ -164,6 +164,12 @@ const installish = (s) => {
   return i >= 0 && TOOL_NOUN_AFTER.test(s.slice(i));
 };
 
+// A name in a warned brief's `leftOut` (see dropPlanted in brief-prompt.js): a letter or digit first,
+// then letters, digits, ".", "_", "@", "/" or "-", at most 64 characters. Nothing else is ever shown.
+const LEFT_OUT_NAME = /^[\p{L}\p{N}][\p{L}\p{N}._@\/-]{0,63}$/u;
+export const isLeftOutName = (s) => typeof s === "string" && LEFT_OUT_NAME.test(s);
+export const MAX_LEFT_OUT = 5;
+
 // Any model answer or stored record -> the one brief shape. Null when there is no "what".
 // "says" takes plain strings (posts) or {t, text} (videos, with timestamps).
 export function normalizeBrief(r) {
@@ -179,6 +185,7 @@ export function normalizeBrief(r) {
   let needs = list(r.needs, 5);
   let tryList = list(r.try, 6);
   let skillOut = { worth: yes(skill.worth), why: clean(skill.why) };
+  let leftOut = [];
   // Code-enforced, not left to the model: once there is a real warning, nothing from the source is
   // "worth a skill", the first step is always to check the source, and no step or need can carry a
   // link, a pipe-into-a-shell or an install step forward, however the model answered. Filtering any existing
@@ -189,6 +196,9 @@ export function normalizeBrief(r) {
     skillOut = { worth: false, why: "The source tried to steer AI agents, so read it yourself before saving a skill from it." };
     tryList = [CHECK_SOURCE, ...tryList.filter((s) => s !== CHECK_SOURCE && !LINKISH.test(s) && !installish(s))].slice(0, 6);
     needs = needs.filter((s) => !LINKISH.test(s) && !installish(s));
+    // The names the planted-name rule removed steps for, kept as data for leftOutLine. Only on a warned
+    // brief: a brief without a warning never lost anything to that rule.
+    leftOut = (Array.isArray(r.leftOut) ? r.leftOut : []).filter(isLeftOutName).slice(0, MAX_LEFT_OUT);
   }
   return {
     what,
@@ -199,7 +209,19 @@ export function normalizeBrief(r) {
     success: clean(r.success),
     skill: skillOut,
     warning,
+    ...(leftOut.length ? { leftOut } : {}),
   };
+}
+
+// The one line that tells the developer which names a warned brief left out, or "" when there is
+// nothing to say. Shown right after the warning (brief panel, watch drawer, daily learnings page), as
+// plain text. Never part of briefMarkdown or briefPrompt: it is for the developer, and an agent gains
+// nothing from a planted name repeated to it. The worker sends it to the page scripts as `leftOutLine`.
+export function leftOutLine(brief) {
+  const names = normalizeBrief(brief)?.leftOut || [];
+  if (!names.length) return "";
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  return `Left out: steps naming ${list}, because only the text aimed at AI named it. If the technique really uses it, check the source.`;
 }
 
 // Briefs from the last `days` days, newest first, each paired with its normalized brief. Skips anything

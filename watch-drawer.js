@@ -52,7 +52,11 @@
     }
     const verdict = el("div", `sieve-d-verdict sieve-v-${r.verdict}`, { watch: "Worth watching", skim: "Skim it", skip: "Skip it" }[r.verdict]);
     d.append(verdict, el("p", "sieve-d-why", r.why));
-    if (r.brief?.warning) d.append(el("div", "sieve-b-warn", `Warning: the source contains text aimed at AI agents: ${r.brief.warning}`));
+    if (r.brief?.warning) {
+      d.append(el("div", "sieve-b-warn", `Warning: the source contains text aimed at AI agents: ${r.brief.warning}`));
+      // Which planted names cost the brief steps (worked out by the worker, brief.js leftOutLine).
+      if (typeof r.leftOutLine === "string" && r.leftOutLine) d.append(el("div", "sieve-b-note sieve-b-note-warn", r.leftOutLine));
+    }
     d.append(el("p", "", r.summary));
     if (r.best) {
       const best = el("div", "sieve-d-best");

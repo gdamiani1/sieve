@@ -3,7 +3,7 @@
 // about network JSON shapes or a model's loose formatting.
 
 import { looseJson } from "./json.js";
-import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE } from "./brief.js";
+import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE, isLeftOutName, MAX_LEFT_OUT } from "./brief.js";
 
 // A code-level backstop for the most blatant AI-directed passages, run after the model's own answer
 // so it can't be talked out of firing. Deliberately narrow: the model is the main defense; this only
@@ -402,13 +402,32 @@ export function plantedNames(post = {}, briefText, { planted = [] } = {}) {
 // parseWatch both call this, so posts and videos follow one rule.
 // plantedNames is given the brief's own text (briefMentions), so it only returns names the brief could
 // name, and only those get a regex: a regex for each of hundreds of names cost a quarter of a second.
+//
+// The names that really removed a step or need go on the brief as `leftOut` (lowercase, in the order
+// plantedNames found them in the source, at most 5), so the developer can be told what went (leftOutLine
+// in brief.js). Names that removed nothing are not listed, and neither is anything the install rule in
+// normalizeBrief removed: that rule drops by wording, not by name. This record is the only one: a
+// `leftOut` already on the brief (a model can put one in its answer) is replaced, never merged.
 export const dropPlanted = (brief, post, { planted = [] } = {}) => {
   if (!brief?.warning) return brief;
-  const names = plantedNames(post, [...brief.try, ...brief.needs].join("\n"), { planted }).map(namesRe);
-  if (!names.length) return brief;
+  const { leftOut: _ignored, ...rest } = brief;
+  const names = plantedNames(post, [...rest.try, ...rest.needs].join("\n"), { planted });
+  if (!names.length) return rest;
+  const res = names.map(namesRe);
+  const hit = new Set();
   // NFKC, as briefMentions reads the brief: a fullwidth or long-s letter in a step still spells the name.
-  const clear = (s) => { const folded = nfkc(s); return !names.some((re) => re.test(folded)); };
-  return { ...brief, try: brief.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: brief.needs.filter(clear) };
+  // A kept step is tested against every name anyway; a dropped one goes on only to record which names
+  // it holds, so the cost stays one regex per name per item.
+  const clear = (s) => {
+    const folded = nfkc(s);
+    let keep = true;
+    for (let i = 0; i < res.length; i++) if (res[i].test(folded)) { keep = false; hit.add(i); }
+    return keep;
+  };
+  const out = { ...rest, try: rest.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: rest.needs.filter(clear) };
+  // Only plain name shapes, the same test normalizeBrief applies, so normalizing the result changes nothing.
+  const leftOut = [...hit].sort((a, b) => a - b).map((i) => names[i]).filter(isLeftOutName).slice(0, MAX_LEFT_OUT);
+  return leftOut.length ? { ...out, leftOut } : out;
 };
 
 // Model answer -> { technique: true, brief } or { technique: false, what, warning }. Throws when
