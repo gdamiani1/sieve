@@ -2,7 +2,7 @@
 // picture and sound, and says whether it's worth this viewer's time, with timestamps and takeaways.
 import { looseJson } from "./json.js";
 import { normalizeBrief, normalizeWarning, cleanText, saysNo, stripInvisible, videoPlatform } from "./brief.js";
-import { aiDirected } from "./brief-prompt.js";
+import { aiDirected, dropPlanted } from "./brief-prompt.js";
 
 export { looseJson }; // kept for anything that imported it from here
 
@@ -100,10 +100,18 @@ export function parseWatch(text, source) {
   // AI-directed passage there could slip past a model that only watched the video. Same code-level
   // backstop briefMessages runs against a post's title, run here against the source's title, channel
   // and caption.
+  const uploader = { title: source?.title, text: [source?.channel, source?.caption].filter((s) => typeof s === "string" && s).join("\n") };
   if (brief && !brief.warning) {
-    const backstop = aiDirected({ title: source?.title, text: [source?.channel, source?.caption].filter((s) => typeof s === "string" && s).join("\n") });
+    const backstop = aiDirected(uploader);
     if (backstop) brief = normalizeBrief({ ...brief, warning: backstop });
   }
+  // Once the brief is warned, by the model or the backstop, a step or need naming a tool only the plant
+  // names goes, as for a post. The uploader's words get the post rule. The video's own speech and
+  // on-screen text reach Sieve only as the model's report, so the warning counts as planted from end to
+  // end. Whether a name also appears elsewhere is read from the title, channel and caption only, never
+  // the model's summary, points or brief: a steered model may repeat the name there. Sieve's own warning
+  // wordings only quote the source, so reading them this way is harmless.
+  if (brief) brief = dropPlanted(brief, uploader, { planted: [brief.warning] });
   const best = r.best_moment && typeof r.best_moment === "object" ? point(r.best_moment) : null;
   return {
     verdict: ["watch", "skim", "skip"].includes(r.verdict) ? r.verdict : "skim",

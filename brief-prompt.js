@@ -256,6 +256,10 @@ const briefMentions = (text) => {
 // With `briefText` (the brief's steps and needs), only names that text could name are kept, and that
 // happens as they're collected, so names the brief never repeats take no room under MAX_FOUND: six
 // hundred junk names ahead of the real one can't push it out. Without it, every name is collected.
+// `planted` is a list of more texts that are planted from end to end, read for names the same way. A
+// video's speech and on-screen text never reach Sieve as text, only the model's report of an
+// AI-directed passage in them, so parseWatch passes that report here. These texts are never part of
+// the post: the "appears outside" check below still reads only the post.
 //
 // A planted passage is one of two things:
 // - a brief-shaped JSON object. One pass with a stack pairs every "{" with its "}"; each pair that
@@ -277,7 +281,8 @@ const briefMentions = (text) => {
 // A name counts only when it appears nowhere outside the planted passages, as a whole word with any
 // common ending: a post that recommends pytest in its own words keeps its pytest steps even if an
 // injection names pytest too, and "Reviewing" in the post keeps "the review bot" from naming anything.
-export function plantedNames(post = {}, briefText) {
+export function plantedNames(post = {}, briefText, { planted = [] } = {}) {
+  const extra = (Array.isArray(planted) ? planted : []).filter((s) => typeof s === "string" && s).map(readable);
   const parts = postParts(post).map(readable);
   const visible = parts.join("\n");
   const spans = [];
@@ -339,7 +344,7 @@ export function plantedNames(post = {}, briefText) {
       spans.push([starts[k], end]);
     }
   }
-  if (!spans.length) return [];
+  if (!spans.length && !extra.length) return [];
   // merge overlapping spans, then split the post into planted text and the rest
   spans.sort((a, b) => a[0] - b[0]);
   const merged = [];
@@ -360,9 +365,8 @@ export function plantedNames(post = {}, briefText) {
     const name = n.toLowerCase().replace(/[.:/-]+$/, "");
     if (name.length >= 3 && name.length <= 64 && /^\p{L}/u.test(name) && !stop.has(name) && inBrief(name)) found.add(name);
   };
-  for (const [s, e] of merged) {
-    const planted = visible.slice(s, e);
-    for (const m of planted.matchAll(AFTER_COMMAND)) {
+  for (const passage of [...merged.map(([s, e]) => visible.slice(s, e)), ...extra]) {
+    for (const m of passage.matchAll(AFTER_COMMAND)) {
       // the package's own name: no scope or path (take what follows the last "/"), no version (cut at
       // "@", "=", "<", ">", "~" or "!" after the first character), and its first part before "-" or "_"
       // After "uses:" only a real Action reference counts, and one always has a "/" or "@"
@@ -374,8 +378,8 @@ export function plantedNames(post = {}, briefText) {
       const head = full.split(/[-_]/)[0];
       if (head !== full && /^\p{L}{3,}$/u.test(head)) add(head);
     }
-    for (const m of planted.matchAll(BEFORE_NOUN)) add(m[1]);
-    for (const m of planted.matchAll(ENV_VAR)) add(m[0]);
+    for (const m of passage.matchAll(BEFORE_NOUN)) add(m[1]);
+    for (const m of passage.matchAll(ENV_VAR)) add(m[0]);
     if (found.size >= MAX_FOUND) break;
   }
   const lower = rest.toLowerCase();
@@ -385,10 +389,14 @@ export function plantedNames(post = {}, briefText) {
 
 // A warned brief -> the same brief without the try steps and needs that name a planted name (namesRe:
 // as a whole word, or spelled with other separators). CHECK_SOURCE is Sieve's own line and never goes.
+// A brief with no warning comes back as it is. `planted` is passed on to plantedNames: texts planted
+// from end to end, such as a video model's report of what the video told AI tools to do. parseBrief and
+// parseWatch both call this, so posts and videos follow one rule.
 // plantedNames is given the brief's own text (briefMentions), so it only returns names the brief could
 // name, and only those get a regex: a regex for each of hundreds of names cost a quarter of a second.
-const dropPlanted = (brief, post) => {
-  const names = plantedNames(post, [...brief.try, ...brief.needs].join("\n")).map(namesRe);
+export const dropPlanted = (brief, post, { planted = [] } = {}) => {
+  if (!brief?.warning) return brief;
+  const names = plantedNames(post, [...brief.try, ...brief.needs].join("\n"), { planted }).map(namesRe);
   if (!names.length) return brief;
   // NFKC, as briefMentions reads the brief: a fullwidth or long-s letter in a step still spells the name.
   const clear = (s) => { const folded = nfkc(s); return !names.some((re) => re.test(folded)); };
@@ -423,7 +431,7 @@ export function parseBrief(text, post) {
     const backstop = aiDirected(post);
     if (backstop) brief = normalizeBrief({ ...brief, warning: backstop });
   }
-  if (brief.warning) brief = dropPlanted(brief, post);
+  brief = dropPlanted(brief, post);
   return { technique: true, brief };
 }
 
