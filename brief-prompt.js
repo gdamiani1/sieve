@@ -390,7 +390,8 @@ export function plantedNames(post = {}, briefText) {
 const dropPlanted = (brief, post) => {
   const names = plantedNames(post, [...brief.try, ...brief.needs].join("\n")).map(namesRe);
   if (!names.length) return brief;
-  const clear = (s) => !names.some((re) => re.test(s));
+  // NFKC, as briefMentions reads the brief: a fullwidth or long-s letter in a step still spells the name.
+  const clear = (s) => { const folded = nfkc(s); return !names.some((re) => re.test(folded)); };
   return { ...brief, try: brief.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: brief.needs.filter(clear) };
 };
 
