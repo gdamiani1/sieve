@@ -1,35 +1,36 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Sieve: daily learnings</title>
 <style>
-:root{--paper:#ece7de;--ink:#14120e;--accent:#2433f5;--muted:#6b655b;--line:#d6cebf}
+:root{color-scheme:light dark;--paper:#ece7de;--ink:#14120e;--muted:#6b655b;--accent:#2433f5;--on-accent:#fff;--card:#fff;--panel:#f6f3ee;--field:#fff;--line:#d6cebf;--field-edge:#c9c1b3;--ink-soft:#3a362f;--alert:#9a2a00;--alert-tint:#fff0ea}
+@media (prefers-color-scheme: dark){:root{--paper:#14120e;--ink:#ece7de;--muted:#a9a296;--accent:#7b87ff;--on-accent:#14120e;--card:#1d1a15;--panel:#1d1a15;--field:#252119;--line:#3a362f;--field-edge:#6b655b;--ink-soft:#c9c1b3;--alert:#ffb59b;--alert-tint:#3a1a0e}}
 body{font:15px/1.55 -apple-system,system-ui,sans-serif;background:var(--paper);color:var(--ink);margin:0}
 main{max-width:760px;margin:0 auto;padding:32px 20px 60px}
 h1{font-size:24px;margin:0 0 4px}
 .sub{color:var(--muted);margin:0 0 20px}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:22px}
-button{font:600 13px/1 -apple-system,system-ui,sans-serif;padding:9px 14px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button{font:600 13px/1 -apple-system,system-ui,sans-serif;padding:9px 14px;border-radius:7px;border:1px solid var(--field-edge);background:var(--card);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 #msg{color:var(--accent);font-size:13px;flex-basis:100%}
-#msg.alert{color:#9a2a00}
+#msg.alert{color:var(--alert)}
 #export{margin-left:auto}
-.digest{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:16px}
+.digest{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:16px}
 .digest .meta{font-size:12px;color:var(--muted);margin-bottom:6px}
 .digest h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px;color:var(--accent)}
 .digest ul{margin:0;padding-left:20px}.digest li{margin:4px 0}
 details{margin-top:28px}summary{cursor:pointer;font-weight:600}
 .post{border-top:1px solid var(--line);padding:10px 0;font-size:13.5px}
 .post a{color:var(--accent);font-weight:600;text-decoration:none}
-.post .t{color:#3a362f;white-space:pre-wrap;max-height:4.6em;overflow:hidden}
-.rlist{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin-bottom:16px}.rlist h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;color:var(--accent)}
+.post .t{color:var(--ink-soft);white-space:pre-wrap;max-height:4.6em;overflow:hidden}
+.rlist{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin-bottom:16px}.rlist h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;color:var(--accent)}
 .post .m{font-size:12px;color:var(--muted)}
 .brief .w{margin:4px 0 8px}.brief button{padding:7px 12px;font-size:12px}
-.brief .warn{margin:4px 0;padding:8px 12px;border-radius:8px;background:#fff0ea;color:#9a2a00;font-weight:600}
+.brief .warn{margin:4px 0;padding:8px 12px;border-radius:8px;background:var(--alert-tint);color:var(--alert);font-weight:600}
 .brief .note{margin-top:6px;font-size:11.5px;color:var(--ink)}
 .brief .status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.brief .fail{margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff0ea;color:#9a2a00}
-.brief .fallback{display:block;width:100%;box-sizing:border-box;height:140px;margin-top:6px;padding:6px;font:12px/1.4 ui-monospace,Menlo,monospace;color:#14120e;background:#fff;border:1px solid #c9c1b3;border-radius:8px;resize:vertical}
+.brief .fail{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--alert-tint);color:var(--alert)}
+.brief .fallback{display:block;width:100%;box-sizing:border-box;height:140px;margin-top:6px;padding:6px;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--ink);background:var(--field);border:1px solid var(--field-edge);border-radius:8px;resize:vertical}
 .empty{color:var(--muted);font-size:13.5px;margin:0}
-.sect-err{margin:4px 0;padding:8px 12px;border-radius:8px;background:#fff0ea;color:#9a2a00;font-size:13.5px}
+.sect-err{margin:4px 0;padding:8px 12px;border-radius:8px;background:var(--alert-tint);color:var(--alert);font-size:13.5px}
 </style></head><body><main>
 <h1>Daily learnings</h1>
 <p class="sub">What Sieve kept from your feeds: posts it rated worth a close read, videos it watched and briefs you asked for. These are what people posted, not verified facts.</p>

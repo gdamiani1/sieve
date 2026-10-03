@@ -1,6 +1,9 @@
 import { briefPrompt, platformName, cleanText, recentBriefs } from "./brief.js";
 import { buildExport, exportFilename } from "./export.js";
 
+// Opt-in usage stats: the worker counts these only if the user said yes. No text goes with them.
+const counted = (name, where) => { try { return chrome.runtime.sendMessage({ type: "count", name, where }).catch(() => {}); } catch {} };
+
 const $ = (id) => document.getElementById(id);
 
 function renderDigest(d) {
@@ -127,6 +130,7 @@ function copyRow(div, promptText) {
     const ok = await copyText(promptText);
     busy = false;
     if (ok) {
+      counted("prompt_copied", "digest");
       clearTimeout(timer);
       btn.textContent = "Copied";
       status.textContent = "Copied";
@@ -277,6 +281,8 @@ $("export").onclick = async () => {
     a.href = url;
     a.download = exportFilename();
     a.click();
+    // Counts a started export: the download's result isn't reported.
+    counted("library_exported");
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     $("msg").classList.remove("alert");
     $("msg").textContent = `Export started: ${a.download}.`;

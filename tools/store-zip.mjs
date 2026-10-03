@@ -2,6 +2,7 @@
 // Builds the Chrome Web Store package from committed files, never from the working folder.
 //   node tools/store-zip.mjs              -> ~/Downloads/sieve-store/sieve-<version>.zip, from HEAD
 //   node tools/store-zip.mjs --ref main --out /tmp/x [--repo <extension repo>] [--force]
+//   node tools/store-zip.mjs --no-analytics   -> package with usage stats off (empty analytics-config.js)
 // The package is every file in the commit except test/, tools/, README.md and .gitignore. Before writing
 // anything it checks the package, and refuses, naming the problem, when a packaged file's name or its raw
 // bytes mention a word that must never reach the store build, when the commit has a .gitattributes file
@@ -9,12 +10,20 @@
 // ignored instead), when manifest.json uses a key store-zip doesn't check yet, or when manifest.json, an
 // HTML page or a script loads a file the package doesn't have.
 //
+// Usage stats: when the commit has analytics-config.js (empty in git on purpose), the package gets the
+// real Measurement ID and API secret from analytics-config.local.js beside the repo's files (ignored by
+// git, written by the owner). Without that file it refuses, unless --no-analytics says to ship the empty
+// one. The local file must be a regular file (not a symlink) holding exactly the two exports and
+// comments, and passes the same word check. The package gets a rebuilt copy of those two lines.
+// Errors never print the file's contents. A committed *.local.* file is refused. The zip is
+// reproducible: the swapped-in file gets the commit's time.
+//
 // The word check is a tripwire against committing the owner's personal copy by mistake, not a guarantee:
 // it reads raw bytes and paths, so a word that's encoded (say, as UTF-16), spelled with an escaped
 // character, or split across concatenated strings won't be caught.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,8 +39,8 @@ const UNCHECKED_KEYS = [
   "sandbox",
   "options_page",
 ];
-const KNOWN_FLAGS = new Set(["--repo", "--ref", "--out", "--force"]);
-const USAGE = "usage: store-zip.mjs [--repo <path>] [--ref <ref>] [--out <dir>] [--force]";
+const KNOWN_FLAGS = new Set(["--repo", "--ref", "--out", "--force", "--no-analytics"]);
+const USAGE = "usage: store-zip.mjs [--repo <path>] [--ref <ref>] [--out <dir>] [--force] [--no-analytics]";
 
 const fail = (msg) => { console.error(`store-zip: ${msg}`); process.exit(1); };
 
@@ -41,6 +50,7 @@ for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (!KNOWN_FLAGS.has(a)) fail(`unknown flag ${a}\n${USAGE}`);
   if (a === "--force") { flags.force = true; continue; }
+  if (a === "--no-analytics") { flags.noAnalytics = true; continue; }
   const v = args[i + 1];
   if (v === undefined || v.startsWith("--")) fail(`${a} needs a value\n${USAGE}`);
   flags[a.slice(2)] = v;
@@ -66,6 +76,9 @@ try {
 
 if (rawFiles.some((f) => f === ".gitattributes" || f.endsWith("/.gitattributes")))
   fail(".gitattributes in the commit: store-zip doesn't support it, because git archive would apply it after the checks");
+
+const committedLocal = rawFiles.find((f) => /\.local\./.test(f));
+if (committedLocal) fail(`${committedLocal} is committed: local files never go into the package`);
 
 // A repo-local info/attributes file is never committed, so the check above can't see it, but git
 // archive still applies it. store-zip refuses rather than silently build a package an attribute rule
@@ -117,6 +130,25 @@ for (const f of files) {
 }
 if (problems.length) fail(`refusing to build:\n  ${problems.join("\n  ")}`);
 
+let statsConfig = null;
+if (has.has("analytics-config.js") && !flags.noAnalytics) {
+  const local = join(repo, "analytics-config.local.js");
+  let st = null;
+  try { st = lstatSync(local); } catch {}
+  if (!st) fail("analytics-config.local.js is missing: write it (README, Usage stats) or pass --no-analytics to package with usage stats off");
+  if (st.isSymbolicLink()) fail("analytics-config.local.js is a symlink: store-zip only reads a regular file");
+  if (!st.isFile()) fail("analytics-config.local.js isn't a regular file");
+  let text;
+  try { text = readFileSync(local, "utf8"); } catch { fail("can't read analytics-config.local.js"); }
+  const code = text.replace(/^\uFEFF/, "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("//"));
+  const ok = code.length === 2
+    && /^export const MEASUREMENT_ID = "G-[A-Z0-9]{4,20}";$/.test(code[0])
+    && /^export const API_SECRET = "[A-Za-z0-9_-]{6,64}";$/.test(code[1]);
+  if (!ok) fail('analytics-config.local.js must hold only `export const MEASUREMENT_ID = "G-...";` and `export const API_SECRET = "...";` (comments allowed)');
+  if (FORBIDDEN.test(text)) fail("analytics-config.local.js mentions a word that must never reach the store build");
+  statsConfig = `${code.join("\n")}\n`;
+}
+
 const version = String(manifest.version ?? "");
 if (!/^\d+(\.\d+){0,3}$/.test(version)) fail(`manifest.json has no usable version (${version || "none"})`);
 mkdirSync(outDir, { recursive: true });
@@ -135,5 +167,34 @@ try {
   try { rmSync(zipTmp, { force: true }); } catch {}
   fail("git archive failed");
 }
+if (statsConfig !== null) {
+  // Adding a file with the same name replaces the archive's empty analytics-config.js entry. zip runs
+  // without ZIP/ZIPOPT from the environment, then the entry is read back and the entry count checked.
+  const over = mkdtempSync(join(tmpdir(), "sieve-stats-"));
+  let putOk = false;
+  try {
+    const staged = join(over, "analytics-config.js");
+    writeFileSync(staged, statsConfig);
+    const when = Number(git("show", "-s", "--format=%ct", sha).toString().trim());
+    utimesSync(staged, when, when);
+    const env = { ...process.env };
+    delete env.ZIP;
+    delete env.ZIPOPT;
+    execFileSync("/usr/bin/zip", ["-q", "-X", zipTmp, "analytics-config.js"], { cwd: over, env, stdio: "ignore" });
+    const back = execFileSync("unzip", ["-p", zipTmp, "analytics-config.js"], { maxBuffer: 1024 * 1024 }).toString("utf8");
+    const entries = execFileSync("unzip", ["-Z1", zipTmp], { maxBuffer: 64 * 1024 * 1024 }).toString("utf8")
+      .split("\n").filter((f) => f && !f.endsWith("/"));
+    putOk = back === statsConfig && entries.length === files.length;
+  } catch {
+    putOk = false;
+  } finally {
+    rmSync(over, { recursive: true, force: true });
+  }
+  if (!putOk) {
+    try { rmSync(zipTmp, { force: true }); } catch {}
+    fail("couldn't put analytics-config.local.js into the package");
+  }
+}
 renameSync(zipTmp, zip);
-console.log(`store-zip: ${zip} (${files.length} files from ${git("rev-parse", "--short", sha).toString().trim()})`);
+const statsNote = has.has("analytics-config.js") ? `, usage stats ${statsConfig !== null ? "on" : "off"}` : "";
+console.log(`store-zip: ${zip} (${files.length} files from ${git("rev-parse", "--short", sha).toString().trim()}${statsNote})`);
