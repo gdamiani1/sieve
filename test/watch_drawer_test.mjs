@@ -164,7 +164,7 @@ assert.match(bare.drawn(), /div\.sieve-d-brief\n {4}p\n {6}"Sieve couldn't show 
 // The brief panel (brief-panel.js) on LinkedIn and X: the line right after the warning block, and not
 // at all when the drawer asked it to leave the warning out.
 {
-  const LINE = "Left out: steps naming snapdiff and zq, because only the text aimed at AI named it. If the technique really uses it, check the source.";
+  const LINE = "Left out: steps naming snapdiff and zq, because only the text aimed at AI named them. If the technique really uses them, check the source.";
   const document = fakeDocument();
   const sandbox = { document };
   vm.runInNewContext(readFileSync(new URL("../brief-panel.js", import.meta.url), "utf8"), sandbox);

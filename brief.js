@@ -221,7 +221,8 @@ export function leftOutLine(brief) {
   const names = normalizeBrief(brief)?.leftOut || [];
   if (!names.length) return "";
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-  return `Left out: steps naming ${list}, because only the text aimed at AI named it. If the technique really uses it, check the source.`;
+  const it = names.length === 1 ? "it" : "them";
+  return `Left out: steps naming ${list}, because only the text aimed at AI named ${it}. If the technique really uses ${it}, check the source.`;
 }
 
 // Briefs from the last `days` days, newest first, each paired with its normalized brief. Skips anything

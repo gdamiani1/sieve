@@ -666,7 +666,7 @@ assert.ok(briefMarkdown(rec).endsWith("\n\n" + END_OF_BRIEF));
 
 // leftOutLine: the one line the developer sees, "" when there is nothing to say.
 {
-  const tail = ", because only the text aimed at AI named it. If the technique really uses it, check the source.";
+  const tail = ", because only the text aimed at AI named them. If the technique really uses them, check the source.";
   const L = (leftOut, warning = "AI-directed text.") => leftOutLine({ what: "W", warning, leftOut });
   assert.equal(L(["snapdiff"]), "Left out: steps naming snapdiff, because only the text aimed at AI named it. If the technique really uses it, check the source.");
   assert.equal(L(["snapdiff", "zq"]), `Left out: steps naming snapdiff and zq${tail}`);

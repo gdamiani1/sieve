@@ -223,7 +223,7 @@ assert.equal(notes.length, 0);
   await new Promise((r) => setTimeout(r, 20));
   const briefsBox = document.getElementById("briefs");
   const out = outline(briefsBox).join("\n");
-  assert.match(out, /\n {6}div\.warn\n {8}"Warning: the source contains text aimed at AI agents: AI-directed text\."\n {6}div\.note\n {8}"Left out: steps naming snapdiff and zq, because only the text aimed at AI named it\. If the technique really uses it, check the source\."\n {6}div\.w\n {8}"W1"/, "the line right after .warn, before what it is");
+  assert.match(out, /\n {6}div\.warn\n {8}"Warning: the source contains text aimed at AI agents: AI-directed text\."\n {6}div\.note\n {8}"Left out: steps naming snapdiff and zq, because only the text aimed at AI named them\. If the technique really uses them, check the source\."\n {6}div\.w\n {8}"W1"/, "the line right after .warn, before what it is");
   assert.equal(out.split("Left out:").length, 2, "only the warned brief with valid names gets the line");
 }
 
