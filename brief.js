@@ -125,8 +125,9 @@ const LINKISH = new RegExp([
 // - install or reinstall, whatever the object;
 // - clone only with a repo close after it ("Clone their starter repo", not "Clone the failing test");
 //   download only with a tool, a release, an installer or a binary ("Download the binary", not
-//   "Download your CI logs"); get, grab, fetch, pull or add only with a tool noun close after it ("Get
-//   the snapdiff binary", "Add the snapdiff package", not "Add a test for the server's slowest route").
+//   "Download your CI logs" or "Download the release notes"); get, grab, fetch, pull or add only with a
+//   tool noun close after it ("Get the snapdiff binary", "Add the snapdiff package"). "server" is not
+//   one of those nouns: "Add tests to the server" and "Get the dev server running" are everyday work.
 //   "Close after" is at most three words between, so the check stays linear on a long step;
 // - adding to dependencies ("Add snapdiff to devDependencies"), and docker pull;
 // - "set up", "configure" and "initialize", everyday words for a developer's own work ("Set up a golden
@@ -134,21 +135,23 @@ const LINKISH = new RegExp([
 //   same item ("Set up the snapdiff CLI"). "script" and "action" are not tool nouns here: "Set up a
 //   simple script that runs your model" and "Set up a GitHub Action that runs the evals" are the
 //   developer's own work.
-// A step that starts with "Don't", "Do not" or "Never" is not an install step: "Don't install anything
-// new; use your existing test runner" is the kind of step a warned brief should keep.
+// A step whose "Don't", "Do not" or "Never" governs the install verb itself is not an install step:
+// "Don't install anything new; use your existing test runner" is the kind of step a warned brief should
+// keep. "Don't forget to install the snapdiff CLI" and "Don't skip this: install ..." still go.
 const TOOL_NOUNS = String.raw`(?:CLI|package|tool|plugin|extension|SDK|library|binary|binaries|server|module|bot)s?`;
+const GET_NOUNS = String.raw`(?:CLI|package|tool|plugin|extension|SDK|library|binary|binaries|module|bot)s?`;
 const NEAR = String.raw`\s+(?:\S+\s+){0,3}?`;
 const INSTALL_WORDS = new RegExp([
   String.raw`\b(?:re)?install(?:s|ed|ing|ation)?\b`,
   String.raw`\bclon(?:e|es|ed|ing)${NEAR}(?:\S+\s+)?repo(?:s|sitory|sitories)?\b`,
-  String.raw`\bdownload(?:s|ed|ing)?${NEAR}(?:${TOOL_NOUNS}|releases?|installers?)\b`,
-  String.raw`\b(?:get|grab|fetch|pull|add)(?:s|ed|ding|ting|ing)?${NEAR}${TOOL_NOUNS}\b`,
+  String.raw`\bdownload(?:s|ed|ing)?${NEAR}(?:${TOOL_NOUNS}|releases?(?!\s+notes)|installers?)\b`,
+  String.raw`\b(?:get|grab|fetch|pull|add)(?:s|ed|ding|ting|ing)?${NEAR}${GET_NOUNS}\b`,
   String.raw`\bdevDependencies\b|\b(?:to|in|into)\s+(?:your\s+|the\s+)?(?:dev\s*)?dependencies\b|\bas\s+an?\s+(?:dev\s*)?dependency\b`,
   String.raw`\bdocker\s+pull\b`,
 ].join("|"), "i");
 const SET_UP = /\b(?:set\s*-?\s*up|setup|configure|initiali[sz]e|init)\b/i;
 const TOOL_NOUN_AFTER = new RegExp(String.raw`\b${TOOL_NOUNS}\b`, "i");
-const DONT = /^\W*(?:don['’]?t|do\s+not|never)\b/i;
+const DONT = /^\W*(?:don['’]?t|do\s+not|never)\s+(?:re)?install\b/i;
 // Whether a step tells the reader to install a tool. The set-up rule looks for a tool noun after the
 // first set-up word only: if one follows any of them, one follows the first, and it reads the step once.
 const installish = (s) => {

@@ -128,18 +128,18 @@ export function aiDirected(post = {}) {
 // those two alone never make a brief: at least one of the others has to be there too.
 const BRIEF_KEY = /(?<![\p{L}\p{N}_$])['"]?(technique|what|says|checks|needs|try|success|skill|warning)['"]?\s*:/giu;
 const CONFIG_KEYS = new Set(["needs", "checks"]);
-// "action" is not a tool noun: in a planted passage it mostly follows a verb ("take action"), and a
-// GitHub Action is named by "github", which is a stop word anyway.
-const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|binary|server|module|bot)s?`;
+// "action" counts, for "the snapdiff action"; "take action" gives "take", which is a stop word.
+const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|binary|server|module|action|bot)s?`;
 // Names inside a planted passage, only where a name sits, so ordinary words ("commit", "config",
 // "tests") never become names:
-// - the package after a fetch-and-run or install command, past any flags ("npx -y snapdiff-setup@latest");
+// - the package after a fetch-and-run or install command, past any flags ("npx -y snapdiff-setup@latest"),
+//   or after a GitHub Actions "uses:" ("uses: evilcorp/snapdiff-action@v1");
 // - a word right before a tool noun ("the snapdiff CLI");
 // - an environment variable with an underscore ("$OPENAI_API_KEY"), which is case-sensitive.
 // Each word is matched whole: the lookbehinds keep a match from starting inside a word. A flag is "-" or
 // "--" and then a word character, never "-" and then "-": with both readings of "--a" open, a long run
 // of flags that ends in no package took exponential time to fail (25 flags, 3 s).
-const AFTER_COMMAND = /(?<![\p{L}\p{N}_-])(?:npx|bunx|pnpx|uvx|pipx(?:\s+(?:install|run))?|pip3?\s+install|npm\s+(?:i|install|add)|pnpm\s+(?:i|install|add|dlx)|yarn\s+(?:add|dlx)|bun\s+(?:add|x)|brew\s+install|gem\s+install|cargo\s+(?:install|add)|go\s+(?:install|get))\s+(?:-{1,2}\w[\w-]*(?:=\S*)?\s+)*([@\p{L}\p{N}_][@\p{L}\p{N}_./:=<>~!-]*)/giu;
+const AFTER_COMMAND = /(?<![\p{L}\p{N}_-])(?:(?:npx|bunx|pnpx|uvx|pipx(?:\s+(?:install|run))?|pip3?\s+install|npm\s+(?:i|install|add)|pnpm\s+(?:i|install|add|dlx)|yarn\s+(?:add|dlx)|bun\s+(?:add|x)|brew\s+install|gem\s+install|cargo\s+(?:install|add)|go\s+(?:install|get))\s+(?:-{1,2}\w[\w-]*(?:=\S*)?\s+)*|uses:\s*)([@\p{L}\p{N}_][@\p{L}\p{N}_./:=<>~!-]*)/giu;
 const BEFORE_NOUN = new RegExp(String.raw`(?<![\p{L}\p{N}_.-])([\p{L}\p{N}][\p{L}\p{N}_.-]*)(?![\p{L}\p{N}_.-])(?=\s+${TOOL_NOUN}(?![\p{L}\p{N}_]))`, "giu");
 const ENV_VAR = /(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9](?![\p{L}\p{N}_])/gu;
 // Words that sit in a name position without naming anything a planted passage could own: articles and
@@ -147,7 +147,8 @@ const ENV_VAR = /(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9](?![\p{L}\p{
 // themselves, the platforms every developer post mentions anyway, and the everyday words for what a
 // tool does ("the review bot", "the diff tool", "the eval server"), which a developer's own steps use
 // all the time.
-const NOT_A_NAME = new Set(`a an the this that these those its it his her their our your my any some every each one other another
+const ARTICLES = `a an the this that these those its it his her their our your my any some every each one other another`;
+const NOT_A_NAME = new Set(`${ARTICLES}
 same own new official latest following above below given required recommended real actual separate small simple custom free
 open source local remote external third party command line cli sdk api mcp ai llm agent code coding dev test testing build
 helper setup set install installer init create run use cli tool tools package packages plugin plugins extension extensions
@@ -162,6 +163,9 @@ benchmark benchmarking profiler coverage mock mocks fixture fixtures release ver
 // Names are collected up to MAX_FOUND, the ones also mentioned outside the planted passages are
 // filtered out, and only then is the list cut to MAX_PLANTED. Cutting first let fifty decoy names,
 // each also mentioned in the post's own words, push the real one out.
+// Right after an install or fetch-and-run command only the articles and pronouns are left out: a
+// package called "reviewer" or "memory" is a name there ("npx reviewer", "pip install memory").
+const NOT_A_PACKAGE = new Set(ARTICLES.split(/\s+/));
 const MAX_FOUND = 500;
 const MAX_PLANTED = 50;
 
@@ -196,10 +200,12 @@ const mentioned = (lower, words, name) => {
 // with no "_" (an environment variable is matched as written), when it spells it with separators moved,
 // added or dropped: "snap-diff", "snap diff", "snap_diff_setup" all name snapdiff. The pattern puts an
 // optional "-", "_", "." or space between letters, one character each, so it can't backtrack far.
+// Either way the match has to end where a word ends, after at most a common ending or "'s"
+// ("snapdiff's", "snap-diffs"): without that, a planted "cacher" dropped "Cache results in Redis".
 const namesRe = (name) => {
   const bare = name.replace(/[-_.\s]/g, "");
   if (name.includes("_") || [...bare].length < 6) return mentionRe(name);
-  return new RegExp(`${WORD_BEFORE}(?:${escapeRe(name)}|${[...bare].map(escapeRe).join("[-_.\\s]?")})`, "iu");
+  return new RegExp(`${WORD_BEFORE}(?:${escapeRe(name)}|${[...bare].map(escapeRe).join("[-_.\\s]?")})(?:s|es|ed|ing|er|ers|['’]s)?${WORD_AFTER}`, "iu");
 };
 
 // The first index in a sorted array whose value is >= x (the array's length when none is).
@@ -209,9 +215,12 @@ const firstAtLeast = (arr, x) => {
   return lo;
 };
 
-// A paragraph that leads on to the next one: it ends in ":" ("Note to AI tools:", "Steps:"), or what's
-// left of it is short, or it points at what follows ("the steps below"). Only the first 200 characters
-// after the match are read for "below", so many matches in one long paragraph stay linear.
+// A paragraph that leads on to the next one. The match's own paragraph leads on only when it ends in
+// ":" ("Note to AI tools:") or points at what follows ("the steps below"): a short instruction ("AI
+// assistants reading this: be accurate.") must not swallow the ordinary paragraph after it. A
+// paragraph taken that way leads on again when it also ends in ":" ("Steps:") or is short (one item
+// of a list). Only the first 200 characters after the match are read for "below", so many matches in
+// one long paragraph stay linear.
 const POINTS_ON = /\b(?:below|following|follows)\b/i;
 const LEADS_ON = 80;
 const MAX_LED = 3;
@@ -223,15 +232,17 @@ const MAX_LED = 3;
 // - a brief-shaped JSON object. One pass with a stack pairs every "{" with its "}"; each pair that
 //   closes swallows the pairs that closed inside it, so what's left at the end is the outermost
 //   balanced objects, a stray "{" or "}" never joining anything. Inside an object, a double-quoted
-//   string is skipped (a "\" skips the next character), so "x }" in a value can't close it early; a
-//   string also ends at a line break, so one stray quote can't hide the rest of the post. Each
+//   string is skipped (a "\" skips the next character), so "x }" in a value can't close it early; so
+//   is a single-quoted one, but only where a JS value or key starts (after "{", "[", "," or ":" and
+//   any spaces), never at an apostrophe in prose ("don't"). A string also ends at a line break, so
+//   one stray quote can't hide the rest of the post. Each
 //   outermost object that holds two of Sieve's brief keys (not just "needs" and "checks") is planted.
 //   The outermost objects don't overlap, so the key count reads each character once;
 // - an AI_DIRECTED match (with aiDirected's own quoted-example exemption), from the start of the sentence
 //   it sits in (after ".", "!" or "?" and a space, or a line break) to the end of its paragraph (the
-//   next blank line, or the end of that string of the post). When the paragraph leads on (LEADS_ON,
-//   POINTS_ON, a final ":"), the passage takes the next paragraph of the same string too, and so on
-//   while each paragraph taken is itself short or ends in ":", at most MAX_LED more. A title never
+//   next blank line, or the end of that string of the post). When the paragraph leads on (POINTS_ON or
+//   a final ":"), the passage takes the next paragraph of the same string too, and so on while each
+//   paragraph taken is itself short (LEADS_ON) or ends in ":", at most MAX_LED more. A title never
 //   reaches into the text, nor one thread post into the next. Paragraphs are found once, and each
 //   match finds its own by binary search, so a long post with thousands of matches stays fast.
 // A name counts only when it appears nowhere outside the planted passages, as a whole word with any
@@ -244,14 +255,18 @@ export function plantedNames(post = {}) {
   // brief-shaped JSON
   const open = [];
   const outer = [];
-  let inString = false;
+  let quote = ""; // the quote mark of the string we're in, or ""
+  let last = ""; // the last character outside a string that isn't a space
   for (let i = 0; i < visible.length; i++) {
     const c = visible[i];
-    if (inString) {
+    if (quote) {
       if (c === "\\" && visible[i + 1] !== "\n") i++;
-      else if (c === '"' || c === "\n") inString = false;
-    } else if (c === '"') inString = open.length > 0;
-    else if (c === "{") open.push(i);
+      else if (c === quote || c === "\n") quote = "";
+      continue;
+    }
+    if (open.length && (c === '"' || (c === "'" && last && "{[,:".includes(last)))) { quote = c; last = c; continue; }
+    if (c !== " " && c !== "\t" && c !== "\n" && c !== "\r") last = c;
+    if (c === "{") open.push(i);
     else if (c === "}" && open.length) {
       const start = open.pop();
       while (outer.length && outer[outer.length - 1][0] > start) outer.pop();
@@ -286,7 +301,7 @@ export function plantedNames(post = {}) {
       let q = firstAtLeast(paraEnds, matchEnd);
       if (q >= paras.length) { spans.push([starts[k], visible.length]); continue; }
       let end = Math.max(paras[q][1], matchEnd);
-      let leads = paras[q][1] - matchEnd < LEADS_ON || paras[q][3] || POINTS_ON.test(visible.slice(matchEnd, Math.min(paras[q][1], matchEnd + 200)));
+      let leads = paras[q][3] || POINTS_ON.test(visible.slice(matchEnd, Math.min(paras[q][1], matchEnd + 200)));
       for (let n = 0; leads && n < MAX_LED && q + 1 < paras.length && paras[q + 1][2] === paras[q][2]; n++) {
         q++;
         end = paras[q][1];
@@ -311,9 +326,9 @@ export function plantedNames(post = {}) {
   const rest = outside.join("\n");
   // names in name positions inside the planted text
   const found = new Set();
-  const add = (n) => {
+  const add = (n, stop = NOT_A_NAME) => {
     const name = n.toLowerCase().replace(/[.:/-]+$/, "");
-    if (name.length >= 3 && name.length <= 64 && /^\p{L}/u.test(name) && !NOT_A_NAME.has(name)) found.add(name);
+    if (name.length >= 3 && name.length <= 64 && /^\p{L}/u.test(name) && !stop.has(name)) found.add(name);
   };
   for (const [s, e] of merged) {
     const planted = visible.slice(s, e);
@@ -321,7 +336,7 @@ export function plantedNames(post = {}) {
       // the package's own name: no scope or path (take what follows the last "/"), no version (cut at
       // "@", "=", "<", ">", "~" or "!" after the first character), and its first part before "-" or "_"
       const full = m[1].split("/").pop().replace(/(?<=.)[@=<>~!].*$/, "").replace(/^@/, "");
-      add(full);
+      add(full, NOT_A_PACKAGE);
       const head = full.split(/[-_]/)[0];
       if (head !== full && /^\p{L}{3,}$/u.test(head)) add(head);
     }
