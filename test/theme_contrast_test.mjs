@@ -61,7 +61,7 @@ for (const bg of ["card", "panel", "paper"]) {
   assert.ok(c >= 3, `dark: field-edge on ${bg} is ${c.toFixed(2)}, under 3`);
 }
 
-const COLOUR = /(?<!&)#[0-9a-f]{3}(?:[0-9a-f]{3})?(?:[0-9a-f]{2})?\b|\b(?:rgba?|hsla?)\(|\b(?:white|black)\b/gi;
+const COLOUR = /(?<!&)#[0-9a-f]{3}(?:[0-9a-f]{3})?(?:[0-9a-f]{2})?\b|\b(?:rgba?|hsla?)\(|\b(?:white|black)\b(?!-)/gi;
 
 for (const page of PAGES) {
   const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
