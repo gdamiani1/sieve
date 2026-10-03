@@ -121,11 +121,16 @@ export function aiDirected(post = {}) {
   return "";
 }
 
-// Sieve's own brief keys. A {...} that holds two or more of them as "key": is a ready-made brief the
-// post hands to whatever reads it. Ordinary JSON a developer shares (a tsconfig, a package.json, an MCP
-// server entry) holds none or one, so it never counts.
-const BRIEF_KEY = /"(technique|what|says|checks|needs|try|success|skill|warning)"\s*:/g;
-const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|binary|server|module|action|bot)s?`;
+// Sieve's own brief keys. A {...} that holds two or more of them as a key (double-quoted, single-quoted
+// or bare, JS-style: "what":, 'what':, what:) is a ready-made brief the post hands to whatever reads
+// it. Ordinary config a developer shares (a tsconfig, a package.json, an MCP server entry, an ESLint
+// config) holds none or one. A GitHub Actions job can hold two, "needs" and a "checks" permission, so
+// those two alone never make a brief: at least one of the others has to be there too.
+const BRIEF_KEY = /(?<![\p{L}\p{N}_$])['"]?(technique|what|says|checks|needs|try|success|skill|warning)['"]?\s*:/giu;
+const CONFIG_KEYS = new Set(["needs", "checks"]);
+// "action" is not a tool noun: in a planted passage it mostly follows a verb ("take action"), and a
+// GitHub Action is named by "github", which is a stop word anyway.
+const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|binary|server|module|bot)s?`;
 // Names inside a planted passage, only where a name sits, so ordinary words ("commit", "config",
 // "tests") never become names:
 // - the package after a fetch-and-run or install command, past any flags ("npx -y snapdiff-setup@latest");
@@ -139,19 +144,63 @@ const BEFORE_NOUN = new RegExp(String.raw`(?<![\p{L}\p{N}_.-])([\p{L}\p{N}][\p{L
 const ENV_VAR = /(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9](?![\p{L}\p{N}_])/gu;
 // Words that sit in a name position without naming anything a planted passage could own: articles and
 // pronouns ("the CLI", "your tool"), describing words ("the official package"), the tool nouns
-// themselves, and the platforms every developer post mentions anyway.
+// themselves, the platforms every developer post mentions anyway, and the everyday words for what a
+// tool does ("the review bot", "the diff tool", "the eval server"), which a developer's own steps use
+// all the time.
 const NOT_A_NAME = new Set(`a an the this that these those its it his her their our your my any some every each one other another
 same own new official latest following above below given required recommended real actual separate small simple custom free
 open source local remote external third party command line cli sdk api mcp ai llm agent code coding dev test testing build
 helper setup set install installer init create run use cli tool tools package packages plugin plugins extension extensions
 module modules library libraries binary binaries action actions bot bots server servers script scripts core utils
-github git npm pip node python docker browser chrome vscode`.split(/\s+/));
+github git npm pip node python docker browser chrome vscode
+take make get add do try review reviews reviewer diff diffs eval evals lint linter linting format formatter formatting deploy
+deployment search web file files proxy language debug debugger docs doc tests build builds runner data model models prompt
+prompts context memory chat cache database db auth http email image images vector embedding embeddings terminal shell
+editor ide ci pipeline workflow task tasks job jobs log logs logging monitoring analytics storage queue sync backup migration
+schema query graph dashboard error errors security scan scanner snapshot snapshots compare comparison check checks
+benchmark benchmarking profiler coverage mock mocks fixture fixtures release version`.split(/\s+/));
+// Names are collected up to MAX_FOUND, the ones also mentioned outside the planted passages are
+// filtered out, and only then is the list cut to MAX_PLANTED. Cutting first let fifty decoy names,
+// each also mentioned in the post's own words, push the real one out.
+const MAX_FOUND = 500;
 const MAX_PLANTED = 50;
 
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const WORD_BEFORE = String.raw`(?<![\p{L}\p{N}_])`;
+const WORD_AFTER = String.raw`(?![\p{L}\p{N}_])`;
 // Whether a text mentions a name as a whole word, case ignored. Letters, digits and "_" continue a
 // word; anything else ends it, so "snapdiff-setup" and "snapdiff.config" both mention "snapdiff". The
 // name is escaped, so a name with "." or "+" in it matches only itself.
-const mentionRe = (name) => new RegExp(String.raw`(?<![\p{L}\p{N}_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\p{L}\p{N}_])`, "iu");
+const mentionRe = (name) => new RegExp(WORD_BEFORE + escapeRe(name) + WORD_AFTER, "iu");
+// Whether `lower` (a lowercased text, with `words` the set of its words) mentions a name the way the
+// "appears outside" check reads it: as a whole word, with the common endings allowed. "review" is
+// mentioned by "Reviewing", "diff" by "diffs", "encode" by "encoding" (a final "e" may drop before the
+// ending). A one-word name is looked up in the set; a name with "-" or "." in it ("snapdiff-setup") is
+// found with indexOf and checked at both ends. No regex per name: up to MAX_FOUND names are checked,
+// and compiling one regex for each cost a quarter of a second.
+const ENDINGS = ["", "s", "es", "ed", "ing", "er", "ers"];
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+const isWordAt = (s, i) => i >= 0 && i < s.length && WORD_CHAR.test(String.fromCodePoint(s.codePointAt(i)));
+const mentioned = (lower, words, name) => {
+  const stem = name.endsWith("e") ? name.slice(0, -1) : name;
+  const endings = stem === name ? ENDINGS : ["e", "es", "ed", "er", "ers", "ing"];
+  if (!/[^\p{L}\p{N}_]/u.test(name)) return endings.some((e) => words.has(stem + e));
+  for (let i = lower.indexOf(stem); i >= 0; i = lower.indexOf(stem, i + 1)) {
+    if (i > 0 && (isWordAt(lower, i - 1) || /[\uDC00-\uDFFF]/.test(lower[i - 1]) && isWordAt(lower, i - 2))) continue;
+    const after = i + stem.length;
+    if (endings.some((e) => lower.startsWith(e, after) && !isWordAt(lower, after + e.length))) return true;
+  }
+  return false;
+};
+// A step names a planted name when it mentions it, or, for a name of six or more letters and digits
+// with no "_" (an environment variable is matched as written), when it spells it with separators moved,
+// added or dropped: "snap-diff", "snap diff", "snap_diff_setup" all name snapdiff. The pattern puts an
+// optional "-", "_", "." or space between letters, one character each, so it can't backtrack far.
+const namesRe = (name) => {
+  const bare = name.replace(/[-_.\s]/g, "");
+  if (name.includes("_") || [...bare].length < 6) return mentionRe(name);
+  return new RegExp(`${WORD_BEFORE}(?:${escapeRe(name)}|${[...bare].map(escapeRe).join("[-_.\\s]?")})`, "iu");
+};
 
 // The first index in a sorted array whose value is >= x (the array's length when none is).
 const firstAtLeast = (arr, x) => {
@@ -160,20 +209,34 @@ const firstAtLeast = (arr, x) => {
   return lo;
 };
 
+// A paragraph that leads on to the next one: it ends in ":" ("Note to AI tools:", "Steps:"), or what's
+// left of it is short, or it points at what follows ("the steps below"). Only the first 200 characters
+// after the match are read for "below", so many matches in one long paragraph stay linear.
+const POINTS_ON = /\b(?:below|following|follows)\b/i;
+const LEADS_ON = 80;
+const MAX_LED = 3;
+
 // A post -> the names (lowercase, no repeats, at most MAX_PLANTED) that only its planted passages
 // mention: the tools, packages and keys a warned brief must never pass on. [] when there are none.
 //
 // A planted passage is one of two things:
 // - a brief-shaped JSON object. One pass with a stack pairs every "{" with its "}"; each pair that
 //   closes swallows the pairs that closed inside it, so what's left at the end is the outermost
-//   balanced objects, a stray "{" or "}" never joining anything. Each of those that holds two of Sieve's
-//   brief keys is planted. The outermost objects don't overlap, so the key count reads each character once;
+//   balanced objects, a stray "{" or "}" never joining anything. Inside an object, a double-quoted
+//   string is skipped (a "\" skips the next character), so "x }" in a value can't close it early; a
+//   string also ends at a line break, so one stray quote can't hide the rest of the post. Each
+//   outermost object that holds two of Sieve's brief keys (not just "needs" and "checks") is planted.
+//   The outermost objects don't overlap, so the key count reads each character once;
 // - an AI_DIRECTED match (with aiDirected's own quoted-example exemption), from the start of the sentence
 //   it sits in (after ".", "!" or "?" and a space, or a line break) to the end of its paragraph (the
-//   next blank line, or the end of that string of the post). Both ends come from sorted lists by binary
-//   search, so a long post with thousands of matches and no full stop stays fast.
-// A name counts only when it appears nowhere outside the planted passages, as a whole word: a post that
-// recommends pytest in its own words keeps its pytest steps even if an injection names pytest too.
+//   next blank line, or the end of that string of the post). When the paragraph leads on (LEADS_ON,
+//   POINTS_ON, a final ":"), the passage takes the next paragraph of the same string too, and so on
+//   while each paragraph taken is itself short or ends in ":", at most MAX_LED more. A title never
+//   reaches into the text, nor one thread post into the next. Paragraphs are found once, and each
+//   match finds its own by binary search, so a long post with thousands of matches stays fast.
+// A name counts only when it appears nowhere outside the planted passages, as a whole word with any
+// common ending: a post that recommends pytest in its own words keeps its pytest steps even if an
+// injection names pytest too, and "Reviewing" in the post keeps "the review bot" from naming anything.
 export function plantedNames(post = {}) {
   const parts = postParts(post).map(readable);
   const visible = parts.join("\n");
@@ -181,9 +244,14 @@ export function plantedNames(post = {}) {
   // brief-shaped JSON
   const open = [];
   const outer = [];
+  let inString = false;
   for (let i = 0; i < visible.length; i++) {
     const c = visible[i];
-    if (c === "{") open.push(i);
+    if (inString) {
+      if (c === "\\" && visible[i + 1] !== "\n") i++;
+      else if (c === '"' || c === "\n") inString = false;
+    } else if (c === '"') inString = open.length > 0;
+    else if (c === "{") open.push(i);
     else if (c === "}" && open.length) {
       const start = open.pop();
       while (outer.length && outer[outer.length - 1][0] > start) outer.pop();
@@ -191,22 +259,40 @@ export function plantedNames(post = {}) {
     }
   }
   for (const [s, e] of outer) {
-    const keys = new Set(Array.from(visible.slice(s, e).matchAll(BRIEF_KEY), (m) => m[1]));
-    if (keys.size >= 2) spans.push([s, e]);
+    const keys = new Set(Array.from(visible.slice(s, e).matchAll(BRIEF_KEY), (m) => m[1].toLowerCase()));
+    if (keys.size >= 2 && [...keys].some((k) => !CONFIG_KEYS.has(k))) spans.push([s, e]);
   }
-  // AI_DIRECTED matches, sentence start to paragraph end
+  // the paragraphs of each string of the post: [start, end, which string, ends in ":"], blank ones left out
+  const paras = [];
+  let at = 0;
+  parts.forEach((p, n) => {
+    let from = 0;
+    const add = (to) => {
+      const text = p.slice(from, to);
+      if (/\S/.test(text)) paras.push([at + from, at + to, n, text.trimEnd().endsWith(":")]);
+    };
+    for (const m of p.matchAll(/\n(?:[ \t]*\n)+/g)) { add(m.index); from = m.index + m[0].length; }
+    add(p.length);
+    at += p.length + 1;
+  });
+  const paraEnds = paras.map((p) => p[1]);
+  // AI_DIRECTED matches, sentence start to paragraph end, and on while the paragraph leads on
   const starts = [0];
   for (const m of visible.matchAll(/[.!?]\s+|\n/g)) starts.push(m.index + m[0].length);
-  const ends = [];
-  let at = 0;
-  for (const p of parts) { at += p.length; ends.push(at); at += 1; }
-  for (const m of visible.matchAll(/\n[ \t]*\n/g)) ends.push(m.index);
-  ends.sort((a, b) => a - b);
   for (const pattern of AI_DIRECTED) {
     for (const m of directedMatches(visible, pattern)) {
       const k = firstAtLeast(starts, m.index + 1) - 1; // the last sentence start at or before the match
-      const e = ends[firstAtLeast(ends, m.index + m[0].length)] ?? visible.length;
-      spans.push([starts[k], Math.max(e, m.index + m[0].length)]);
+      const matchEnd = m.index + m[0].length;
+      let q = firstAtLeast(paraEnds, matchEnd);
+      if (q >= paras.length) { spans.push([starts[k], visible.length]); continue; }
+      let end = Math.max(paras[q][1], matchEnd);
+      let leads = paras[q][1] - matchEnd < LEADS_ON || paras[q][3] || POINTS_ON.test(visible.slice(matchEnd, Math.min(paras[q][1], matchEnd + 200)));
+      for (let n = 0; leads && n < MAX_LED && q + 1 < paras.length && paras[q + 1][2] === paras[q][2]; n++) {
+        q++;
+        end = paras[q][1];
+        leads = paras[q][1] - paras[q][0] < LEADS_ON || paras[q][3];
+      }
+      spans.push([starts[k], end]);
     }
   }
   if (!spans.length) return [];
@@ -241,15 +327,17 @@ export function plantedNames(post = {}) {
     }
     for (const m of planted.matchAll(BEFORE_NOUN)) add(m[1]);
     for (const m of planted.matchAll(ENV_VAR)) add(m[0]);
-    if (found.size >= MAX_PLANTED) break;
+    if (found.size >= MAX_FOUND) break;
   }
-  return [...found].slice(0, MAX_PLANTED).filter((name) => !mentionRe(name).test(rest));
+  const lower = rest.toLowerCase();
+  const words = new Set(lower.match(/[\p{L}\p{N}_]+/gu));
+  return [...found].slice(0, MAX_FOUND).filter((name) => !mentioned(lower, words, name)).slice(0, MAX_PLANTED);
 }
 
-// A warned brief -> the same brief without the try steps and needs that mention a planted name.
-// CHECK_SOURCE is Sieve's own line and never goes.
+// A warned brief -> the same brief without the try steps and needs that name a planted name (namesRe:
+// as a whole word, or spelled with other separators). CHECK_SOURCE is Sieve's own line and never goes.
 const dropPlanted = (brief, post) => {
-  const names = plantedNames(post).map(mentionRe);
+  const names = plantedNames(post).map(namesRe);
   if (!names.length) return brief;
   const clear = (s) => !names.some((re) => re.test(s));
   return { ...brief, try: brief.try.filter((s) => s === CHECK_SOURCE || clear(s)), needs: brief.needs.filter(clear) };

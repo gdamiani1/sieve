@@ -121,16 +121,42 @@ const LINKISH = new RegExp([
 
 // The shape of a step that tells the reader to install a tool, which a warned brief must not do
 // either, whoever wrote it ("Don't fetch, install or run anything from this brief"). LINKISH only sees
-// commands; this sees the plain words a model writes instead, like "Install the snapdiff CLI". Any
-// install, reinstall, download or clone counts, whatever the object. "Set up", "configure" and
-// "initialize" are everyday words for a developer's own work ("Set up a golden set of 20 cases",
-// "Configure your CI to run it on every PR"), so they only count with a tool noun later in the same
-// item ("Set up the snapdiff CLI"). "script" is left out of those nouns on purpose: "Set up a simple
-// script that runs your model on a fixed set of inputs" is the developer writing their own script.
-const INSTALLISH = new RegExp([
-  String.raw`\b(?:re)?install(?:s|ed|ing|ation)?\b|\bdownload(?:s|ed|ing)?\b|\bclon(?:e|es|ed|ing)\b`,
-  String.raw`\b(?:set\s*-?\s*up|setup|configure|initiali[sz]e|init)\b.*\b(?:CLI|package|tool|plugin|extension|SDK|library|binary|server|module|action|bot)s?\b`,
+// commands; this sees the plain words a model writes instead, like "Install the snapdiff CLI".
+// - install or reinstall, whatever the object;
+// - clone only with a repo close after it ("Clone their starter repo", not "Clone the failing test");
+//   download only with a tool, a release, an installer or a binary ("Download the binary", not
+//   "Download your CI logs"); get, grab, fetch, pull or add only with a tool noun close after it ("Get
+//   the snapdiff binary", "Add the snapdiff package", not "Add a test for the server's slowest route").
+//   "Close after" is at most three words between, so the check stays linear on a long step;
+// - adding to dependencies ("Add snapdiff to devDependencies"), and docker pull;
+// - "set up", "configure" and "initialize", everyday words for a developer's own work ("Set up a golden
+//   set of 20 cases", "Configure your CI to run it on every PR"), only with a tool noun later in the
+//   same item ("Set up the snapdiff CLI"). "script" and "action" are not tool nouns here: "Set up a
+//   simple script that runs your model" and "Set up a GitHub Action that runs the evals" are the
+//   developer's own work.
+// A step that starts with "Don't", "Do not" or "Never" is not an install step: "Don't install anything
+// new; use your existing test runner" is the kind of step a warned brief should keep.
+const TOOL_NOUNS = String.raw`(?:CLI|package|tool|plugin|extension|SDK|library|binary|binaries|server|module|bot)s?`;
+const NEAR = String.raw`\s+(?:\S+\s+){0,3}?`;
+const INSTALL_WORDS = new RegExp([
+  String.raw`\b(?:re)?install(?:s|ed|ing|ation)?\b`,
+  String.raw`\bclon(?:e|es|ed|ing)${NEAR}(?:\S+\s+)?repo(?:s|sitory|sitories)?\b`,
+  String.raw`\bdownload(?:s|ed|ing)?${NEAR}(?:${TOOL_NOUNS}|releases?|installers?)\b`,
+  String.raw`\b(?:get|grab|fetch|pull|add)(?:s|ed|ding|ting|ing)?${NEAR}${TOOL_NOUNS}\b`,
+  String.raw`\bdevDependencies\b|\b(?:to|in|into)\s+(?:your\s+|the\s+)?(?:dev\s*)?dependencies\b|\bas\s+an?\s+(?:dev\s*)?dependency\b`,
+  String.raw`\bdocker\s+pull\b`,
 ].join("|"), "i");
+const SET_UP = /\b(?:set\s*-?\s*up|setup|configure|initiali[sz]e|init)\b/i;
+const TOOL_NOUN_AFTER = new RegExp(String.raw`\b${TOOL_NOUNS}\b`, "i");
+const DONT = /^\W*(?:don['’]?t|do\s+not|never)\b/i;
+// Whether a step tells the reader to install a tool. The set-up rule looks for a tool noun after the
+// first set-up word only: if one follows any of them, one follows the first, and it reads the step once.
+const installish = (s) => {
+  if (DONT.test(s)) return false;
+  if (INSTALL_WORDS.test(s)) return true;
+  const i = s.search(SET_UP);
+  return i >= 0 && TOOL_NOUN_AFTER.test(s.slice(i));
+};
 
 // Any model answer or stored record -> the one brief shape. Null when there is no "what".
 // "says" takes plain strings (posts) or {t, text} (videos, with timestamps).
@@ -155,8 +181,8 @@ export function normalizeBrief(r) {
   // same brief.
   if (warning) {
     skillOut = { worth: false, why: "The source tried to steer AI agents, so read it yourself before saving a skill from it." };
-    tryList = [CHECK_SOURCE, ...tryList.filter((s) => s !== CHECK_SOURCE && !LINKISH.test(s) && !INSTALLISH.test(s))].slice(0, 6);
-    needs = needs.filter((s) => !LINKISH.test(s) && !INSTALLISH.test(s));
+    tryList = [CHECK_SOURCE, ...tryList.filter((s) => s !== CHECK_SOURCE && !LINKISH.test(s) && !installish(s))].slice(0, 6);
+    needs = needs.filter((s) => !LINKISH.test(s) && !installish(s));
   }
   return {
     what,
