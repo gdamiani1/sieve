@@ -172,6 +172,7 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/x_brief_worker_test.mjs # X briefs through the real worker: pictures, the vision model, threads (offline)
     node test/x_page_test.mjs       # x.js on a fake X page: threads, pictures, Watch it for me (offline)
     node test/recycled_tiles_test.mjs # a YouTube tile or X post element reused for another video or post: the old verdict goes, the new one is scored (offline)
+    node test/theme_contrast_test.mjs # the popup, settings and daily learnings pages' light and dark colours and their contrast (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring with Jev through OpenRouter (PREFS=file.json to score as someone else)
     node test/reddit_test.mjs       # Reddit scoring with Jev through OpenRouter
@@ -216,7 +217,7 @@ instead of high).
 - `youtube-text.js`: what a YouTube tile says beyond its title (description lines, chapters, YouTube's summary),
   and the start of a video's description from YouTube's player endpoint when the tile shows none.
 - `watch-drawer.js`: the "watched for you" drawer for Watch it for me, shared by every page that offers it.
-- `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page.
+- `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page. All three follow Chrome's light or dark setting: their colours are tokens on `:root`, with dark values under `prefers-color-scheme: dark`.
 
 ## Building the store package
 

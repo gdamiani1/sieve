@@ -1,16 +1,18 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Sieve</title>
 <style>
-body{font:13.5px/1.45 -apple-system,system-ui,sans-serif;background:#ece7de;color:#14120e;margin:0;padding:16px;width:300px}
+:root{color-scheme:light dark;--paper:#ece7de;--ink:#14120e;--muted:#6b655b;--accent:#2433f5;--on-accent:#fff;--card:#fff;--panel:#f6f3ee;--field:#fff;--line:#d6cebf;--field-edge:#c9c1b3;--ink-soft:#3a362f;--alert:#9a2a00;--alert-tint:#fff0ea}
+@media (prefers-color-scheme: dark){:root{--paper:#14120e;--ink:#ece7de;--muted:#a9a296;--accent:#7b87ff;--on-accent:#14120e;--card:#1d1a15;--panel:#1d1a15;--field:#252119;--line:#3a362f;--field-edge:#6b655b;--ink-soft:#c9c1b3;--alert:#ffb59b;--alert-tint:#3a1a0e}}
+body{font:13.5px/1.45 -apple-system,system-ui,sans-serif;background:var(--paper);color:var(--ink);margin:0;padding:16px;width:300px}
 h1{font-size:17px;margin:0 0 10px;display:flex;align-items:center;gap:8px}h1 img{width:22px;height:22px}
 label{display:flex;gap:8px;align-items:center;margin:4px 0}
 table{margin:12px 0;border-collapse:collapse;width:100%}td{padding:2px 0}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
-.btns{display:flex;gap:8px}button{flex:1;padding:8px;border:0;border-radius:7px;background:#2433f5;color:#fff;font-weight:600;cursor:pointer}
-button.alt{background:#fff;color:#14120e;border:1px solid #c9c1b3}
-.small{margin-top:8px;font-size:12px;color:#6b655b;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+.btns{display:flex;gap:8px}button{flex:1;padding:8px;border:0;border-radius:7px;background:var(--accent);color:var(--on-accent);font-weight:600;cursor:pointer}
+button.alt{background:var(--card);color:var(--ink);border:1px solid var(--field-edge)}
+.small{margin-top:8px;font-size:12px;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 button:disabled{opacity:.6;cursor:default}
-.ask{background:#f6f3ee;border:1px solid #c9c1b3;border-radius:9px;padding:10px 12px;margin:0 0 12px}
-.ask .err{margin:8px 0 0;color:#b00020}.thanks{margin:0 0 12px;font-size:12.5px;color:#6b655b}.ask .err:empty,.thanks:empty{display:none}
+.ask{background:var(--panel);border:1px solid var(--field-edge);border-radius:9px;padding:10px 12px;margin:0 0 12px}
+.ask .err{margin:8px 0 0;color:var(--alert)}.thanks{margin:0 0 12px;font-size:12.5px;color:var(--muted)}.ask .err:empty,.thanks:empty{display:none}
 .ask h2{font-size:13.5px;margin:0 0 4px}.ask p{margin:0 0 10px;font-size:12.5px}
 </style></head><body>
 <h1><img src="icons/icon48.png" alt="">Sieve</h1>

@@ -1,23 +1,25 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Sieve settings</title>
 <style>
-:root{--paper:#ece7de;--ink:#14120e;--accent:#2433f5;--muted:#6b655b;--line:#d6cebf}
+:root{color-scheme:light dark;--paper:#ece7de;--ink:#14120e;--muted:#6b655b;--accent:#2433f5;--on-accent:#fff;--card:#fff;--panel:#f6f3ee;--field:#fff;--line:#d6cebf;--field-edge:#c9c1b3;--ink-soft:#3a362f;--alert:#9a2a00;--alert-tint:#fff0ea}
+@media (prefers-color-scheme: dark){:root{--paper:#14120e;--ink:#ece7de;--muted:#a9a296;--accent:#7b87ff;--on-accent:#14120e;--card:#1d1a15;--panel:#1d1a15;--field:#252119;--line:#3a362f;--field-edge:#6b655b;--ink-soft:#c9c1b3;--alert:#ffb59b;--alert-tint:#3a1a0e}}
 body{font:14px/1.5 -apple-system,system-ui,sans-serif;background:var(--paper);color:var(--ink);margin:0}
 main{max-width:760px;margin:0 auto;padding:32px 20px 80px}
 h1{font-size:26px;margin:0}
 .lede{color:var(--muted);margin:4px 0 24px}
-section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px}
 h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 4px}
 .hint{color:var(--muted);font-size:13px;margin:0 0 12px}
 label.f{display:block;font-weight:600;margin:14px 0 4px}
-input[type=text],input[type=password],input[type=number],textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #c9c1b3;border-radius:7px;font:inherit;background:#fff}
+input[type=text],input[type=password],input[type=number],textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--field-edge);border-radius:7px;font:inherit;background:var(--field);color:var(--ink)}
 textarea{font-size:13px;line-height:1.45;resize:vertical}
 input[type=number]{width:90px}
+input[type=time]{padding:6px 8px;border:1px solid var(--field-edge);border-radius:7px;background:var(--field);color:var(--ink)}
 .checks{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
 .checks label,.inline label{display:flex;gap:8px;align-items:center;font-weight:400}
 .inline{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
 .range{display:flex;align-items:center;gap:12px}.range input{flex:1}.range output{width:40px;font-variant-numeric:tabular-nums;font-weight:600}
-button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);color:#fff;font:600 13px/1 -apple-system,system-ui,sans-serif;cursor:pointer}
+button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);color:var(--on-accent);font:600 13px/1 -apple-system,system-ui,sans-serif;cursor:pointer}
 .bar{position:sticky;bottom:0;background:var(--paper);padding:14px 0;display:flex;gap:12px;align-items:center;border-top:1px solid var(--line)}
 .msg{font-size:13px;color:var(--accent)}
 details{margin-top:14px}
@@ -117,7 +119,7 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
 
 <section>
 <h2>Daily reminder</h2>
-<div class="inline"><label><input id="remind" type="checkbox"> Remind me at</label><input id="rtime" type="time" style="padding:6px 8px;border:1px solid #c9c1b3;border-radius:7px"></div>
+<div class="inline"><label><input id="remind" type="checkbox"> Remind me at</label><input id="rtime" type="time"></div>
 </section>
 
 <section id="statsSection" hidden>
@@ -125,7 +127,7 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
 <div class="inline"><label><input id="statsOn" type="checkbox"> <strong>Send daily usage counts to the developer, through Google Analytics</strong></label></div>
 <p class="hint" style="margin-top:8px">Counts only: how many posts were scored, saved, briefed, copied as prompts, watched, put in digests and exported each day, per platform, with the extension version and which scorer answered. Never post text, links, names, titles, facts, keys or anything you type. Sent once a day, only for days you used Sieve, with a random ID made on this computer. Turning it off stops sending and deletes the ID and any counts not yet sent.</p>
 <p class="hint" style="margin:0 0 8px;font-size:12.5px">Saved as soon as you change it.</p>
-<p class="status" id="statsMsg" role="status" style="color:#b00020;margin:8px 0 0"></p>
+<p class="status" id="statsMsg" role="status" style="color:var(--alert);margin:8px 0 0"></p>
 <p class="status" id="statsCode" hidden></p>
 </section>
 
