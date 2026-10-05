@@ -9,6 +9,7 @@ label{display:flex;gap:8px;align-items:center;margin:4px 0}
 table{margin:12px 0;border-collapse:collapse;width:100%}td{padding:2px 0}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .btns{display:flex;gap:8px}button{flex:1;padding:8px;border:0;border-radius:7px;background:var(--accent);color:var(--on-accent);font-weight:600;cursor:pointer}
 button.alt{background:var(--card);color:var(--ink);border:1px solid var(--field-edge)}
+.wait{margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:13px}.wait a{color:var(--accent)}
 .small{margin-top:8px;font-size:12px;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 button:disabled{opacity:.6;cursor:default}
 .ask{background:var(--panel);border:1px solid var(--field-edge);border-radius:9px;padding:10px 12px;margin:0 0 12px}
@@ -37,5 +38,6 @@ button:disabled{opacity:.6;cursor:default}
 </table>
 <div class="btns"><button id="settings" class="alt">Settings</button><button id="digest">Daily learnings</button></div>
 <button class="small" id="reset">Reset counters</button>
+<p class="wait"><a href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Sieve account is coming: join the waitlist</a></p>
 <script type="module" src="popup.js"></script>
 </body></html>

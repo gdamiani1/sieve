@@ -5,6 +5,9 @@ developers, it turns techniques worth trying into briefs your coding agent (Clau
 Codex, Cursor and others) can try in your repo. It never clicks, comments or posts for you, and never installs
 or runs anything: a brief is text you copy.
 
+A paid Sieve account is coming: no API keys to manage, and one library across Chrome and iPhone (Sieve for iPhone is
+in App Review). [Join the waitlist](https://divergada.com/sieve?ref=github). The extension stays free and open source.
+
 Scoring runs on [Jev](https://typesafe.ai), TypeSafe's decision model, reached through your OpenRouter key (or
 directly, with a TypeSafe key, if you have one and no OpenRouter key). Sieve is an independent project, not made
 by TypeSafe. Jev doesn't generate text: it picks from answers you define and returns a probability. When
