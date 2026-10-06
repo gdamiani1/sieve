@@ -260,10 +260,14 @@ for (const reason of ["offline", "server"]) {
   assert.equal($("agentShrink").hidden, true);
   assert.equal($("agentOffBtn").hidden, false);
   assert.equal($("agentDelete").hidden, false);
+  assert.equal($("agentWhere").hidden, true, "no agent address once the invite ended");
+  assert.equal($("agentHow").hidden, true, "no Claude Code line once the invite ended");
 }
 {
   const { $ } = await page({ record: on });
   assert.equal($("agentSend").hidden, false, "Send now is back once not ended");
+  assert.equal($("agentWhere").hidden, false);
+  assert.equal($("agentHow").hidden, false);
 }
 
 // While a request runs: every button in the section is disabled and a progress line shows.

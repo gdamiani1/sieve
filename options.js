@@ -179,7 +179,8 @@ function showAgent(r, had = null) {
   $("agentLine").textContent = words({ ...r, state });
   $("agentOff").hidden = on;
   $("agentOnBox").hidden = !on;
-  $("agentSend").hidden = state === "ended";
+  // Once the invite ended the agent no longer reads this library: no address or command to set it up.
+  for (const id of ["agentSend", "agentWhere", "agentHow"]) $(id).hidden = state === "ended";
   $("agentReplace").hidden = !(on && state === "other_device");
   $("agentShrink").hidden = !(on && state === "shrunk");
   // One filled button per section: when an answer button shows, Send now steps back.
