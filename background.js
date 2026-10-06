@@ -7,7 +7,7 @@ import { briefMessages, briefMessagesWithPictures, parseBrief, threadLength } fr
 import { scoreMessages, parseScore, postDirected, youtubeState } from "./score-prompt.js";
 import { scoringKey, askJev, PRICE_PER_MTOK } from "./jev.js";
 import { count, setConsent, status, startStats } from "./analytics.js";
-import { SYNC_ALARM, alarmFired, deleteAccount, isLibraryChange, libraryChanged, send as syncSend, status as syncStatus, turnOff, turnOn } from "./agent-sync-run.js";
+import { SYNC_ALARM, alarmFired, deleteAccount, failed as syncFailed, isLibraryChange, libraryChanged, send as syncSend, status as syncStatus, turnOff, turnOn, wake as syncWake } from "./agent-sync-run.js";
 
 // A stored brief record with the ready-to-copy prompt, normalized again on the way out so the panel
 // always shows what the prompt says, even for a record an older Sieve wrote. Null when it holds no brief.
@@ -499,7 +499,8 @@ const fromExtensionPage = (sender) => typeof sender?.url === "string" && sender.
 
 // Only Sieve's own settings page may turn sending to the agent on or off, send, or delete the account
 // (any query or hash on its URL is ignored). Any Sieve page may read the status, which holds no tokens.
-const fromSettings = (sender) => typeof sender?.url === "string" && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL("options.html");
+const ownPage = (sender) => sender?.id === chrome.runtime.id && fromExtensionPage(sender);
+const fromSettings = (sender) => ownPage(sender) && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL("options.html");
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === "agentSync") {
@@ -510,11 +511,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       send: () => syncSend({ force: true, allowShrink: !!msg.allowShrink, replace: !!msg.replace }),
     };
     const act = Object.hasOwn(acts, msg.do) ? acts[msg.do] : null;
-    if (msg.do === "status" ? !fromExtensionPage(sender) : !(act && fromSettings(sender))) {
+    if (msg.do === "status" ? !ownPage(sender) : !(act && fromSettings(sender))) {
       reply({ error: "Sending to your agent can only be changed from Sieve's settings." });
       return true;
     }
-    (act ? act() : Promise.resolve()).catch(() => {}).then(() => syncStatus()).then(reply, () => reply({ error: "Sieve couldn't read the agent sync status. Reload the extension and try again." }));
+    // Something unexpected while acting is recorded, so the page doesn't show the old state as if fine.
+    (act ? act() : Promise.resolve()).catch(() => syncFailed()).catch(() => {}).then(() => syncStatus()).then(reply, () => reply({ error: "Sieve couldn't read the agent sync status. Reload the extension and try again." }));
     return true;
   }
   if (msg.type === "save") {
@@ -576,6 +578,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // listener on purpose: some offline tests keep only the last onAlarm listener they're given.
 chrome.storage.onChanged.addListener((changes, area) => (isLibraryChange(changes, area) ? libraryChanged() : undefined));
 chrome.alarms.onAlarm.addListener((alarm) => (alarm?.name === SYNC_ALARM ? alarmFired() : undefined));
+// After a restart or an update, a change still waiting to be sent gets its alarm back.
+chrome.runtime.onStartup.addListener(() => syncWake());
+chrome.runtime.onInstalled.addListener(() => syncWake());
 
 // ---- daily reminder ----
 // Re-scheduled after every firing (not a fixed 24 h period) so it stays on the clock time across DST.

@@ -13,7 +13,7 @@ const post = (key, at) => ({ key, platform: "linkedin", authorName: "Jane", text
 const store = { saved: [post("d1", 3), post("d2", 2), post("d3", 1)] };
 
 // ---- chrome ----
-const listeners = { message: null, changed: [], alarm: [] };
+const listeners = { message: null, changed: [], alarm: [], wake: [] };
 const alarms = new Map();
 const alarmCreates = [];
 const permissionRemovals = [];
@@ -34,7 +34,9 @@ globalThis.chrome = {
     onChanged: { addListener: (fn) => listeners.changed.push(fn) },
   },
   runtime: {
-    onMessage: { addListener: (fn) => { listeners.message = fn; } }, onInstalled: event, onStartup: event,
+    id: "test",
+    onMessage: { addListener: (fn) => { listeners.message = fn; } },
+    onInstalled: { addListener: (fn) => listeners.wake.push(fn) }, onStartup: { addListener: (fn) => listeners.wake.push(fn) },
     getManifest: () => ({ version: "1.5.0" }), getURL: (p) => "chrome-extension://test/" + p,
   },
   alarms: {
@@ -60,7 +62,12 @@ globalThis.chrome = {
 
 // ---- Sieve's server ----
 const requests = []; // { method, path, headers, body }
+// A request held by a test waits here until the test releases it ("PUT /v1/library/chrome", "POST /token").
+const holds = new Map();
+const hold = (route) => { let release; holds.set(route, new Promise((r) => { release = r; })); return () => { holds.delete(route); release(); }; };
 const server = {
+  timeout: false, // the PUT times out (AbortSignal.timeout)
+  deleteLibrary: null, deleteAccount: null, // { status, body } instead of success
   put: null, // null: stored/unchanged; or { status, body } for every PUT while set
   token: 200, // the status /token answers a refresh with
   down: false, // every request throws, as with no network
@@ -78,7 +85,8 @@ async function serve(url, init) {
   assert.equal(u.origin, SERVER, "agent sync talks only to Sieve's server");
   const method = init.method || "GET";
   const headers = Object.fromEntries(Object.entries(init.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
-  requests.push({ method, path: u.pathname, headers, body: init.body });
+  requests.push({ method, path: u.pathname, headers, body: init.body, signal: init.signal instanceof AbortSignal });
+  if (holds.has(`${method} ${u.pathname}`)) await holds.get(`${method} ${u.pathname}`);
   await new Promise((r) => setTimeout(r, 2)); // a real answer takes a moment, so two requests can overlap
   if (server.down) throw new TypeError("Failed to fetch");
   if (u.pathname === "/token") {
@@ -107,15 +115,16 @@ async function serve(url, init) {
   if (route === "GET /v1/account") return answer(200, { email: "dev@example.com", method: "google", plan: "trial", trialEndsAt: "2026-11-10T23:59:59.999Z" });
   if (route === "PUT /v1/library/chrome") {
     assert.equal(headers["content-type"], "application/json");
+    if (server.timeout) throw new DOMException("The operation timed out.", "TimeoutError");
     if (server.put) return answer(server.put.status, server.put.body);
     const items = JSON.parse(init.body).items;
     const result = init.body === server.lastStored ? "unchanged" : "stored";
     server.lastStored = init.body;
     return answer(200, { result, items: items.length, boards: 0, at: "2026-10-06T10:00:00.000Z" });
   }
-  if (route === "DELETE /v1/library/chrome") return answer(200, { result: "deleted" });
+  if (route === "DELETE /v1/library/chrome") return server.deleteLibrary ? answer(server.deleteLibrary.status, server.deleteLibrary.body) : answer(200, { result: "deleted" });
   if (route === "POST /v1/account/sign-out") return answer(200, { ok: true });
-  if (route === "DELETE /v1/account") return answer(200, { ok: true });
+  if (route === "DELETE /v1/account") return server.deleteAccount ? answer(server.deleteAccount.status, server.deleteAccount.body) : answer(200, { result: "deleted" });
   return answer(404);
 }
 
@@ -123,8 +132,11 @@ const src = fileURLToPath(new URL("..", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "sieve-agent-sync-"));
 for (const f of readdirSync(src)) if (f.endsWith(".js")) copyFileSync(join(src, f), join(dir, f));
 await import(pathToFileURL(join(dir, "background.js")).href);
+// The same module instance background.js uses, for the checks that need its insides.
+const run = await import(pathToFileURL(join(dir, "agent-sync-run.js")).href);
 
-const SETTINGS = { url: "chrome-extension://test/options.html" };
+const SETTINGS = { id: "test", url: "chrome-extension://test/options.html" };
+const POPUP = { id: "test", url: "chrome-extension://test/popup.html" };
 const ask = (msg, sender = SETTINGS) => new Promise((resolve) => { listeners.message(msg, sender, resolve); });
 const sync = (extra = {}, sender) => ask({ type: "agentSync", ...extra }, sender);
 const changed = (changes) => Promise.all(listeners.changed.map((fn) => fn(changes, "local")));
@@ -132,11 +144,16 @@ const fire = (name) => { alarms.delete(name); return Promise.all(listeners.alarm
 const puts = () => requests.filter((r) => r.method === "PUT");
 const rec = () => store.agentSync || {};
 const since = (n) => requests.slice(n);
+const tick = () => new Promise((r) => setTimeout(r, 1));
+const waitFor = async (what, ok) => { for (let i = 0; i < 2000; i++) { if (ok()) return; await tick(); } throw new Error(`timed out waiting for ${what}`); };
+const tokensGone = () => !("access" in rec()) && !("refresh" in rec()) && !("expiresAt" in rec());
 
 try {
   // 15. Nothing but Sieve's own settings page may act.
   for (const sender of [
-    { url: "chrome-extension://test/popup.html" },
+    POPUP,
+    { url: "chrome-extension://test/options.html" }, // no sender id
+    { id: "other", url: "chrome-extension://test/options.html" },
     { url: "https://www.linkedin.com/feed/", tab: { id: 1 } },
     { url: "chrome-extension://test/options.html.evil" },
     { url: "chrome-extension://other/options.html" },
@@ -153,7 +170,7 @@ try {
   assert.ok((await sync({ do: "nonsense" })).error);
   assert.ok((await sync({ do: "toString" })).error);
   assert.ok((await ask({ type: "agentSync", do: "status" }, { url: "https://evil.example/" })).error);
-  assert.deepEqual(await ask({ type: "agentSync", do: "status" }, { url: "chrome-extension://test/popup.html" }), {});
+  assert.deepEqual(await ask({ type: "agentSync", do: "status" }, POPUP), {});
 
   // 14 (before ever turning on). A library change with sync off sets nothing and makes no alarm.
   await changed({ saved: { newValue: store.saved } });
@@ -176,17 +193,18 @@ try {
   assert.equal(body.items.length, 3);
   assert.ok(body.items.every((it) => it.id.startsWith("chrome:")));
   assert.equal("digests" in body, false);
-  assert.equal(alarmCreates.length, 0, "nothing dirty after the first send");
+  assert.equal(alarms.has("agent-sync"), false, "the backstop alarm goes once the send is answered");
   assert.equal(rec().dirty, false);
 
   // 2. A change to the library: dirty, one alarm; a second change makes no second alarm.
+  const c0 = alarmCreates.length;
   await changed({ saved: { newValue: store.saved } });
   assert.equal(rec().dirty, true);
-  assert.deepEqual(alarmCreates, [["agent-sync", { delayInMinutes: 15 }]]);
+  assert.deepEqual(alarmCreates.slice(c0), [["agent-sync", { delayInMinutes: 15 }]]);
   await changed({ briefs: { newValue: {} } });
-  assert.equal(alarmCreates.length, 1);
+  assert.equal(alarmCreates.length, c0 + 1);
   await changed({ agentSync: { newValue: {} }, orKey: { newValue: "x" } });
-  assert.equal(alarmCreates.length, 1, "other keys aren't the library");
+  assert.equal(alarmCreates.length, c0 + 1, "other keys aren't the library");
 
   // 3. The alarm fires, nothing really changed: no PUT, not dirty.
   let n = requests.length;
@@ -222,7 +240,7 @@ try {
   assert.equal((await sync({ do: "send" })).state, "other_device");
   server.put = null;
   n = requests.length;
-  s = await ask({ type: "agentSync", do: "send", replace: true }, { url: "chrome-extension://test/options.html#agent" });
+  s = await ask({ type: "agentSync", do: "send", replace: true }, { id: "test", url: "chrome-extension://test/options.html#agent" });
   assert.equal(s.state, "on");
   const replaced = since(n).find((r) => r.method === "PUT");
   assert.equal(replaced.headers["x-sieve-replace"], "yes");
@@ -406,7 +424,154 @@ try {
   assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
   assert.deepEqual(permissionRemovals.at(-1), { permissions: ["identity"], origins: [`${SERVER}/*`] });
 
-  // No request ever carried a token in its URL.
+  // Turn on without the identity permission: "no_permission" while off ...
+  const identity = chrome.identity;
+  delete chrome.identity;
+  s = await sync({ do: "on" });
+  assert.equal(s.state, "no_permission");
+  assert.equal(s.on, false);
+  chrome.identity = identity;
+
+  // Two quick Turn on clicks: one sign-in window.
+  let authsBefore = authUrls.length;
+  const [on1, on2] = await Promise.all([sync({ do: "on" }), sync({ do: "on" })]);
+  assert.equal(authUrls.length, authsBefore + 1);
+  assert.equal(on1.state, "on");
+  assert.equal(on2.state, "on");
+
+  // ... and while on, it leaves the live session alone.
+  delete chrome.identity;
+  const liveAccess = rec().access;
+  s = await sync({ do: "on" });
+  chrome.identity = identity;
+  assert.equal(s.state, "on");
+  assert.equal(s.on, true);
+  assert.equal(rec().access, liveAccess);
+
+  // Two paths needing a token while it has expired: one refresh, both get the new token.
+  store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+  n = requests.length;
+  const [t1, t2] = await Promise.all([run.accessToken(), run.accessToken()]);
+  assert.equal(since(n).filter((r) => r.path === "/token").length, 1);
+  assert.equal(t1, server.access);
+  assert.equal(t2, server.access);
+
+  // A PUT that times out: busy, try later.
+  server.timeout = true;
+  s = await sync({ do: "send" });
+  server.timeout = false;
+  assert.equal(s.state, "busy");
+  assert.equal(rec().dirty, true);
+  assert.ok(alarms.has("agent-sync"));
+  assert.equal((await sync({ do: "send" })).state, "on");
+  assert.equal(alarms.has("agent-sync"), false);
+
+  // A change while a send is out: the answer doesn't clear it, and the alarm stays.
+  let release = hold("PUT /v1/library/chrome");
+  n = requests.length;
+  let pending = sync({ do: "send" });
+  await waitFor("the PUT", () => since(n).some((r) => r.method === "PUT"));
+  assert.ok(alarms.has("agent-sync"), "a backstop alarm before the PUT");
+  store.saved = [post("d11", 7), ...store.saved];
+  await changed({ saved: { newValue: store.saved } });
+  release();
+  assert.equal((await pending).state, "on");
+  assert.equal(rec().dirty, true);
+  assert.ok(alarms.has("agent-sync"));
+  await fire("agent-sync");
+  assert.equal(rec().dirty, false);
+  assert.equal(rec().lastItems, store.saved.length);
+
+  // Delete the account, refused by the server (502) or unreachable: still signed in, and why.
+  server.deleteAccount = { status: 502, body: { result: "failed", step: "library" } };
+  s = await sync({ do: "delete" });
+  server.deleteAccount = null;
+  assert.equal(s.on, true);
+  assert.deepEqual(s.detail, { reason: "server" });
+  assert.ok(rec().access);
+  server.down = true;
+  s = await sync({ do: "delete" });
+  server.down = false;
+  assert.equal(s.on, true);
+  assert.deepEqual(s.detail, { reason: "offline" });
+  assert.ok(rec().access);
+  assert.equal((await sync({ do: "send" })).state, "on", "sending carries on after a failed delete");
+
+  // Turn off while a PUT is out: off at once, and the PUT's answer writes nothing back.
+  release = hold("PUT /v1/library/chrome");
+  n = requests.length;
+  pending = sync({ do: "send" });
+  await waitFor("the PUT", () => since(n).some((r) => r.method === "PUT"));
+  let off = sync({ do: "off" });
+  await waitFor("off", () => rec().on === false);
+  assert.ok(tokensGone(), "the tokens go before anything else");
+  release();
+  await pending;
+  s = await off;
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  assert.deepEqual(since(n).map((r) => `${r.method} ${r.path}`), ["PUT /v1/library/chrome", "DELETE /v1/library/chrome", "POST /v1/account/sign-out"]);
+
+  // A refresh answered after Turn off doesn't write the tokens back; off signs out with them.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+  release = hold("POST /token");
+  n = requests.length;
+  pending = sync({ do: "send" });
+  await waitFor("the refresh", () => since(n).some((r) => r.path === "/token"));
+  off = sync({ do: "off" });
+  await waitFor("off", () => rec().on === false);
+  release();
+  await pending;
+  await off;
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  const signOut = since(n).find((r) => r.path === "/v1/account/sign-out");
+  assert.equal(signOut.headers.authorization, `Bearer ${server.access}`, "signed out with the refreshed token");
+  assert.equal(since(n).filter((r) => r.method === "PUT").length, 0);
+
+  // Turn off, refused by the server (429 on the library delete): off here anyway, and why.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  server.deleteLibrary = { status: 429, body: { result: "limit" } };
+  s = await sync({ do: "off" });
+  server.deleteLibrary = null;
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "server" } });
+
+  // Something unexpected while acting: an error is recorded, not the old state shown as if fine.
+  const getRedirectURL = chrome.identity.getRedirectURL;
+  chrome.identity.getRedirectURL = () => { throw new Error("boom"); };
+  s = await sync({ do: "on" });
+  chrome.identity.getRedirectURL = getRedirectURL;
+  assert.equal(s.on, false);
+  assert.deepEqual(s.detail, { reason: "error" });
+
+  // A worker stopped mid-send keeps the change, and a fresh worker arms the alarm again.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  hold("PUT /v1/library/chrome"); // never answered: the worker is stopped while the PUT is out
+  store.saved = [post("d12", 8), ...store.saved];
+  await changed({ saved: { newValue: store.saved } });
+  n = requests.length;
+  fire("agent-sync");
+  await waitFor("the PUT", () => since(n).some((r) => r.method === "PUT"));
+  assert.equal(rec().dirty, true);
+  assert.ok(alarms.has("agent-sync"));
+  holds.clear();
+  listeners.changed.length = 0; listeners.alarm.length = 0; listeners.wake.length = 0;
+  const dir2 = mkdtempSync(join(tmpdir(), "sieve-agent-sync-"));
+  try {
+    for (const f of readdirSync(src)) if (f.endsWith(".js")) copyFileSync(join(src, f), join(dir2, f));
+    await import(pathToFileURL(join(dir2, "background.js")).href);
+    alarms.delete("agent-sync"); // Chrome dropped the alarm (an update, a crash)
+    await Promise.all(listeners.wake.map((fn) => fn({ reason: "update" })));
+    assert.deepEqual(alarms.get("agent-sync")?.delayInMinutes, 15);
+    await fire("agent-sync");
+    assert.equal(rec().dirty, false);
+    assert.equal(rec().state, "on");
+    assert.equal(rec().lastItems, store.saved.length);
+  } finally {
+    rmSync(dir2, { recursive: true, force: true });
+  }
+
+  // Every request can time out; no request ever carried a token in its URL.
+  assert.ok(requests.every((r) => r.signal), "every fetch has a timeout signal");
   assert.ok(requests.every((r) => !/acc-|ref-/.test(r.path)));
   assert.deepEqual(broken, [], "every request kept the server's rules");
   console.log("agent_sync_worker_test: ok");
