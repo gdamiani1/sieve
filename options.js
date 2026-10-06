@@ -22,6 +22,7 @@ async function load() {
   const s = await chrome.storage.local.get(["apiKey", "orKey", "model", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Paste your TypeSafe key";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
+  $("start").hidden = Boolean(s.orKey || s.apiKey);
   showScorer(scoringKey(s)?.via, Boolean(s.apiKey));
   $("role").value = p.role;
   $("topics").value = p.topics.join("\n");

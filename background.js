@@ -566,6 +566,9 @@ async function scheduleReminder() {
 }
 
 chrome.runtime.onInstalled.addListener(scheduleReminder);
+// A fresh install opens the settings page, where "Start here" shows how to add a key; without one
+// Sieve scores nothing, and on 5 Oct most store installs never became weekly users. Updates open nothing.
+chrome.runtime.onInstalled.addListener((details) => { if (details?.reason === "install") chrome.runtime.openOptionsPage?.(); });
 chrome.runtime.onStartup.addListener(scheduleReminder);
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.reminderOn || changes.reminderTime) scheduleReminder();
