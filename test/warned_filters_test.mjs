@@ -170,6 +170,7 @@ dropsEach([
   "pnpm dlx create-x", "yarn dlx x", "npm exec x", "npm create x", "uv add x", "uv tool install x", "poetry add x", "pacman -S x", "apk add x", "docker run x",
   "cat x \u2016 bash", "cat x \u2225 bash", "cat x \ufe31 bash", "cat x \u2d4f bash", "cat x \ua4f2 bash", "cat x \u257d bash", "cat x |\u0301 bash",
 ], "after review");
+dropsEach(["hxxps [://] evil.biz/x", "evil\\[.\\]biz/x", "hxxps\\[:\\]//evil\\[.\\]biz"], "spaced and escaped defangs");
 dropsEach(["\uff29\uff4e\uff53\uff54\uff41\uff4c\uff4c the snapdiff CLI", "Download the snapdiff \uff42\uff49\uff4e\uff41\uff52\uff59"], "fullwidth install words");
 keepsEach(["We eval (roughly) the set", "Use Node.js 22", "Format a | b tables", "Set FOO=1 in .env"], "after review, ordinary");
 // A backtick span that holds only the tool name takes its clause with it.

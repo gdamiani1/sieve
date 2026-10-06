@@ -183,7 +183,7 @@ const LINK = new RegExp(String.raw`${SCHEME}\S*|\bwww\.\S*|${BARE_DOMAIN}`, "gi"
 // What the warned-brief filters read: the pipe look-alikes as "|" (before NFKC, which turns U+FE31 into
 // a dash, and after it, which makes U+FFE8 a box-drawing bar), with any marks right after a pipe gone;
 // NFKC (which turns the fullwidth "｜" and letters into plain ones); and the ways people defang a link
-// read as the link: "hxxps", "[:]" and "[://]" as the scheme, and a dot written in brackets, as deep as
+// read as the link: "hxxps", "[:]" and "[://]" (spaces around it too) as the scheme, and a dot written in brackets, as deep as
 // they go: "[.]", "(.)", "{.}", "[dot]", "(dot)", "{dot}", "[[.]]", "[ ( dot ) ]". A name with a bracketed dot is an address whatever its ending, since
 // nobody writes one otherwise: it reads with "http://" in front. A " dot " between two name characters
 // is only a dot ("evil dot sh"), so its name still needs a known ending; "port it to dot net" reads as
@@ -196,7 +196,9 @@ const PIPE_MARKS = /\|\p{M}+/gu;
 const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s?)(?=\s*(?:[[(]|:))/gi;
 // A run of brackets is tried only where it starts, one space allowed between two (the fields arrive
 // cleaned, with single spaces): tried at every bracket of a long run, it read the rest each time.
-const DEFANGED_COLON = /(?<![[(]|[[(] )(?:[[(] ?)+:(\/\/)?(?: ?[\])])+/g;
+const DEFANGED_COLON = /(?:(?<! ) )?(?<![[(]|[[(] )(?:[[(] ?)+:(\/\/)?(?: ?[\])])+ ?/g;
+// Markdown escapes a bracket with a backslash ("evil\[.\]biz"): the view reads it unescaped.
+const ESCAPED_BRACKET = /\\([[\](){}])/g;
 const BRACKETED = String.raw`(?<![[({]|[[({] )(?:[[({] ?)+(?:\.|dot)(?: ?[\])}])+\s*`;
 // Inside a name the spaces before the bracket follow a name character, so they are read once; on its
 // own, the spaces are read only from where their run starts, as DASH does.
@@ -206,6 +208,7 @@ const SPOKEN_DOT = /(?<=[\w-])\s+dot\s+(?=[\w-])/gi;
 const viewOnce = (s) => nfkc(s.replace(PIPE_LIKE, "|"))
   .replace(PIPE_LIKE, "|")
   .replace(PIPE_MARKS, "|")
+  .replace(ESCAPED_BRACKET, "$1")
   .replace(DEFANGED_SCHEME, "http$1")
   .replace(DEFANGED_COLON, (c, slashes) => (slashes ? "://" : ":"))
   .replace(DEFANGED_NAME, (name, at, all) => {
