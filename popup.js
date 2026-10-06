@@ -32,6 +32,7 @@ $("reset").onclick = async () => {
 async function ask() {
   const s = await chrome.runtime.sendMessage({ type: "stats", action: "status" }).catch(() => null);
   $("ask").hidden = !(s && s.available && s.consent === null);
+  document.body.classList.toggle("asking", !$("ask").hidden);
 }
 const answer = (on) => async () => {
   $("askYes").disabled = $("askNo").disabled = true;
@@ -39,6 +40,7 @@ const answer = (on) => async () => {
   const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on }).catch(() => null);
   if (r && !r.error) {
     $("ask").hidden = true;
+    document.body.classList.remove("asking");
     $("askThanks").textContent = "Thanks. You can change this in Settings.";
     return;
   }
@@ -62,6 +64,8 @@ async function agent() {
   const shows = !!(r && !r.error && r.on && r.state !== "ended");
   $("agent").hidden = !shows;
   if (!shows) return;
+  // Anything but on (a failing state): the details are in Settings.
+  if (r.state && r.state !== "on" && r.state !== "off") { $("agent").textContent = "Your agent needs attention. Open Settings."; return; }
   if (!r.lastAt) { $("agent").textContent = "Your agent is on. Nothing sent yet."; return; }
   const n = Number.isFinite(r.lastItems) ? r.lastItems : 0;
   $("agent").textContent = `Your agent reads ${n} ${n === 1 ? "pin" : "pins"} from Chrome, sent ${sentAt(r.lastAt)}.`;

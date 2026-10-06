@@ -5,55 +5,58 @@
 @media (prefers-color-scheme: dark){:root{--canvas:#171511;--card:#221F1A;--tint:#2A2620;--ink:#ECE6DC;--on-ink:#171511;--ink-muted:#A39B8F;--line:#322E27;--bar-edge:#3A352D;--blue:#7B87FF;--on-blue:#14120E;--alert:#FFB59B;--alert-tint:#3A1A0E;--note:#302819;--note-tape:#5A4F3D}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-body{margin:0;width:320px;padding:16px 16px 14px;background:var(--canvas);color:var(--ink);font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;width:320px;padding:10px 16px 6px;background:var(--canvas);color:var(--ink);font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 p{margin:0}
 a{color:var(--blue)}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .head{display:flex;align-items:center;gap:9px}.head img{width:28px;height:28px;border-radius:7px}
 h1{font-size:22px;font-weight:800;letter-spacing:-.6px;margin:0;line-height:1.1}
-.nib{display:block;margin:2px 0 12px 37px}.nib path{fill:var(--blue)}
-.group{background:var(--card);border-radius:14px;overflow:hidden;margin-bottom:12px}
-.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:6px 14px;position:relative;margin:0}
+.nib{display:block;margin:0 0 6px 37px}.nib path{fill:var(--blue)}
+.group{background:var(--card);border-radius:14px;overflow:hidden;margin-bottom:8px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;padding:4px 14px;position:relative;margin:0}
 .row+.row::before{content:"";position:absolute;top:0;left:14px;right:0;height:1px;background:var(--line)}
 .row .v{font-variant-numeric:tabular-nums;font-weight:600}
 label.row{cursor:pointer}
-.row:focus-within{outline:2px solid var(--blue);outline-offset:-3px}
+.row:has(.sw:focus-visible){outline:2px solid var(--blue);outline-offset:-3px}
 .sw{appearance:none;-webkit-appearance:none;margin:0;width:40px;height:24px;flex:none;border-radius:999px;background:var(--ink-muted);position:relative;cursor:pointer;transition:background .12s}
 .sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--canvas);transition:left .12s}
 .sw:checked{background:var(--blue)}.sw:checked::after{left:18px}
 .sw:focus-visible{outline:none}
-.title{display:flex;align-items:center;justify-content:space-between;margin:0 2px 4px 2px}
+.title{display:flex;align-items:center;justify-content:space-between;margin:0 2px}
 h2{font-size:13px;font-weight:600;margin:0}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}
-.tile{background:var(--tint);color:var(--ink);border-radius:12px;padding:9px 10px}
-.tile b{display:block;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.5px;line-height:1.2}
-.tile span{font-size:12px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.tile{background:var(--tint);color:var(--ink);border-radius:12px;padding:4px 10px}
+.tile b{display:block;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.5px;line-height:1.15}
+.tile span{font-size:12px;line-height:1.25}
 .btn{display:flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:0;border-radius:14px;font:inherit;font-weight:600;line-height:1.2;cursor:pointer}
 .btn:active{opacity:.85}
 .btn.primary{background:var(--blue);color:var(--on-blue)}
 .btn.secondary{background:var(--tint);color:var(--ink)}
 .btn.text{background:none;color:var(--blue);padding:0 8px;font-size:13px}
 .btn:disabled{opacity:.6;cursor:default}
-.title .btn.text{min-height:44px;margin:-6px -8px -6px 0}
-.agent,.wait,.thanks{font-size:12.5px;color:var(--ink-muted)}
-.agent{margin:-4px 2px 12px}
+.title .btn.text{min-height:44px;margin:-10px -8px -10px 0}
+.agent,.wait,.thanks{font-size:12px;color:var(--ink-muted)}
+.agent{margin:0 2px 8px;white-space:nowrap}
 .btns{display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
-.wait{margin:12px 2px 0}.wait a{font-weight:600;text-decoration:none}
-.ask{background:var(--tint);color:var(--ink);border-radius:14px;padding:12px 14px;margin-bottom:12px}
-.ask h2{font-size:14px}
-.ask p{margin:4px 0 10px;font-size:13px}
-.ask .btns2{display:flex;gap:6px;align-items:center}
-.ask .btn{min-height:44px}
+.wait{margin:8px 2px 0}.wait a{font-weight:600;text-decoration:none}
+.ask{line-height:1.3;background:var(--tint);color:var(--ink);border-radius:14px;padding:8px 10px;margin-bottom:8px}
+.ask h2,.ask p{display:inline;font-size:12px;line-height:1.3;margin:0}
+.ask h2{font-weight:700}
+/* While the question shows the popup has no room for the agent line and the waitlist (Chrome caps a popup at 600 px). */
+body.asking .agent,body.asking .wait{display:none}
+.ask .btns2{display:flex;gap:6px;align-items:center;margin-top:4px}
+.ask .btn{min-height:34px}
 .ask .btn.secondary{background:var(--card)}
-.fail{background:var(--alert-tint);color:var(--alert);border-radius:14px;padding:10px 14px;margin:-4px 0 12px;font-size:13px}
-.fail:empty,.thanks:empty{display:none}
-.thanks{margin:0 2px 12px}
+.fail{background:var(--alert-tint);color:var(--alert);border-radius:14px;padding:8px 14px;margin:0 0 8px;font-size:13px}
+.thanks{margin:0 2px 8px}
+/* Live lines stay in the page so screen readers announce them; visually hidden while empty. */
+.fail:empty,.thanks:empty{position:absolute;width:1px;height:1px;margin:0;padding:0;overflow:hidden;clip-path:inset(50%)}
 </style></head><body>
 <div class="head"><img src="icons/icon48.png" alt=""><h1>Sieve</h1></div>
 <svg class="nib" width="62" height="9" viewBox="0 0 62 9" aria-hidden="true"><path d="M1 5.6 C 12 3.8, 30 3.6, 61 3.2 C 61.6 3.7, 61.5 4.4, 61 4.7 C 40 5.6, 22 5.8, 2 7.0 C 0.8 6.8, 0.6 6.0, 1 5.6 Z"/></svg>
 <div class="ask" id="ask" hidden role="region" aria-labelledby="askTitle">
 <h2 id="askTitle">Send usage counts?</h2>
-<p>Once a day, counts of what you used, like posts scored and briefs made, with a random install ID, through Google Analytics. Never post text, links, names or keys.</p>
+<p>Once a day, counts with a random install ID, through Google Analytics. Never post text, links, names or keys.</p>
 <div class="btns2"><button type="button" class="btn secondary" id="askYes">Yes, send counts</button><button type="button" class="btn text" id="askNo">No thanks</button></div>
 </div>
 <p class="fail" id="askErr" role="status"></p>
@@ -64,7 +67,7 @@ h2{font-size:13px;font-weight:600;margin:0}
 <label class="row"><span>Reddit</span><input class="sw" id="redditOn" type="checkbox"></label>
 <label class="row"><span>YouTube</span><input class="sw" id="youtubeOn" type="checkbox"></label>
 </div>
-<div class="title"><h2>Since you reset</h2><button type="button" class="btn text" id="reset">Reset</button></div>
+<div class="title"><h2>Since you reset</h2><button type="button" class="btn text" id="reset" aria-label="Reset counters">Reset</button></div>
 <div class="tiles">
 <div class="tile"><b id="posts">0</b><span>scored</span></div>
 <div class="tile"><b id="strong">0</b><span>highlighted</span></div>
@@ -77,6 +80,6 @@ h2{font-size:13px;font-weight:600;margin:0}
 </div>
 <p class="agent" id="agent" hidden></p>
 <div class="btns"><button type="button" class="btn secondary" id="settings">Settings</button><button type="button" class="btn primary" id="digest">Daily learnings</button></div>
-<p class="wait">A Sieve account is coming. <a href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Join the waitlist</a></p>
+<p class="wait" id="wait">A Sieve account is coming. <a href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Join the waitlist</a></p>
 <script type="module" src="popup.js"></script>
 </body></html>

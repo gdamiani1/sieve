@@ -71,7 +71,7 @@ async function popup({ store = {}, stats = { available: false, consent: null }, 
   };
   await import(`../popup.js?page=${++loads}`);
   for (let i = 0; i < 5; i++) await tick();
-  return { $: (id) => doc.getElementById(id), sent, opened, confirms, removed, store };
+  return { $: (id) => doc.getElementById(id), doc, sent, opened, confirms, removed, store };
 }
 
 const STATS = { posts: 508, strong: 88, maybe: 85, briefs: 1, watched: 1, cost: 0.05, scoreCost: 0.02, draftCost: 0.0023 };
@@ -136,6 +136,12 @@ const STATS = { posts: 508, strong: 88, maybe: 85, briefs: 1, watched: 1, cost: 
   assert.deepEqual(opened, ["options", "chrome-extension://test/digest.html"]);
 }
 
+// Reset has a name for screen readers; the live lines are never display:none.
+assert.match(html, /id="reset" aria-label="Reset counters"/);
+assert.match(html, /\.fail:empty,\.thanks:empty\{position:absolute/);
+assert.ok(!/\.fail:empty[^}]*display:none/.test(html));
+assert.ok(!/:focus-within/.test(html) && /\.row:has\(\.sw:focus-visible\)/.test(html));
+
 // The waitlist link keeps its address.
 assert.match(html, /<a href="https:\/\/divergada\.com\/sieve\?ref=extension"[^>]*>Join the waitlist<\/a>/);
 assert.match(html, /A Sieve account is coming\./);
@@ -168,6 +174,12 @@ for (const agent of [{}, { error: "nope" }, null]) {
   assert.ok(visible($("agent")));
   assert.equal($("agent").textContent, "Your agent is on. Nothing sent yet.");
 }
+// On but failing: one line, the details are in Settings.
+for (const state of ["other_device", "signed_out", "busy", "error", "shrunk", "invalid"]) {
+  const { $ } = await popup({ agent: { on: true, state, lastAt: Date.now(), lastItems: 3 } });
+  assert.ok(visible($("agent")), state);
+  assert.equal($("agent").textContent, "Your agent needs attention. Open Settings.", state);
+}
 // The invite ended: the agent no longer reads this library, so no line.
 {
   const { $ } = await popup({ agent: { on: true, state: "ended", lastAt: Date.now(), lastItems: 3 } });
@@ -176,8 +188,9 @@ for (const agent of [{}, { error: "nope" }, null]) {
 
 // The stats question: only while unanswered and available.
 {
-  const { $ } = await popup({ stats: { available: true, consent: null } });
+  const { $, doc } = await popup({ stats: { available: true, consent: null } });
   assert.ok(visible($("ask")));
+  assert.ok(doc.body.classList.contains("asking"), "the agent line and waitlist make room while asking");
 }
 for (const stats of [{ available: false, consent: null }, { available: true, consent: true }, { available: true, consent: false }, null]) {
   const { $ } = await popup({ stats });
@@ -185,10 +198,11 @@ for (const stats of [{ available: false, consent: null }, { available: true, con
 }
 // Yes sends the consent, hides the question and thanks.
 {
-  const { $, sent } = await popup({ stats: (m) => (m.action === "consent" ? { ok: true } : { available: true, consent: null }) });
+  const { $, sent, doc } = await popup({ stats: (m) => (m.action === "consent" ? { ok: true } : { available: true, consent: null }) });
   await $("askYes").onclick();
   assert.deepEqual(sent.at(-1), { type: "stats", action: "consent", on: true });
   assert.ok(!visible($("ask")));
+  assert.ok(!doc.body.classList.contains("asking"));
   assert.equal($("askThanks").textContent, "Thanks. You can change this in Settings.");
 }
 // No sends the refusal.
