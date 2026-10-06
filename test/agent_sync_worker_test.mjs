@@ -67,6 +67,7 @@ const holds = new Map();
 const hold = (route) => { let release; holds.set(route, new Promise((r) => { release = r; })); return () => { holds.delete(route); release(); }; };
 const server = {
   timeout: false, // the PUT times out (AbortSignal.timeout)
+  unauthorized: false, // every /v1 request is answered 401, whatever the token
   deleteLibrary: null, deleteAccount: null, // { status, body } instead of success
   put: null, // null: stored/unchanged; or { status, body } for every PUT while set
   token: 200, // the status /token answers a refresh with
@@ -110,7 +111,7 @@ async function serve(url, init) {
   // Every /v1 request carries this Chrome's token and the device the token was issued for.
   assert.match(headers["x-sieve-device"], /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.equal(headers["x-sieve-device"], server.device);
-  if (headers.authorization !== `Bearer ${server.access}`) return answer(401);
+  if (server.unauthorized || headers.authorization !== `Bearer ${server.access}`) return answer(401);
   const route = `${method} ${u.pathname}`;
   if (route === "GET /v1/account") return answer(200, { email: "dev@example.com", method: "google", plan: "trial", trialEndsAt: "2026-11-10T23:59:59.999Z" });
   if (route === "PUT /v1/library/chrome") {
@@ -406,6 +407,9 @@ try {
   assert.equal(rec().access, undefined);
   assert.equal(rec().refresh, undefined);
   assert.equal(rec().device, dev);
+  // Turning off from there: the agent's copy is still on the server, and the record says so.
+  s = await sync({ do: "off" });
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "offline" } });
 
   // A refresh that can't reach the server keeps everything: busy, try later.
   assert.equal((await sync({ do: "on" })).state, "on");
@@ -448,6 +452,14 @@ try {
   assert.equal(s.on, true);
   assert.equal(rec().access, liveAccess);
 
+  // Turn on again while on: the old session is signed out first (best effort), then replaced.
+  n = requests.length;
+  assert.equal((await sync({ do: "on" })).state, "on");
+  const oldOut = since(n).find((r) => r.path === "/v1/account/sign-out");
+  assert.ok(oldOut, "the old session signs out");
+  assert.equal(oldOut.headers.authorization, `Bearer ${liveAccess}`);
+  assert.notEqual(rec().access, liveAccess);
+
   // Two paths needing a token while it has expired: one refresh, both get the new token.
   store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
   n = requests.length;
@@ -484,10 +496,13 @@ try {
 
   // Delete the account, refused by the server (502) or unreachable: still signed in, and why.
   server.deleteAccount = { status: 502, body: { result: "failed", step: "library" } };
+  store.agentSync = { ...rec(), dirty: true }; // a change held back while the delete was out
+  alarms.delete("agent-sync");
   s = await sync({ do: "delete" });
   server.deleteAccount = null;
   assert.equal(s.on, true);
   assert.deepEqual(s.detail, { reason: "server" });
+  assert.ok(alarms.has("agent-sync"), "a failed delete re-arms the held-back send");
   assert.ok(rec().access);
   server.down = true;
   s = await sync({ do: "delete" });
@@ -496,6 +511,14 @@ try {
   assert.deepEqual(s.detail, { reason: "offline" });
   assert.ok(rec().access);
   assert.equal((await sync({ do: "send" })).state, "on", "sending carries on after a failed delete");
+  // The server refuses the token even after a refresh: signed out, and the delete didn't happen.
+  server.unauthorized = true;
+  s = await sync({ do: "delete" });
+  server.unauthorized = false;
+  assert.equal(s.on, false);
+  assert.equal(s.state, "signed_out");
+  assert.deepEqual(s.detail, { reason: "server" });
+  assert.equal((await sync({ do: "on" })).state, "on");
 
   // Turn off while a PUT is out: off at once, and the PUT's answer writes nothing back.
   release = hold("PUT /v1/library/chrome");
@@ -541,6 +564,7 @@ try {
   s = await sync({ do: "on" });
   chrome.identity.getRedirectURL = getRedirectURL;
   assert.equal(s.on, false);
+  assert.equal(s.state, "off", "an error doesn't claim a retry");
   assert.deepEqual(s.detail, { reason: "error" });
 
   // A worker stopped mid-send keeps the change, and a fresh worker arms the alarm again.
@@ -566,8 +590,33 @@ try {
     assert.equal(rec().dirty, false);
     assert.equal(rec().state, "on");
     assert.equal(rec().lastItems, store.saved.length);
+
+    // A delete guard left in the record by an older worker doesn't stop sending.
+    store.agentSync = { ...rec(), deleting: true };
+    n = requests.length;
+    s = await sync({ do: "send" });
+    assert.equal(s.state, "on");
+    assert.equal(since(n).filter((r) => r.method === "PUT").length, 1);
+
+    // A worker stopped while Turn off's DELETE is out: off, and the record says the copy may remain.
+    hold("DELETE /v1/library/chrome"); // never answered
+    n = requests.length;
+    sync({ do: "off" });
+    await waitFor("the DELETE", () => since(n).some((r) => r.method === "DELETE"));
+    assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "offline" } });
   } finally {
     rmSync(dir2, { recursive: true, force: true });
+  }
+  holds.clear();
+  listeners.changed.length = 0; listeners.alarm.length = 0; listeners.wake.length = 0;
+  const dir3 = mkdtempSync(join(tmpdir(), "sieve-agent-sync-"));
+  try {
+    for (const f of readdirSync(src)) if (f.endsWith(".js")) copyFileSync(join(src, f), join(dir3, f));
+    await import(pathToFileURL(join(dir3, "background.js")).href);
+    await Promise.all(listeners.wake.map((fn) => fn({ reason: "update" })));
+    assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "offline" } });
+  } finally {
+    rmSync(dir3, { recursive: true, force: true });
   }
 
   // Every request can time out; no request ever carried a token in its URL.

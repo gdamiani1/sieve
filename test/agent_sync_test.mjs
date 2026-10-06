@@ -104,6 +104,15 @@ assert.equal(words({ state: "invalid" }), "Sieve's server refused the library.")
 assert.equal(words({ state: "signed_out" }), "This Chrome was signed out. Turn sync on again to keep sending.");
 assert.equal(words({ state: "no_permission" }), "Sieve needs that permission to send your library.");
 assert.equal(words({ state: "too_big", detail: { bytes: 9.26 * 1024 * 1024 } }), "Your library is too big to send (9.3 MB; the limit is 8 MB).");
+// Turned off, but the server didn't confirm the delete and sign-out.
+const mayRemain = "Turned off here, but your agent's copy may still be on Sieve's server. Turn on and off again to delete it.";
+assert.equal(words({ state: "off", detail: { reason: "offline" } }), mayRemain);
+assert.equal(words({ state: "off", detail: { reason: "server" } }), mayRemain);
+// Something unexpected, in any state: no promise of a retry.
+for (const state of ["off", "on", "busy", "signed_out", "not_invited", "ended"]) {
+  assert.equal(words({ state, email: "a@b.co", detail: { reason: "error" } }), "Something went wrong. Try again.", `error words for ${state}`);
+}
+assert.equal(words({ state: "invalid", detail: { reason: "error" } }), "Sieve's server refused the library: error", "the server's own reason stays");
 assert.equal(words({ state: "nonsense" }), "");
 assert.equal(words(undefined), "");
 assert.equal(words({}), "");

@@ -5,7 +5,7 @@
 //
 // One record in chrome.storage.local, `agentSync`:
 //   { on, gen, email, device, access, refresh, expiresAt, dirty, changes, lastHash, lastAt, lastItems,
-//     state, detail, deleting }
+//     state, detail }
 // `state` is one of the states agent-sync.js words() knows; `detail` holds that state's numbers
 // ({ stored, count, reason, endedOn, bytes }). `gen` is new at every sign-in: anything that finishes
 // after an await writes only if the record is still on with the same `gen`, so a late answer can't
@@ -160,12 +160,16 @@ async function signIn(provider) {
   const cb = readCallback(back, state);
   if (cb.error) return (await load()).on ? load() : signedOut(cb.error === "not_invited" ? "not_invited" : "off");
   let t = null;
-  let reason = "refused";
   try {
     const res = await net("/token", { method: "POST", headers: FORM, body: tokenForm({ code: cb.code, verifier, redirect }).toString() });
     if (res.ok) t = readTokens(await json(res));
-  } catch { reason = "offline"; }
-  if (!t) return (await load()).on ? load() : signedOut("off", { reason });
+  } catch {}
+  // A sign-in that failed at the last step: "error" (try again), not "offline", which on an off record
+  // means a copy may remain on the server.
+  if (!t) return (await load()).on ? load() : signedOut("off", { reason: "error" });
+  // Turn on while already on: the old session signs out first (best effort), then is replaced.
+  const old = await load();
+  if (old.on) await ask("/v1/account/sign-out", "POST", await tokenOf(old));
   const gen = crypto.randomUUID();
   await write((s) => ({ device: s.device, on: true, gen, ...t, state: "on", dirty: true, changes: 0 }));
   try {
@@ -177,6 +181,9 @@ async function signIn(provider) {
   } catch {}
   return send({ force: true });
 }
+
+// The sign-in being deleted, if a delete is out. In memory only: a delete can't outlive its worker.
+let deletingGen = null;
 
 // Sends run one after another: the second sees what the first stored.
 let sending = Promise.resolve();
@@ -193,7 +200,7 @@ const later = async () => { if (!(await chrome.alarms.get(SYNC_ALARM))) chrome.a
 
 async function sendOnce({ force = false, allowShrink = false, replace = false } = {}) {
   const s = await load();
-  if (!s.on || s.state === "ended" || s.deleting) return s;
+  if (!s.on || s.state === "ended" || (deletingGen && deletingGen === s.gen)) return s;
   const { gen } = s;
   const changes = s.changes || 0;
 
@@ -286,7 +293,6 @@ export async function alarmFired() {
 /** After a restart or an update: a change still waiting to be sent gets its alarm back. */
 export async function wake() {
   const s = await load();
-  if (s.deleting) await save({ deleting: false });
   if (s.on && s.dirty && s.state !== "ended") await later();
 }
 
@@ -312,11 +318,19 @@ async function ask(path, method, token, done = (res) => res.ok) {
 }
 
 /** Turn off: the tokens go here at once (the person asked to stop), then the Chrome copy is deleted
- * and this Chrome signs out with the token it had, and the optional permissions go. When the server
- * can't be reached or says no, `detail.reason` says so: the agent's copy may still be there. */
+ * and this Chrome signs out with the token it had, and the optional permissions go. The off record
+ * says "offline" from the start (the agent's copy may still be there) and loses it only when the
+ * server says yes to both, so a worker stopped halfway leaves the honest answer behind. */
+const MAY_REMAIN = ["offline", "server"];
 export async function turnOff() {
   let prior = {};
-  await write((s) => { prior = s; return offRecord(s, "off"); });
+  await write((s) => {
+    prior = s;
+    // Signed out by the server, or turned off before without its yes: the copy is still there.
+    const remains = s.on || s.state === "signed_out" || MAY_REMAIN.includes(s.detail?.reason);
+    const reason = s.on || s.state === "signed_out" ? "offline" : s.detail?.reason;
+    return offRecord(s, "off", remains ? { reason } : null);
+  });
   await chrome.alarms.clear(SYNC_ALARM);
   // Let a send or a refresh that was already out finish first; neither writes once the record is off.
   await sending;
@@ -326,7 +340,11 @@ export async function turnOff() {
     const a = await ask("/v1/library/chrome", "DELETE", token, async (res) => res.ok && (await json(res)).result === "deleted");
     const b = await ask("/v1/account/sign-out", "POST", token);
     const reason = a === "offline" || b === "offline" ? "offline" : a || b;
-    if (reason) await write((s) => (s.on ? s : { ...s, detail: { reason } }));
+    await write((s) => {
+      if (s.on) return s;
+      const { detail: _d, ...rest } = s;
+      return reason ? { ...rest, detail: { reason } } : rest;
+    });
   }
   try { await chrome.permissions.remove(OPTIONAL); } catch {}
   return load();
@@ -338,21 +356,32 @@ export async function deleteAccount() {
   const s = await load();
   if (!s.on) return s;
   const { gen } = s;
-  await saveFor(gen, { deleting: true });
-  await sending;
+  deletingGen = gen;
   let reason = "offline";
   try {
-    const res = await call("/v1/account", { method: "DELETE" });
-    if (res) reason = res.ok ? "" : "server";
-  } catch {}
-  if (reason) return write((x) => (live(x, gen) ? { ...x, deleting: false, detail: { reason } } : x.deleting ? { ...x, deleting: false } : x));
+    await sending;
+    try {
+      const res = await call("/v1/account", { method: "DELETE" });
+      if (res) reason = res.ok ? "" : "server";
+    } catch {}
+  } finally { deletingGen = null; }
+  if (reason) {
+    const now = await write((x) => {
+      if (live(x, gen)) return { ...x, detail: { reason } };
+      // The server refused this Chrome's token: signed out, and the account is still there.
+      if (!x.on && x.state === "signed_out") return { ...x, detail: { reason: "server" } };
+      return x;
+    });
+    if (live(now, gen) && now.dirty) await later();
+    return now;
+  }
   await signedOut("off");
   try { await chrome.permissions.remove(OPTIONAL); } catch {}
   return load();
 }
 
 /** Something unexpected went wrong while acting: say so instead of showing the old state as if fine. */
-export const failed = () => write((s) => (s.on ? { ...s, state: "busy", detail: { reason: "error" } } : offRecord(s, "off", { reason: "error" })));
+export const failed = () => write((s) => ({ ...s, state: s.state || "off", detail: { reason: "error" } }));
 
 /** What the settings page shows: never the tokens, the hash or the sign-in's gen. */
 export async function status() {
