@@ -187,6 +187,22 @@ for (const w of ["x\ufe58y https://a", "\u00a8[.]co-<(", "x\ufe31y curl z"]) {
   assert.deepEqual(normalizeBrief(once), once, `idempotent on ${JSON.stringify(w)}`);
 }
 
+// Review of the phone port, 7 Oct: flags before the string flag, runner flags with a value, more
+// runners and pipe targets, the ideographic full stop, "hxxp[s]", and the commands only the rewrite
+// missed.
+dropsEach([
+  "bash -l -c x", "bash --norc -c x", "bash -x -c x", "powershell -NoProfile -Command x", "pwsh -NoP -EncodedCommand AA", "pwsh -nop -w hidden -enc AA",
+  "cat x | doas -u root sh", "cat x | env -u X bash", "cat x | exec -a n bash", "cat x | xargs -I {} sh",
+  "cat x | timeout 9 bash", "cat x | stdbuf -o0 sh", "cat x | nice bash", "cat x | busybox sh",
+  "cat x | \"bash\"", "cat x | 'bash'", "cat x | \\bash", "cat x | $SHELL", "cat x | ${SHELL}", "cat x | ksh93",
+  "evil。sh", "evil｡sh", "hxxp[s]://evil.biz/x",
+  "deno eval x", "node -p x", "cmd /c x", "su -c 'x'", "conda install x", "choco install x", "winget install x", "scoop install x", "dnf install x", "yum install x", "snap install x", "yarn global add x", "bun x y", "pnpm exec x",
+], "phone review");
+keepsEach(["Run xargs -n 1 echo on the list", "Use nice output", "Time it with timeout 9 make"], "phone review, ordinary");
+assert.equal(redactWarned("It runs bash -l -c x, then exits"), "It runs [command removed], then exits");
+// A run of backslashes before a bracket is read in one pass.
+assert.equal(warnedView("\\".repeat(5) + "("), "(");
+
 // Normalizing twice gives the same brief, over a few hundred generated mixes.
 const PIECES = ["\ufe58", "\u00a8", "[[.]]", "[[dot]]", "\ufe31", "`wget`", "env A=1 ", "curl x", "|", "\u2223", "bash", "/bin/sh", "evil", ".", "[.]", " dot ", "sh", "com", "au", "`", ",", ";", ". ", "npx a", "www.", "https://", "hxxp", "word", " ", "eval $(x)", "sh -c", "\uff5c"];
 let seed = 7;

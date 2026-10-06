@@ -151,23 +151,28 @@ export function normalizeWarning(w) {
 export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1|ly|gl|gd|gy)(?:\.[a-z]{2})?\b(?!\.[\w-]))`;
 // A pipe into something that runs what it reads: a shell or an interpreter, by name or by path
 // ("| /bin/bash", "| /usr/bin/env bash"), after any of sudo, doas, env, xargs, exec, command and nohup
-// with their flags, variable settings and counts ("env FOO=1", "xargs -n 1"). Every part reads forward
-// once: a path is a run of segments that each end in "/" and hold none, each runner is a fixed word,
-// and each of its arguments starts with "-", a word character and "=", or a digit, and holds no space and
-// no "|", so one pipe's runners never read on into the next pipe's.
+// and timeout, stdbuf, nice and busybox, with their flags, a flag's value, variable settings and counts
+// ("env -u X", "env FOO=1", "xargs -n 1"); the shell may be quoted or escaped ("| 'bash'", "| \bash"),
+// numbered ("ksh93") or named by $SHELL. Every part reads forward once: a path is a run of segments
+// that each end in "/" and hold none, each runner is a fixed word, and each of its arguments starts with
+// "-", a word character and "=", or a digit, and holds no space and no "|", so one pipe's runners never
+// read on into the next pipe's. A flag's value starts with none of those and holds no "=", so it can't
+// also read as an argument of its own.
 const SHELLS = String.raw`(?:(?:ba|z|da|k|c|tc|fi|a)?sh|pwsh|powershell)`;
 const INTERPRETERS = String.raw`(?:python[0-9.]*|py|node|perl|ruby|php|deno|bun|lua|osascript)`;
 const PATH_TO = String.raw`(?:[\w.~-]*\/)*`;
-const RUNNER = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup)(?:\s+(?:-[^\s|]*|\w+=[^\s|]*|\d+))*\s+`;
-const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*${PATH_TO}(?:${SHELLS}|${INTERPRETERS}|source)\b`;
+const RUNNER = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup|timeout|stdbuf|nice|busybox)(?:\s+(?:-[^\s|]*(?:\s+[^\s|\-0-9=][^\s|=]*)?|\w+=[^\s|]*|\d+))*\s+`;
+const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*(?:["'\\]?${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?SHELL\b)`;
 // Everything LINKISH finds that is a command rather than an address.
 const COMMAND_PARTS = [
   String.raw`${PIPE_RUN}|[<>]\(`,                                                       // a pipe into a shell, process substitution
-  String.raw`\b${SHELLS}(?:\.exe)?\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b`, // a shell handed a string (sh -c, bash -ce, pwsh -enc)
-  String.raw`\b${INTERPRETERS}\s+(?:-[ecr]|--eval)\b|\beval\s+["'$\x60]`,             // an interpreter handed a string, eval
+  // a shell handed a string (sh -c, bash -l -c, pwsh -nop -w hidden -enc, su -c, cmd /c); a flag's
+  // value never starts with "-", so each flag and value reads once
+  String.raw`\b(?:${SHELLS}(?:\.exe)?|su)(?:\s+-[\w-]+(?:\s+[^\s-]\S*)?)*\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?\s+\/[ck]\b`,
+  String.raw`\b${INTERPRETERS}\s+(?:-[ecrp]|--eval)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`, // an interpreter handed a string, eval
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
-  String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv)\s+(?:i|install|add|get)\b`, // package installs
-  String.raw`\b(?:(?:pnpm|yarn)\s+dlx|npm\s+(?:exec|create)|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+-S\w*|docker\s+run)\b`, // package runners
+  String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv|conda|choco|winget|scoop|dnf|yum|snap)\s+(?:i|install|add|get)\b`, // package installs
+  String.raw`\b(?:(?:pnpm|yarn)\s+dlx|(?:npm|pnpm)\s+exec|npm\s+create|yarn\s+global\s+add|bun\s+x|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+-S\w*|docker\s+run)\b`, // package runners
 ];
 // A scheme, tried only where its run of letters, digits, "+", "." and "-" starts: tried at every word
 // boundary inside a long run, it read the rest of the run from each.
@@ -188,17 +193,21 @@ const LINK = new RegExp(String.raw`${SCHEME}\S*|\bwww\.\S*|${BARE_DOMAIN}`, "gi"
 // nobody writes one otherwise: it reads with "http://" in front. A " dot " between two name characters
 // is only a dot ("evil dot sh"), so its name still needs a known ending; "port it to dot net" reads as
 // "to.net", which a warned brief then loses: only a warned brief is read this way. Again until nothing
-// changes (a fold can make another: NFKC after a look-alike, a name after a lone bracketed dot); each
-// pass that changes anything shortens the text
-// or turns an "x" or "*" of "hxxp" into a "t", so it ends. Each replacement reads its text once.
+// changes (a fold can make another: NFKC after a look-alike, a name after a lone bracketed dot). It ends:
+// a pass that adds text ("http://", or NFKC expanding a character) uses up a bracketed dot or a
+// character NFKC never makes again, and every other change removes characters or turns an "x" or "*" of
+// "hxxp" into a "t". Brackets fold as deep as they go and backslashes as long as they run in one pass,
+// so ordinary nesting takes two passes. Each replacement reads its text once.
 const PIPE_LIKE = /[\u00a6\u01c0\u05c0\u0964\u2016\u2223\u2225\u2502\u2503\u257d\u23b8\u23b9\u23d0\u2758-\u275a\u2d4f\ua4f2\ufe31\u{1d100}]/gu;
 const PIPE_MARKS = /\|\p{M}+/gu;
-const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s?)(?=\s*(?:[[(]|:))/gi;
+const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s|\[s\])?(?=\s*(?:[[(]|:))/gi;
+// The ideographic full stop, which browsers read as a dot in an address (NFKC makes the halfwidth one this).
+const IDEOGRAPHIC_STOP = /\u3002/g;
 // A run of brackets is tried only where it starts, one space allowed between two (the fields arrive
 // cleaned, with single spaces): tried at every bracket of a long run, it read the rest each time.
 const DEFANGED_COLON = /(?:(?<! ) )?(?<![[(]|[[(] )(?:[[(] ?)+:(\/\/)?(?: ?[\])])+ ?/g;
 // Markdown escapes a bracket with a backslash ("evil\[.\]biz"): the view reads it unescaped.
-const ESCAPED_BRACKET = /\\([[\](){}])/g;
+const ESCAPED_BRACKET = /\\+([[\](){}])/g;
 const BRACKETED = String.raw`(?<![[({]|[[({] )(?:[[({] ?)+(?:\.|dot)(?: ?[\])}])+\s*`;
 // Inside a name the spaces before the bracket follow a name character, so they are read once; on its
 // own, the spaces are read only from where their run starts, as DASH does.
@@ -209,7 +218,8 @@ const viewOnce = (s) => nfkc(s.replace(PIPE_LIKE, "|"))
   .replace(PIPE_LIKE, "|")
   .replace(PIPE_MARKS, "|")
   .replace(ESCAPED_BRACKET, "$1")
-  .replace(DEFANGED_SCHEME, "http$1")
+  .replace(IDEOGRAPHIC_STOP, ".")
+  .replace(DEFANGED_SCHEME, (m, s) => (s ? "https" : "http"))
   .replace(DEFANGED_COLON, (c, slashes) => (slashes ? "://" : ":"))
   .replace(DEFANGED_NAME, (name, at, all) => {
     const plain = name.replace(BRACKET_DOT_RE, ".");
