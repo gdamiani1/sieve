@@ -4,7 +4,7 @@
 // the worker, so there is one place that refreshes tokens. The pure part is agent-sync.js.
 //
 // One record in chrome.storage.local, `agentSync`:
-//   { on, gen, email, device, access, refresh, expiresAt, dirty, changes, lastHash, lastAt, lastItems,
+//   { on, gen, email, method, device, access, refresh, expiresAt, dirty, changes, lastHash, lastAt, lastItems,
 //     state, detail }
 // `state` is one of the states agent-sync.js words() knows; `detail` holds that state's numbers
 // ({ stored, count, replace, reason, endedOn, bytes }). `gen` is new at every sign-in: anything that finishes
@@ -191,8 +191,11 @@ async function signIn(provider) {
   try {
     const res = await call("/v1/account");
     if (res?.ok) {
-      const email = (await json(res)).email;
-      if (typeof email === "string") await saveFor(gen, { email });
+      const acct = await json(res);
+      const found = {};
+      if (typeof acct.email === "string") found.email = acct.email;
+      if (typeof acct.method === "string") found.method = acct.method;
+      if (Object.keys(found).length) await saveFor(gen, found);
     }
   } catch {}
   return send({ force: true });

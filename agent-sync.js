@@ -7,7 +7,23 @@ import { buildExport } from "./export.js";
 export const SERVER = "https://mcp.divergada.com";
 export const CLIENT_ID = `${SERVER}/clients/chrome.json`;
 export const AGENT_URL = `${SERVER}/sieve`;
-export const CLAUDE_LINE = `claude mcp add --transport http sieve ${AGENT_URL}`;
+
+// The agents' setup lines (connect-your-agent spec 5.2): the chip, the code to copy, and the meta line.
+// `method` is the account's sign-in method from GET /v1/account: "google" says Google, anything else email.
+const via = (method) => (method === "google" ? "Google" : "email");
+export const AGENTS = [
+  { id: "claude-code", name: "Claude Code", code: `claude mcp add --scope user --transport http sieve ${AGENT_URL}`,
+    meta: (m) => `Then /mcp \u203a sieve \u203a Authenticate, signed in with ${via(m)}.` },
+  { id: "claude-ai", name: "claude.ai", code: AGENT_URL,
+    meta: (m) => `claude.ai \u203a Customize \u203a Connectors \u203a Add custom connector. Name it Sieve, then Connect with ${via(m)}.` },
+  { id: "cursor", name: "Cursor", code: `{ "mcpServers": { "sieve": { "url": "${AGENT_URL}" } } }`,
+    meta: () => "Add to ~/.cursor/mcp.json, then sign in from Cursor's MCP settings." },
+  { id: "codex", name: "Codex", code: `codex mcp add sieve --url ${AGENT_URL}`,
+    meta: (m) => `Then codex mcp login sieve, signed in with ${via(m)}.` },
+  { id: "another", name: "Another", code: AGENT_URL,
+    meta: () => "Any agent that adds remote MCP servers with sign-in, running on your computer." },
+];
+export const CLAUDE_LINE = AGENTS[0].code;
 // The server's rule for a Chrome id (mcp-server src/core.js CHROME_ID).
 export const CHROME_ID = /^chrome:[A-Za-z0-9_:.-]{1,200}$/;
 export const SEND_EVERY_MIN = 15;

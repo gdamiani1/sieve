@@ -127,7 +127,7 @@ async function serve(url, init) {
   const tokenOk = headers.authorization === `Bearer ${server.access}` || (server.acceptOld && issuedAccess.has(headers.authorization?.slice(7)));
   if (server.unauthorized || !tokenOk) return answer(401);
   const route = `${method} ${u.pathname}`;
-  if (route === "GET /v1/account") return answer(200, { email: "dev@example.com", method: "google", plan: "trial", trialEndsAt: "2026-11-10T23:59:59.999Z" });
+  if (route === "GET /v1/account") return answer(200, { email: "dev@example.com", method: "email", plan: "trial", trialEndsAt: "2026-11-10T23:59:59.999Z" });
   if (route === "PUT /v1/library/chrome") {
     assert.equal(headers["content-type"], "application/json");
     if (server.timeout) throw new DOMException("The operation timed out.", "TimeoutError");
@@ -203,6 +203,8 @@ try {
   assert.match(server.device, /^[0-9a-f-]{36}$/);
   assert.equal(on.on, true);
   assert.equal(on.email, "dev@example.com");
+  assert.equal(on.method, "email");
+  assert.equal(rec().method, "email");
   assert.equal(on.state, "on");
   assert.equal(on.lastItems, 3);
   assert.equal(on.device, server.device);

@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   SERVER, CLIENT_ID, CHROME_ID, pkcePair, authorizeUrl, readCallback, tokenForm, refreshForm, readTokens,
-  libraryBody, libraryHash, words, MAX_BODY,
+  libraryBody, libraryHash, words, MAX_BODY, AGENTS, CLAUDE_LINE, AGENT_URL,
 } from "../agent-sync.js";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
@@ -137,3 +137,28 @@ assert.ok(!manifest.permissions.includes("identity"), "never a required permissi
 assert.ok(!manifest.host_permissions.some((h) => h.includes("divergada")), "never a required host");
 
 console.log("agent_sync_test: ok");
+
+// The agents' setup lines (connect-your-agent spec 5.2): code and meta, the sign-in method named.
+assert.deepEqual(AGENTS.map((a) => a.id), ["claude-code", "claude-ai", "cursor", "codex", "another"]);
+assert.deepEqual(AGENTS.map((a) => a.name), ["Claude Code", "claude.ai", "Cursor", "Codex", "Another"]);
+assert.equal(AGENTS[0].code, "claude mcp add --scope user --transport http sieve https://mcp.divergada.com/sieve");
+assert.equal(CLAUDE_LINE, AGENTS[0].code);
+assert.deepEqual(AGENTS.map((a) => a.code), [
+  "claude mcp add --scope user --transport http sieve https://mcp.divergada.com/sieve",
+  "https://mcp.divergada.com/sieve",
+  '{ "mcpServers": { "sieve": { "url": "https://mcp.divergada.com/sieve" } } }',
+  "codex mcp add sieve --url https://mcp.divergada.com/sieve",
+  "https://mcp.divergada.com/sieve",
+]);
+assert.equal(AGENTS[0].code.endsWith(AGENT_URL), true);
+assert.equal(AGENTS[0].meta("google"), "Then /mcp › sieve › Authenticate, signed in with Google.");
+assert.equal(AGENTS[0].meta("email"), "Then /mcp › sieve › Authenticate, signed in with email.");
+assert.equal(AGENTS[0].meta(undefined), "Then /mcp › sieve › Authenticate, signed in with email.");
+assert.equal(AGENTS[0].meta("apple"), "Then /mcp › sieve › Authenticate, signed in with email.");
+assert.equal(AGENTS[1].meta("google"), "claude.ai › Customize › Connectors › Add custom connector. Name it Sieve, then Connect with Google.");
+assert.equal(AGENTS[1].meta("email"), "claude.ai › Customize › Connectors › Add custom connector. Name it Sieve, then Connect with email.");
+assert.equal(AGENTS[2].meta("google"), "Add to ~/.cursor/mcp.json, then sign in from Cursor's MCP settings.");
+assert.equal(AGENTS[3].meta("google"), "Then codex mcp login sieve, signed in with Google.");
+assert.equal(AGENTS[3].meta("email"), "Then codex mcp login sieve, signed in with email.");
+assert.equal(AGENTS[4].meta("google"), "Any agent that adds remote MCP servers with sign-in, running on your computer.");
+for (const a of AGENTS) assert.equal(/[\u2014]/.test(a.code + a.meta("google")), false);
