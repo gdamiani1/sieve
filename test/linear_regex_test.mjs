@@ -115,9 +115,15 @@ const warnedLong = [
   "| env -u".repeat(size / 8),
   "| xargs -n 1 -I x".repeat(size / 17),
   "bash" + " -x".repeat(size / 3),
+  "| " + "env -u ".repeat(40) + "x",
+  "| " + "nice -n ".repeat(40) + "x",
+  "| " + "sudo -u ".repeat(40) + "x",
+  "sh -a ".repeat(size / 6) + "x",
+  "su -x ".repeat(size / 6) + "x",
+  "sh -a x/sh ".repeat(size / 11),
 ];
 const warnedStarted = performance.now();
 for (const s of warnedLong) { LINKISH.test(warnedView(s)); redactWarned(s); normalizeBrief({ what: s, warning: "x", try: [s], says: [s] }); }
 const warnedMs = performance.now() - warnedStarted;
-assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over twenty-eight 100,000-character hostile inputs: ${warnedMs.toFixed(1)} ms`);
+assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over thirty-four hostile hostile inputs: ${warnedMs.toFixed(1)} ms`);
 console.log(`linear_regex_test: ok (${compared} inputs compared, hostile 100k in ${ms.toFixed(1)} ms, warned filters in ${warnedMs.toFixed(1)} ms)`);

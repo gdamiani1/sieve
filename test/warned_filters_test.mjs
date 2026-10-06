@@ -198,6 +198,7 @@ dropsEach([
   "evil。sh", "evil｡sh", "hxxp[s]://evil.biz/x",
   "deno eval x", "node -p x", "cmd /c x", "su -c 'x'", "conda install x", "choco install x", "winget install x", "scoop install x", "dnf install x", "yum install x", "snap install x", "yarn global add x", "bun x y", "pnpm exec x",
 ], "phone review");
+dropsEach(["su - root -c x", "su root -c x", "cat x | \"$SHELL\"", "ksh93 -c x", "bash5 -c x", "bash - -c x", "cat x | env -u env bash", "cat x | env -u /usr/bin/env bash", "cat x | timeout -s KILL 9 bash", "cat x | sudo -u root nice -n 5 env -u X bash"], "phone review, round 2");
 keepsEach(["Run xargs -n 1 echo on the list", "Use nice output", "Time it with timeout 9 make"], "phone review, ordinary");
 assert.equal(redactWarned("It runs bash -l -c x, then exits"), "It runs [command removed], then exits");
 // A run of backslashes before a bracket is read in one pass.

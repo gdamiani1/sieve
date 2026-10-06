@@ -156,19 +156,22 @@ export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\
 // numbered ("ksh93") or named by $SHELL. Every part reads forward once: a path is a run of segments
 // that each end in "/" and hold none, each runner is a fixed word, and each of its arguments starts with
 // "-", a word character and "=", or a digit, and holds no space and no "|", so one pipe's runners never
-// read on into the next pipe's. A flag's value starts with none of those and holds no "=", so it can't
-// also read as an argument of its own.
+// read on into the next pipe's. A flag's value starts with none of those, holds no "=" and is no runner's
+// name, so it can't also read as an argument or a runner of its own: when it could, every "env" of
+// "| env -u env -u ... x" read both ways and the time doubled with each.
 const SHELLS = String.raw`(?:(?:ba|z|da|k|c|tc|fi|a)?sh|pwsh|powershell)`;
 const INTERPRETERS = String.raw`(?:python[0-9.]*|py|node|perl|ruby|php|deno|bun|lua|osascript)`;
 const PATH_TO = String.raw`(?:[\w.~-]*\/)*`;
-const RUNNER = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup|timeout|stdbuf|nice|busybox)(?:\s+(?:-[^\s|]*(?:\s+[^\s|\-0-9=][^\s|=]*)?|\w+=[^\s|]*|\d+))*\s+`;
-const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*(?:["'\\]?${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?SHELL\b)`;
+const RUNNER_NAME = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup|timeout|stdbuf|nice|busybox)`;
+const RUNNER = String.raw`${RUNNER_NAME}(?:\s+(?:-[^\s|]*(?:\s+(?!${RUNNER_NAME}\b)[^\s|\-0-9=][^\s|=]*)?|\w+=[^\s|]*|\d+))*\s+`;
+const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*["'\\]?(?:${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?SHELL\b)`;
 // Everything LINKISH finds that is a command rather than an address.
 const COMMAND_PARTS = [
   String.raw`${PIPE_RUN}|[<>]\(`,                                                       // a pipe into a shell, process substitution
-  // a shell handed a string (sh -c, bash -l -c, pwsh -nop -w hidden -enc, su -c, cmd /c); a flag's
-  // value never starts with "-", so each flag and value reads once
-  String.raw`\b(?:${SHELLS}(?:\.exe)?|su)(?:\s+-[\w-]+(?:\s+[^\s-]\S*)?)*\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?\s+\/[ck]\b`,
+  // a shell handed a string (sh -c, bash -l -c, ksh93 -c, pwsh -nop -w hidden -enc, su - root -c,
+  // cmd /c); a flag's value never starts with "-", so each flag and value reads once, and at most eight
+  // flags come first: unbounded, a match tried at every "sh" of "sh -a sh -a ..." read to the end
+  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)(?:\s+-[\w-]*(?:\s+[^\s-]\S*)?){0,8}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?\s+\/[ck]\b`,
   String.raw`\b${INTERPRETERS}\s+(?:-[ecrp]|--eval)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`, // an interpreter handed a string, eval
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
   String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv|conda|choco|winget|scoop|dnf|yum|snap)\s+(?:i|install|add|get)\b`, // package installs
