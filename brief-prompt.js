@@ -89,11 +89,14 @@ const postParts = (post) => {
   const threadParts = Array.isArray(post?.posts) ? post.posts.flatMap((x) => [x?.text, x?.quoted?.author, x?.quoted?.text]) : [];
   return [authorOf(post), post?.title, post?.text, ...threadParts].map((s) => (typeof s === "string" ? s : ""));
 };
-// What a check reads: invisible characters gone, and NFKC, which folds the "bold" and fullwidth letters
-// LinkedIn posts use for styling into plain ones, so styling can't hide a phrase from the patterns.
-// Reading the parts one by one and joining them with "\n" gives the same text as reading the joined
-// post: neither step looks across a line break.
-const readable = (s) => nfkc(stripInvisible(s));
+// What a check reads: invisible characters gone, Windows line endings ("\r\n", or a lone "\r") read as
+// "\n" so a blank line between them still ends a paragraph, and NFKC, which folds the "bold" and
+// fullwidth letters LinkedIn posts use for styling into plain ones, so styling can't hide a phrase from
+// the patterns. Only the checks read this: what Sieve keeps, shows and sends is untouched.
+// The parts are read one by one and joined with "\n", by aiDirected and plantedNames alike: a part
+// ending in "\r" reads as ending in "\n", where the joined post would read "\r" and the joining "\n"
+// as one line break.
+const readable = (s) => nfkc(stripInvisible(s).replace(/\r\n?/g, "\n"));
 
 // Every match of one AI_DIRECTED pattern, in order, minus the ones a "quoted" pattern excuses. A quoted
 // example only excuses itself: every match is looked at, so an explanation that quotes the phrase can't
@@ -109,9 +112,9 @@ function* directedMatches(visible, { re, quoted }) {
 // A post -> a warning Sieve can stand behind without a model, or "" when nothing blatant shows.
 // Checks the author as well as the title and text: a display name reaches the model too.
 export function aiDirected(post = {}) {
-  const raw = postParts(post).join("\n");
-  if (hidesCharacters(raw)) return HIDDEN_WARNING;
-  const visible = readable(raw);
+  const parts = postParts(post);
+  if (hidesCharacters(parts.join("\n"))) return HIDDEN_WARNING;
+  const visible = parts.map(readable).join("\n");
   for (const pattern of AI_DIRECTED) {
     const m = directedMatches(visible, pattern).next().value;
     if (!m) continue;
@@ -124,10 +127,13 @@ export function aiDirected(post = {}) {
 // Sieve's own brief keys. A {...} that holds two or more of them as a key (double-quoted, single-quoted
 // or bare, JS-style: "what":, 'what':, what:) is a ready-made brief the post hands to whatever reads
 // it. Ordinary config a developer shares (a tsconfig, a package.json, an MCP server entry, an ESLint
-// config) holds none or one. A GitHub Actions job can hold two, "needs" and a "checks" permission, so
-// those two alone never make a brief: at least one of the others has to be there too.
+// config) holds none or one. Ordinary JSON uses four of them: a GitHub Actions job can hold "needs"
+// and a "checks" permission, and an API answer "success", "warning" and a "what" ({"success": true,
+// "what": "..."}). So those four never count: a brief needs two of technique, what, says, try and
+// skill. Every planted brief seen so far has what and try. ("warning": anywhere still sets off the
+// AI-directed rule for talking to Sieve's own fields, which plants its paragraph.)
 const BRIEF_KEY = /(?<![\p{L}\p{N}_$])['"]?(technique|what|says|checks|needs|try|success|skill|warning)['"]?\s*:/giu;
-const CONFIG_KEYS = new Set(["needs", "checks"]);
+const CONFIG_KEYS = new Set(["needs", "checks", "success", "warning"]);
 // "action" counts, for "the snapdiff action"; "take action" gives "take", which is a stop word.
 const TOOL_NOUN = String.raw`(?:cli|tool|package|library|plugin|extension|sdk|binary|server|module|action|bot)s?`;
 // Names inside a planted passage, only where a name sits, so ordinary words ("commit", "config",
@@ -274,11 +280,11 @@ const briefMentions = (text) => {
 //   is a single-quoted one, but only where a JS value or key starts (after "{", "[", "," or ":" and
 //   any spaces), never at an apostrophe in prose ("don't"). A string also ends at a line break, so
 //   one stray quote can't hide the rest of the post. Each
-//   outermost object that holds two of Sieve's brief keys (not just "needs" and "checks") is planted.
+//   outermost object that holds two of technique, what, says, try and skill as keys is planted.
 //   The outermost objects don't overlap, so the key count reads each character once;
 // - an AI_DIRECTED match (with aiDirected's own quoted-example exemption), from the start of the sentence
 //   it sits in (after ".", "!" or "?" and a space, or a line break) to the end of its paragraph (the
-//   next blank line, or the end of that string of the post). When the paragraph leads on (POINTS_ON or
+//   next blank line, "\r\n" endings included, or the end of that string of the post). When the paragraph leads on (POINTS_ON or
 //   a final ":"), the passage takes the next paragraph of the same string too, and so on while each
 //   paragraph taken is itself short (LEADS_ON) or ends in ":", at most MAX_LED more. A title never
 //   reaches into the text, nor one thread post into the next. Paragraphs are found once, and each
@@ -314,7 +320,7 @@ export function plantedNames(post = {}, briefText, { planted = [] } = {}) {
   }
   for (const [s, e] of outer) {
     const keys = new Set(Array.from(visible.slice(s, e).matchAll(BRIEF_KEY), (m) => m[1].toLowerCase()));
-    if (keys.size >= 2 && [...keys].some((k) => !CONFIG_KEYS.has(k))) spans.push([s, e]);
+    if ([...keys].filter((k) => !CONFIG_KEYS.has(k)).length >= 2) spans.push([s, e]);
   }
   // the paragraphs of each string of the post: [start, end, which string, ends in ":"], blank ones left out
   const paras = [];
