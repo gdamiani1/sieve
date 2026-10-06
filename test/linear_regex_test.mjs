@@ -3,7 +3,7 @@
 // spellings find, so those are kept here and compared on random and hostile text.
 // The phone's LinearPatternTests.swift does the same, with the same generator and inputs.
 import assert from "node:assert/strict";
-import { DASH, BARE_DOMAIN, LINKISH, cleanText } from "../brief.js";
+import { DASH, BARE_DOMAIN, LINKISH, cleanText, warnedView, redactWarned, normalizeBrief } from "../brief.js";
 
 const TLD = "com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1|ly|gl|gd|gy";
 // DASH before 6 Oct 2026.
@@ -11,11 +11,11 @@ const OLD_DASH = /\s*[\u2014\u2013]\s*/g;
 // The bare-domain part of LINKISH spelled the plain, quadratic way: the rule as it reads since the
 // warned-brief filter gaps (6 Oct 2026: a country ending after a known one, a "." alone after a name no
 // longer refusing it, the shorteners' endings).
-const OLD_BARE_DOMAIN = String.raw`\b[\w-]+(?:\.[\w-]+)*\.(?:${TLD})(?:\.[a-z]{2})?\b(?!\.[\w-])`;
+const PLAIN_BARE_DOMAIN = String.raw`\b[\w-]+(?:\.[\w-]+)*\.(?:${TLD})(?:\.[a-z]{2})?\b(?!\.[\w-])`;
 // LINKISH with that plain spelling in place of the linear one.
-const OLD_LINKISH = new RegExp(LINKISH.source.replace(BARE_DOMAIN, OLD_BARE_DOMAIN), "i");
-assert.notEqual(OLD_LINKISH.source, LINKISH.source, "the plain spelling replaced the linear one");
-const oldDomain = new RegExp(OLD_BARE_DOMAIN, "gi");
+const PLAIN_LINKISH = new RegExp(LINKISH.source.replace(BARE_DOMAIN, PLAIN_BARE_DOMAIN), "i");
+assert.notEqual(PLAIN_LINKISH.source, LINKISH.source, "the plain spelling replaced the linear one");
+const oldDomain = new RegExp(PLAIN_BARE_DOMAIN, "gi");
 const newDomain = new RegExp(BARE_DOMAIN, "gi");
 
 const spans = (re, s) => [...s.matchAll(re)].map((m) => [m.index, m[0].length]);
@@ -56,7 +56,7 @@ for (const s of [...HOSTILE, ...random(40000)]) {
   assert.equal(s.replace(DASH, ", "), s.replace(OLD_DASH, ", "), `DASH replace ${at}`);
   // LINKISH: the same verdict; and group 1 of the new bare domain holds exactly the old one's matches.
   // The new match itself starts earlier, at the start of the dotted name, which is what keeps it linear.
-  assert.equal(LINKISH.test(s), OLD_LINKISH.test(s), `LINKISH ${at}`);
+  assert.equal(LINKISH.test(s), PLAIN_LINKISH.test(s), `LINKISH ${at}`);
   assert.deepEqual(groupSpans(newDomain, s), spans(oldDomain, s), `BARE_DOMAIN ${at}`);
   compared++;
 }
@@ -84,4 +84,27 @@ for (const s of hostileLong) { s.replace(DASH, ", "); LINKISH.test(s); cleanText
 const ms = performance.now() - started;
 assert.ok(ms < 500, `DASH, LINKISH and cleanText over seven 100,000-character hostile inputs: ${ms.toFixed(1)} ms`);
 
-console.log(`linear_regex_test: ok (${compared} inputs compared, hostile 100k in ${ms.toFixed(1)} ms)`);
+// The warned-brief filters (6 Oct 2026): the shell-by-path pipe, the check view and the rewrite are
+// linear on hostile text too.
+const warnedLong = [
+  "|" + "/a".repeat(size / 2),
+  "| sudo".repeat(size / 6),
+  "| sudo -a".repeat(size / 9),
+  "| env A=1 B=2".repeat(size / 13),
+  "| xargs -n 1".repeat(size / 12),
+  "a dot ".repeat(size / 6),
+  "[.]".repeat(size / 3),
+  "a[.]".repeat(size / 4),
+  "a [[ dot ]] ".repeat(size / 12),
+  "a".repeat(size) + ".com",
+  "curl ".repeat(size / 5),
+  "`curl` ".repeat(size / 7),
+  "a.com.".repeat(size / 6),
+  " ".repeat(size) + "[",
+  "\ufe58".repeat(size),
+];
+const warnedStarted = performance.now();
+for (const s of warnedLong) { LINKISH.test(warnedView(s)); redactWarned(s); normalizeBrief({ what: s, warning: "x", try: [s], says: [s] }); }
+const warnedMs = performance.now() - warnedStarted;
+assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over fifteen 100,000-character hostile inputs: ${warnedMs.toFixed(1)} ms`);
+console.log(`linear_regex_test: ok (${compared} inputs compared, hostile 100k in ${ms.toFixed(1)} ms, warned filters in ${warnedMs.toFixed(1)} ms)`);

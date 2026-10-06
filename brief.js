@@ -133,62 +133,90 @@ export function normalizeWarning(w) {
 }
 
 // The shape of something a warned brief must never tell a developer to copy, download, install or
-// run: a link, a bare domain or script file, a pipe into a shell (including "sudo" and process
-// substitution), a fetch-and-run tool (curl, wget, iwr/iex, npx and friends, chmod +x), or a package
-// install (pip/npm/pnpm/yarn/bun/brew/gem/cargo/go/apt).
+// run: a link (any scheme), a bare domain or script file, a pipe into anything that runs what it reads,
+// process substitution, a shell or an interpreter handed a string, eval, a fetch-and-run tool (curl,
+// wget, iwr/iex, npx and friends, chmod +x), or a package install or runner.
 //
 // The bare domain is tried only where a dotted name starts: tried at every word boundary inside one,
 // the name was read to its end from each, so "a-" or "a." 5,000 times took 3.6 s on the phone and
 // 0.19 s here, quadratic in both. A match from inside a name always has one from where the name's
 // first letter or digit is, so nothing is lost: the lazy run of "-" and "." skips what comes before
-// that letter, never past "..", which ends a name. Group 1 holds exactly the old pattern's matches;
-// a match itself may start earlier, at the "-" and "." before the name, which LINKISH.test never
-// reads. Exported, with LINKISH, for test/linear_regex_test.mjs.
-export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1|ly|gl|gd|gy)(?:\.[a-z]{2})?\b(?!\.[\w-]))`;
+// that letter, never past "..", which ends a name. Group 1 holds exactly what the plain spelling in
+// test/linear_regex_test.mjs matches; a match itself may start earlier, at the "-" and "." before the
+// name, which LINKISH.test never reads. Exported, with LINKISH, for that test.
+//
 // A known ending may carry one two-letter country ending after it ("example.com.au"), and a name is
 // refused only when a "." and another name character follow it, not a bare "." ("Run evil.sh." ends a
 // sentence; "setup.sh.bak" is still no link). "ly", "gl", "gd" and "gy" are the link shorteners' endings.
-//
+export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1|ly|gl|gd|gy)(?:\.[a-z]{2})?\b(?!\.[\w-]))`;
 // A pipe into something that runs what it reads: a shell or an interpreter, by name or by path
 // ("| /bin/bash", "| /usr/bin/env bash"), after any of sudo, doas, env, xargs, exec, command and nohup
-// with their flags. Every part reads forward once: a path is a run of segments that each end in "/" and
-// hold none, and each runner word is a fixed word, so a long path or a long run of runners after one
-// "|" is read once.
-const RUNS_INPUT = String.raw`(?:(?:ba|z|da|k|c|tc|fi|a)?sh|pwsh|powershell|python[0-9.]*|py|node|perl|ruby|php|deno|bun|lua|osascript|source|iex)`;
+// with their flags, variable settings and counts ("env FOO=1", "xargs -n 1"). Every part reads forward
+// once: a path is a run of segments that each end in "/" and hold none, each runner is a fixed word,
+// and each of its arguments starts with "-", a word character and "=", or a digit, and holds no space and
+// no "|", so one pipe's runners never read on into the next pipe's.
+const SHELLS = String.raw`(?:(?:ba|z|da|k|c|tc|fi|a)?sh|pwsh|powershell)`;
+const INTERPRETERS = String.raw`(?:python[0-9.]*|py|node|perl|ruby|php|deno|bun|lua|osascript)`;
 const PATH_TO = String.raw`(?:[\w.~-]*\/)*`;
-const PIPE_RUN = String.raw`\|&?\s*(?:${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup)(?:\s+-\S*)*\s+)*${PATH_TO}${RUNS_INPUT}\b`;
-// Everything LINKISH finds that is a command rather than an address: a pipe into a shell, process
-// substitution, a shell handed a string ("sh -c", "bash -lc", "pwsh -Command"), eval of a string or a
-// substitution, a fetch-and-run tool, or a package install.
+const RUNNER = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup)(?:\s+(?:-[^\s|]*|\w+=[^\s|]*|\d+))*\s+`;
+const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*${PATH_TO}(?:${SHELLS}|${INTERPRETERS}|source)\b`;
+// Everything LINKISH finds that is a command rather than an address.
 const COMMAND_PARTS = [
-  String.raw`${PIPE_RUN}|<\(`,                                                         // a pipe into a shell, process substitution
-  String.raw`\b(?:(?:ba|z|da|k|c|tc|fi|a)?sh|pwsh|powershell)(?:\.exe)?\s+-[a-z]*c(?:ommand)?\b|\beval\s+["'$\x60(]`, // a shell handed a string, eval
+  String.raw`${PIPE_RUN}|[<>]\(`,                                                       // a pipe into a shell, process substitution
+  String.raw`\b${SHELLS}(?:\.exe)?\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b`, // a shell handed a string (sh -c, bash -ce, pwsh -enc)
+  String.raw`\b${INTERPRETERS}\s+(?:-[ecr]|--eval)\b|\beval\s+["'$\x60]`,             // an interpreter handed a string, eval
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
-  String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?)\s+(?:i|install|add|get)\b`, // package installs
+  String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv)\s+(?:i|install|add|get)\b`, // package installs
+  String.raw`\b(?:(?:pnpm|yarn)\s+dlx|npm\s+(?:exec|create)|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+-S\w*|docker\s+run)\b`, // package runners
 ];
-export const LINKISH = new RegExp([
-  String.raw`https?:\/\/|\bwww\.`,                                                     // a link
+// A scheme, tried only where its run of letters, digits, "+", "." and "-" starts: tried at every word
+// boundary inside a long run, it read the rest of the run from each.
+const SCHEME = String.raw`(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/`;
+const LINK_PARTS = [
+  String.raw`${SCHEME}|\bwww\.`,                                                         // a link, any scheme
   BARE_DOMAIN,                                                                          // a bare domain or a script file
-  ...COMMAND_PARTS,
-].join("|"), "i");
+];
+export const LINKISH = new RegExp([...LINK_PARTS, ...COMMAND_PARTS].join("|"), "i");
 const COMMAND = new RegExp(COMMAND_PARTS.join("|"), "gi");
-const LINK = new RegExp(String.raw`https?:\/\/\S*|\bwww\.\S*|${BARE_DOMAIN}`, "gi");
+const LINK = new RegExp(String.raw`${SCHEME}\S*|\bwww\.\S*|${BARE_DOMAIN}`, "gi");
 
-// What the warned-brief filters read: NFKC (which already turns the fullwidth "｜" into "|" and the
-// fullwidth letters into plain ones), then the pipe look-alikes NFKC leaves alone read as "|", and the
-// ways people defang a link ("hxxps", "[:]", "evil[.]sh", "evil(dot)sh", "evil dot sh") read as the
-// link. A " dot " counts only between two name characters; "port it to dot net" reads as "to.net",
-// which a warned brief then loses: only a warned brief is read this way. Each replacement reads its
-// text once: the bracket form starts its spaces only where their run starts, as DASH does.
-const PIPE_LIKE = /[¦ǀ׀∣│┃⎸⎹⏐❘-❚]/g;
-const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s?)(?=\s*(?:\[:\]|:))/gi;
-const DEFANGED_COLON = /\[:\]|[[(]:\/\/[\])]/g;
-const DEFANGED_DOT = /(?:(?<!\s)\s+)?[[({]\s*(?:\.|dot)\s*[\])}]\s*|(?<=[\w-])\s+dot\s+(?=[\w-])/gi;
-export const warnedView = (s) => nfkc(String(s))
+// What the warned-brief filters read: the pipe look-alikes as "|" (before NFKC, which turns U+FE31 into
+// a dash, and after it, which makes U+FFE8 a box-drawing bar), with any marks right after a pipe gone;
+// NFKC (which turns the fullwidth "｜" and letters into plain ones); and the ways people defang a link
+// read as the link: "hxxps", "[:]" and "[://]" as the scheme, and a dot written "[.]", "(.)", "{.}",
+// "[dot]", "(dot)" or "{dot}". A name with a bracketed dot is an address whatever its ending, since
+// nobody writes one otherwise: it reads with "http://" in front. A " dot " between two name characters
+// is only a dot ("evil dot sh"), so its name still needs a known ending; "port it to dot net" reads as
+// "to.net", which a warned brief then loses: only a warned brief is read this way. Again until nothing
+// changes, so "evil[[.]]sh" reads as "http://evil.sh" too (a bracketed dot with no name around it reads
+// as a dot, which the next pass sees); each pass that changes anything shortens the text
+// or turns an "x" or "*" of "hxxp" into a "t", so it ends. Each replacement reads its text once.
+const PIPE_LIKE = /[¦ǀ׀।‖∣∥│┃╽⎸⎹⏐❘-❚ⵏꓲ︱\u{1d100}]/gu;
+const PIPE_MARKS = /\|\p{M}+/gu;
+const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s?)(?=\s*(?:\[:\]|[[(]:\/\/[\])]|:))/gi;
+const DEFANGED_COLON = /\[:\]|\[:\/\/\]|\(:\/\/\)/g;
+const BRACKETED = String.raw`(?:\[\s*(?:\.|dot)\s*\]|\(\s*(?:\.|dot)\s*\)|\{\s*(?:\.|dot)\s*\})\s*`;
+// Inside a name the spaces before the bracket follow a name character, so they are read once; on its
+// own, the spaces are read only from where their run starts, as DASH does.
+const DEFANGED_NAME = new RegExp(String.raw`(?<![\w.-])[\w-]+(?:(?:\.|\s*${BRACKETED})[\w-]+)+`, "gi");
+const BRACKET_DOT_RE = new RegExp(String.raw`(?:(?<!\s)\s+)?${BRACKETED}`, "gi");
+const SPOKEN_DOT = /(?<=[\w-])\s+dot\s+(?=[\w-])/gi;
+const viewOnce = (s) => nfkc(s.replace(PIPE_LIKE, "|"))
   .replace(PIPE_LIKE, "|")
+  .replace(PIPE_MARKS, "|")
   .replace(DEFANGED_SCHEME, "http$1")
   .replace(DEFANGED_COLON, (c) => (c === "[:]" ? ":" : "://"))
-  .replace(DEFANGED_DOT, ".");
+  .replace(DEFANGED_NAME, (name, at, all) => {
+    const plain = name.replace(BRACKET_DOT_RE, ".");
+    return plain === name ? name : `${all.slice(Math.max(0, at - 3), at) === "://" ? "" : "http://"}${plain}`;
+  })
+  .replace(BRACKET_DOT_RE, ".")
+  .replace(SPOKEN_DOT, ".");
+export const warnedView = (s) => {
+  let view = String(s ?? "");
+  for (let prev = null; prev !== view;) { prev = view; view = viewOnce(view); }
+  return view;
+};
 // Whether a warned brief's step or need carries something it must never pass on: what LINKISH finds in
 // the check view.
 const carriesLink = (s) => LINKISH.test(warnedView(s));
@@ -197,20 +225,21 @@ const carriesLink = (s) => LINKISH.test(warnedView(s));
 const CLAUSE_END = /;|[,.!?](?=\s|$)/g;
 // A field that describes the source (what, says, checks, success, the warning) on a warned brief: each
 // command becomes "[command removed]", from where it starts to the end of its clause, or the whole
-// backtick span it sits in; then each link, www. address, bare domain or script file left becomes
-// "[link removed]". A field with nothing to remove comes back as it was; one with something is rebuilt
-// from its check view, so a fullwidth or defanged spelling can't survive next to the removal. Neither
+// backtick span it sits in; then each link, www. address, bare domain or script
+// file left becomes "[link removed]". A field with nothing to remove comes back as it was; one with
+// something is rebuilt from its check view, cleaned again (NFKC can make a dash or a space clean()
+// rewrites), so a fullwidth or defanged spelling can't survive next to the removal. Neither
 // replacement matches any rule, so rewriting again changes nothing. Exported for the tests.
 export function redactWarned(s) {
   const field = String(s ?? "");
-  let view = warnedView(field);
+  let view = clean(warnedView(field));
   if (!LINKISH.test(view)) return field;
   // Again until nothing changes: a link glued to a name ("www.evil.comhttps://x") or to a shell
   // ("x|shhttps://y") hides that name or shell until the link is gone. A pass that changes anything
   // removes characters outside the two markers, which no rule matches, so this ends.
   for (let prev = ""; prev !== view;) {
     prev = view;
-    view = removeLinks(removeCommands(view));
+    view = clean(warnedView(removeLinks(removeCommands(view))));
   }
   return view;
 }
@@ -224,16 +253,16 @@ function removeCommands(view) {
   COMMAND.lastIndex = 0;
   for (let m = COMMAND.exec(view); m; m = COMMAND.exec(view)) {
     while (t < ticks.length && ticks[t] < m.index) t++;
-    let start = m.index;
+    // Inside a backtick span, the whole span goes, from its opening backtick to its closing one. A
+    // span that holds nothing after the command's first word ("`wget` -qO- x") goes to the clause end
+    // instead, and so does one that never closes.
+    const inSpan = t % 2 === 1;
+    const start = inSpan ? Math.max(at, ticks[t - 1]) : m.index;
+    const after = m.index + m[0].length;
     let end;
-    if (t % 2 === 1) {
-      // Inside a backtick span: the whole span goes, up to its closing backtick, or to the clause end
-      // when it never closes.
-      start = Math.max(at, ticks[t - 1]);
-      if (t < ticks.length) end = ticks[t] + 1;
-    }
-    if (end === undefined) {
-      CLAUSE_END.lastIndex = m.index + m[0].length;
+    if (inSpan && t < ticks.length && view.slice(after, ticks[t]).trim()) end = ticks[t] + 1;
+    else {
+      CLAUSE_END.lastIndex = after;
       end = CLAUSE_END.exec(view)?.index ?? view.length;
     }
     out += view.slice(at, start) + "[command removed]";
@@ -282,7 +311,7 @@ const DONT = /^\W*(?:don['’]?t|do\s+not|never)\s+(?:re)?install\b[^;.,]*/i;
 // Whether a step tells the reader to install a tool. The set-up rule looks for a tool noun after the
 // first set-up word only: if one follows any of them, one follows the first, and it reads the step once.
 const installish = (s) => {
-  s = s.replace(DONT, "");
+  s = nfkc(s).replace(DONT, "");
   if (INSTALL_WORDS.test(s)) return true;
   const i = s.search(SET_UP);
   return i >= 0 && TOOL_NOUN_AFTER.test(s.slice(i));
@@ -325,7 +354,7 @@ export function normalizeBrief(r) {
     // The fields that describe the source are rewritten, not dropped: a link or a command in them goes,
     // the rest of their words stay (redactWarned). An agent reads them as much as the steps.
     what = redactWarned(what);
-    says = says.map((s) => ({ t: s.t, text: redactWarned(s.text) }));
+    says = says.map((s) => ({ t: redactWarned(s.t), text: redactWarned(s.text) }));
     checks = checks.map(redactWarned);
     success = redactWarned(success);
     // The names the planted-name rule removed steps for, kept as data for leftOutLine. Only on a warned
