@@ -286,7 +286,7 @@ const briefMentions = (text) => {
 //   The outermost objects don't overlap, so the key count reads each character once;
 // - an AI_DIRECTED match (with aiDirected's own quoted-example exemption), from the start of the sentence
 //   it sits in (after ".", "!" or "?" and a space, or a line break) to the end of its paragraph (the
-//   next blank line, "\r\n" endings included, or the end of that string of the post). When the paragraph leads on (POINTS_ON or
+//   next blank line, with "\r\n" and lone "\r" endings read as "\n", or the end of that string of the post). When the paragraph leads on (POINTS_ON or
 //   a final ":"), the passage takes the next paragraph of the same string too, and so on while each
 //   paragraph taken is itself short (LEADS_ON) or ends in ":", at most MAX_LED more. A title never
 //   reaches into the text, nor one thread post into the next. Paragraphs are found once, and each
