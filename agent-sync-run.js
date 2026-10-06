@@ -62,6 +62,17 @@ const signedOut = async (state, detail = null) => {
   await chrome.alarms.clear(SYNC_ALARM);
   return next;
 };
+// An off record with one of these reasons says the agent's copy may still be on the server (words()).
+const MAY_REMAIN = ["offline", "server"];
+const keptReason = (s, detail) => (!s.on && MAY_REMAIN.includes(s.detail?.reason) ? s.detail : detail);
+
+// A sign-in that didn't finish: a session that's already on carries on; otherwise off (or not
+// invited), keeping a copy-may-remain reason rather than overwriting it.
+const signInFailed = async (state, detail = null) => {
+  if ((await load()).on) return load();
+  return write((s) => offRecord(s, state, keptReason(s, detail)));
+};
+
 // Signed out by the server (a refused refresh or token), only if that session is still the live one.
 const signedOutFor = async (gen) => {
   let applied = false;
@@ -155,10 +166,10 @@ async function signIn(provider) {
   try {
     back = await chrome.identity.launchWebAuthFlow({ url: authorizeUrl({ redirect, challenge, state, device: d, provider }), interactive: true });
   } catch {
-    return (await load()).on ? load() : signedOut("off"); // the person closed the sign-in window
+    return signInFailed("off"); // the person closed the sign-in window
   }
   const cb = readCallback(back, state);
-  if (cb.error) return (await load()).on ? load() : signedOut(cb.error === "not_invited" ? "not_invited" : "off");
+  if (cb.error) return signInFailed(cb.error === "not_invited" ? "not_invited" : "off");
   let t = null;
   try {
     const res = await net("/token", { method: "POST", headers: FORM, body: tokenForm({ code: cb.code, verifier, redirect }).toString() });
@@ -166,7 +177,7 @@ async function signIn(provider) {
   } catch {}
   // A sign-in that failed at the last step: "error" (try again), not "offline", which on an off record
   // means a copy may remain on the server.
-  if (!t) return (await load()).on ? load() : signedOut("off", { reason: "error" });
+  if (!t) return signInFailed("off", { reason: "error" });
   // Turn on while already on: the old session signs out first (best effort), then is replaced.
   const old = await load();
   if (old.on) await ask("/v1/account/sign-out", "POST", await tokenOf(old));
@@ -321,7 +332,6 @@ async function ask(path, method, token, done = (res) => res.ok) {
  * and this Chrome signs out with the token it had, and the optional permissions go. The off record
  * says "offline" from the start (the agent's copy may still be there) and loses it only when the
  * server says yes to both, so a worker stopped halfway leaves the honest answer behind. */
-const MAY_REMAIN = ["offline", "server"];
 export async function turnOff() {
   let prior = {};
   await write((s) => {
@@ -364,7 +374,7 @@ export async function deleteAccount() {
       const res = await call("/v1/account", { method: "DELETE" });
       if (res) reason = res.ok ? "" : "server";
     } catch {}
-  } finally { deletingGen = null; }
+  } finally { if (deletingGen === gen) deletingGen = null; } // a newer delete may hold it now
   if (reason) {
     const now = await write((x) => {
       if (live(x, gen)) return { ...x, detail: { reason } };
@@ -381,7 +391,7 @@ export async function deleteAccount() {
 }
 
 /** Something unexpected went wrong while acting: say so instead of showing the old state as if fine. */
-export const failed = () => write((s) => ({ ...s, state: s.state || "off", detail: { reason: "error" } }));
+export const failed = () => write((s) => ({ ...s, state: s.state || "off", detail: keptReason(s, { reason: "error" }) }));
 
 /** What the settings page shows: never the tokens, the hash or the sign-in's gen. */
 export async function status() {

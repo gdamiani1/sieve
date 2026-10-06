@@ -63,10 +63,18 @@ globalThis.chrome = {
 // ---- Sieve's server ----
 const requests = []; // { method, path, headers, body }
 // A request held by a test waits here until the test releases it ("PUT /v1/library/chrome", "POST /token").
-const holds = new Map();
-const hold = (route) => { let release; holds.set(route, new Promise((r) => { release = r; })); return () => { holds.delete(route); release(); }; };
+// Each hold() holds the next request to that route only.
+const holds = new Map(); // route -> [promise]
+const hold = (route) => {
+  let release;
+  const p = new Promise((r) => { release = r; });
+  holds.set(route, [...(holds.get(route) || []), p]);
+  return () => release();
+};
 const server = {
   timeout: false, // the PUT times out (AbortSignal.timeout)
+  code: 200, // the status /token answers a sign-in code with
+  acceptOld: false, // every access token ever issued still works (not just the latest)
   unauthorized: false, // every /v1 request is answered 401, whatever the token
   deleteLibrary: null, deleteAccount: null, // { status, body } instead of success
   put: null, // null: stored/unchanged; or { status, body } for every PUT while set
@@ -74,6 +82,7 @@ const server = {
   down: false, // every request throws, as with no network
   access: null, refresh: null, device: null, issued: 0, lastStored: null,
 };
+const issuedAccess = new Set();
 const answer = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 // The worker catches network errors, so a broken rule inside the fake server is kept here and checked
 // at the end instead of being swallowed.
@@ -87,7 +96,8 @@ async function serve(url, init) {
   const method = init.method || "GET";
   const headers = Object.fromEntries(Object.entries(init.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
   requests.push({ method, path: u.pathname, headers, body: init.body, signal: init.signal instanceof AbortSignal });
-  if (holds.has(`${method} ${u.pathname}`)) await holds.get(`${method} ${u.pathname}`);
+  const held = holds.get(`${method} ${u.pathname}`)?.shift();
+  if (held) await held;
   await new Promise((r) => setTimeout(r, 2)); // a real answer takes a moment, so two requests can overlap
   if (server.down) throw new TypeError("Failed to fetch");
   if (u.pathname === "/token") {
@@ -97,6 +107,7 @@ async function serve(url, init) {
     assert.equal(form.get("client_id"), `${SERVER}/clients/chrome.json`);
     assert.equal(form.get("client_secret"), null);
     if (form.get("grant_type") === "authorization_code") {
+      if (server.code !== 200) return answer(server.code, { error: "invalid_grant" });
       assert.equal(form.get("code"), "K");
       assert.ok(form.get("code_verifier"));
     } else {
@@ -105,13 +116,15 @@ async function serve(url, init) {
     }
     server.issued++;
     server.access = `acc-${server.issued}`;
+    issuedAccess.add(server.access);
     server.refresh = `ref-${server.issued}`;
     return answer(200, { access_token: server.access, refresh_token: server.refresh, expires_in: 3600, token_type: "bearer" });
   }
   // Every /v1 request carries this Chrome's token and the device the token was issued for.
   assert.match(headers["x-sieve-device"], /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.equal(headers["x-sieve-device"], server.device);
-  if (server.unauthorized || headers.authorization !== `Bearer ${server.access}`) return answer(401);
+  const tokenOk = headers.authorization === `Bearer ${server.access}` || (server.acceptOld && issuedAccess.has(headers.authorization?.slice(7)));
+  if (server.unauthorized || !tokenOk) return answer(401);
   const route = `${method} ${u.pathname}`;
   if (route === "GET /v1/account") return answer(200, { email: "dev@example.com", method: "google", plan: "trial", trialEndsAt: "2026-11-10T23:59:59.999Z" });
   if (route === "PUT /v1/library/chrome") {
@@ -520,6 +533,30 @@ try {
   assert.deepEqual(s.detail, { reason: "server" });
   assert.equal((await sync({ do: "on" })).state, "on");
 
+  // An older delete finishing late doesn't lift the guard of a newer one still out.
+  server.acceptOld = true;
+  server.deleteAccount = { status: 502, body: { result: "failed", step: "library" } };
+  const releaseA = hold("DELETE /v1/account");
+  n = requests.length;
+  const delA = sync({ do: "delete" });
+  await waitFor("delete A", () => since(n).some((r) => r.path === "/v1/account" && r.method === "DELETE"));
+  assert.equal((await sync({ do: "on" })).state, "on"); // a new sign-in while A is out
+  const releaseB = hold("DELETE /v1/account");
+  n = requests.length;
+  const delB = sync({ do: "delete" });
+  await waitFor("delete B", () => since(n).some((r) => r.path === "/v1/account" && r.method === "DELETE"));
+  releaseA();
+  await delA;
+  n = requests.length;
+  await sync({ do: "send" });
+  assert.equal(since(n).filter((r) => r.method === "PUT").length, 0, "no send while delete B is out");
+  server.deleteAccount = null;
+  releaseB();
+  await delB;
+  server.acceptOld = false;
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  assert.equal((await sync({ do: "on" })).state, "on");
+
   // Turn off while a PUT is out: off at once, and the PUT's answer writes nothing back.
   release = hold("PUT /v1/library/chrome");
   n = requests.length;
@@ -558,9 +595,29 @@ try {
   server.deleteLibrary = null;
   assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "server" } });
 
-  // Something unexpected while acting: an error is recorded, not the old state shown as if fine.
+  // A sign-in that fails from there keeps the copy-may-remain reason: window closed, not invited,
+  // the token step refused.
+  const remains = { on: false, device: dev, state: "off", detail: { reason: "server" } };
+  authAnswer = () => { throw new Error("The user did not approve access."); };
+  await sync({ do: "on" });
+  assert.deepEqual(store.agentSync, remains);
+  authAnswer = (state) => `https://test.chromiumapp.org/?error=access_denied&error_description=new_accounts_closed&state=${state}`;
+  await sync({ do: "on" });
+  assert.deepEqual(store.agentSync, { ...remains, state: "not_invited" });
+  authAnswer = null;
+  store.agentSync = remains;
+  server.code = 400;
+  await sync({ do: "on" });
+  server.code = 200;
+  assert.deepEqual(store.agentSync, remains);
+
+  // Something unexpected while acting: an error is recorded, not the old state shown as if fine, but
+  // a copy-may-remain reason stays.
   const getRedirectURL = chrome.identity.getRedirectURL;
   chrome.identity.getRedirectURL = () => { throw new Error("boom"); };
+  s = await sync({ do: "on" });
+  assert.deepEqual(s.detail, { reason: "server" });
+  store.agentSync = { on: false, device: dev, state: "off" };
   s = await sync({ do: "on" });
   chrome.identity.getRedirectURL = getRedirectURL;
   assert.equal(s.on, false);
