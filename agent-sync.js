@@ -94,7 +94,7 @@ export function words(s) {
       if (d.reason === "offline" || d.reason === "server") return "Turned off here, but your agent's copy may still be on Sieve's server. Turn on and off again to delete it.";
       return "Your coding agent can read what you save here and on iPhone. Invite-only for now.";
     case "not_invited": return "Sending your library to your agent is invite-only for now.";
-    case "on": return `Sending to your agent as ${s.email}. ${s.lastAt ? `Last sent ${when(s.lastAt)}, ${count(whole(s.lastItems), "item", "items")}.` : "Not sent yet."}`;
+    case "on": return `Sending to your agent${s.email ? ` as ${s.email}` : ""}. ${s.lastAt ? `Last sent ${when(s.lastAt)}, ${count(whole(s.lastItems), "item", "items")}.` : "Not sent yet."}`;
     case "ended": return `Your invite ended${d.endedOn ? ` on ${d.endedOn}` : ""}. Your agent no longer reads this library.`;
     case "other_device": return "Another Chrome already sends its library to this account.";
     case "shrunk": return `Your agent's copy has ${count(whole(d.stored), "pin", "pins")} and this Chrome has ${count(whole(d.count), "pin", "pins")}. Send anyway?`;

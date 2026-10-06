@@ -11,16 +11,30 @@ const html = readFileSync(new URL("../options.html", import.meta.url), "utf8");
 const tick = () => new Promise((r) => setTimeout(r, 0));
 let loads = 0;
 
-// A fresh page: every element with an id, `hidden` as the HTML has it. Returns the page and what it sent.
+// A fresh page: options.html's elements, nested as the HTML nests them, with `hidden` as the HTML has
+// it, focus, and querySelectorAll by tag name. Returns the page and what it sent.
+const VOID = new Set(["input", "br", "meta", "img", "hr", "link", "source"]);
 async function page({ record, granted = true, confirmed = true, answer } = {}) {
   const doc = fakeDocument();
-  for (const m of html.matchAll(/<(\w+)([^>]*?)\sid="([^"]+)"([^>]*)>/g)) {
-    const el = doc.createElement(m[1]);
-    el.id = m[3];
-    el.hidden = /\shidden(\s|$|>)/.test(` ${m[2]} ${m[4]} `);
-    el.querySelectorAll = () => [];
-    doc.body.append(el);
+  const body = html.slice(html.indexOf("<main>"), html.indexOf("</main>") + 7);
+  const stack = [doc.body];
+  for (const m of body.matchAll(/<(\/?)(\w+)([^>]*)>/g)) {
+    const [, close, tag, attrs] = m;
+    if (close) { if (stack.length > 1 && stack.at(-1).tagName === tag.toUpperCase()) stack.pop(); continue; }
+    const el = doc.createElement(tag);
+    el.id = attrs.match(/\sid="([^"]+)"/)?.[1] || "";
+    el.className = attrs.match(/\sclass="([^"]+)"/)?.[1] || "";
+    el.hidden = /\shidden(\s|$)/.test(attrs);
+    for (const [, k, v] of attrs.matchAll(/\s([\w-]+)="([^"]*)"/g)) el.attrs[k] = v;
+    el.querySelectorAll = (sel) => {
+      const all = (n) => n.children.flatMap((c) => [c, ...all(c)]);
+      return all(el).filter((c) => c.tagName === sel.toUpperCase());
+    };
+    el.focus = () => { doc.activeElement = el; };
+    stack.at(-1).append(el);
+    if (!VOID.has(tag)) stack.push(el);
   }
+  doc.activeElement = doc.body;
   doc.querySelector = () => ({ checked: false });
   const sent = [];
   const asked = [];
@@ -192,8 +206,23 @@ for (const reason of ["offline", "server"]) {
   $("agentDelete").click();
   await tick(); await tick();
   assert.deepEqual(sent.at(-1), { type: "agentSync", do: "delete" });
-  assert.equal($("agentMsg").textContent, "Couldn't delete your account. Check your connection and try again.");
+  assert.equal($("agentMsg").textContent, reason === "offline"
+    ? "Couldn't delete your account. Check your connection and try again."
+    : "Sieve's server couldn't delete your account. Try again in a minute.");
   assert.equal($("agentOnBox").hidden, false);
+}
+// Refused because the server signed this Chrome out meanwhile: the account is still there.
+{
+  const { $ } = await page({ record: on, answer: { on: false, state: "signed_out", detail: { reason: "server" } } });
+  $("agentDelete").click();
+  await tick(); await tick();
+  assert.equal($("agentMsg").textContent, "Couldn't delete your account: this Chrome was signed out. Turn on again, then delete.");
+  assert.equal($("agentLine").textContent, words({ state: "signed_out" }));
+}
+// The server's own reason for refusing a library isn't a failed delete.
+{
+  const { $ } = await page({ record: { ...on, state: "invalid", detail: { reason: "server" } } });
+  assert.equal($("agentMsg").textContent, "");
 }
 {
   const { $ } = await page({ record: on, answer: { on: false, state: "off" } });
@@ -220,6 +249,86 @@ for (const reason of ["offline", "server"]) {
   await tick(); await tick();
   assert.equal(sent.filter((m) => m.do === "status").length, 2);
   assert.equal($("agentLine").textContent, words(on));
+}
+
+// Ended: only Turn off and Delete.
+{
+  const { $ } = await page({ record: { ...on, state: "ended", detail: { endedOn: "10 November" } } });
+  assert.equal($("agentLine").textContent, "Your invite ended on 10 November. Your agent no longer reads this library.");
+  assert.equal($("agentSend").hidden, true);
+  assert.equal($("agentReplace").hidden, true);
+  assert.equal($("agentShrink").hidden, true);
+  assert.equal($("agentOffBtn").hidden, false);
+  assert.equal($("agentDelete").hidden, false);
+}
+{
+  const { $ } = await page({ record: on });
+  assert.equal($("agentSend").hidden, false, "Send now is back once not ended");
+}
+
+// While a request runs: every button in the section is disabled and a progress line shows.
+for (const [id, line, record] of [["agentOn", "Signing in…", { on: false, state: "off" }], ["agentEmail", "Signing in…", { on: false, state: "off" }],
+  ["agentSend", "Sending…", on], ["agentReplace", "Sending…", { ...on, state: "other_device" }], ["agentShrink", "Sending…", { ...on, state: "shrunk" }],
+  ["agentOffBtn", "Turning off…", on], ["agentDelete", "Deleting…", on]]) {
+  let release;
+  const { $ } = await page({ record, answer: () => new Promise((r) => { release = r; }) });
+  const buttons = $("agentSection").querySelectorAll("button");
+  assert.ok(buttons.length >= 7);
+  $(id).click();
+  await tick(); await tick();
+  assert.ok(buttons.every((b) => b.disabled), `all disabled during ${id}`);
+  assert.equal($("agentMsg").textContent, line, id);
+  release(on);
+  await tick(); await tick();
+  assert.ok(buttons.every((b) => !b.disabled), `all enabled after ${id}`);
+  assert.equal($("agentMsg").textContent, "", `progress cleared after ${id}`);
+}
+
+// Focus: a focused button that the answer hides hands focus to the first visible button.
+{
+  const { $ } = await page({ record: on, answer: { on: false, state: "off" } });
+  $("agentOffBtn").focus();
+  $("agentOffBtn").click();
+  await tick(); await tick();
+  assert.equal(document.activeElement, $("agentOn"));
+}
+{
+  const { $ } = await page({ record: { on: false, state: "off" }, answer: on });
+  $("agentOn").focus();
+  $("agentOn").click();
+  await tick(); await tick();
+  assert.equal(document.activeElement, $("agentSend"));
+}
+{
+  // Chrome drops focus from a button while it is disabled: it comes back after the answer.
+  let release;
+  const { $ } = await page({ record: on, answer: () => new Promise((r) => { release = r; }) });
+  $("agentSend").focus();
+  $("agentSend").click();
+  await tick();
+  document.activeElement = document.body;
+  release(on);
+  await tick(); await tick();
+  assert.equal(document.activeElement, $("agentSend"));
+}
+{
+  // A button that stays visible keeps focus.
+  const { $ } = await page({ record: on, answer: on });
+  $("agentSend").focus();
+  $("agentSend").click();
+  await tick(); await tick();
+  assert.equal(document.activeElement, $("agentSend"));
+}
+
+// The page: the section sits after Briefs and digests, before Daily reminder; the line is announced;
+// Use email instead is a button; Delete has its own row, away from Send now.
+{
+  const at = (t) => html.indexOf(t);
+  assert.ok(at("<h2>Briefs and digests</h2>") < at('id="agentSection"') && at('id="agentSection"') < at("<h2>Daily reminder</h2>"));
+  assert.match(html, /<p class="hint" id="agentLine" aria-live="polite">/);
+  assert.match(html, /<button type="button" class="link" id="agentEmail">Use email instead<\/button>/);
+  const { $ } = await page({ record: on });
+  assert.notEqual($("agentDelete").parentNode, $("agentSend").parentNode);
 }
 
 console.log("agent_sync_options_test: ok");

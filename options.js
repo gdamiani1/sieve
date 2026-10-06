@@ -151,7 +151,27 @@ const agent = (msg) => chrome.runtime.sendMessage({ type: "agentSync", ...msg })
 // when the next action starts; a status read keeps it.
 let note = "";
 
-function showAgent(r) {
+// What the status line says about a failed account delete, or "" when there's none to tell.
+function deleteFailure(r, state) {
+  const reason = r.detail?.reason;
+  // Signed out by the server while deleting: the account is still there.
+  if (!r.on && state === "signed_out" && reason === "server") return "Couldn't delete your account: this Chrome was signed out. Turn on again, then delete.";
+  // Still on with a reason: the delete didn't reach the server, or it said no. ("invalid" carries the
+  // server's reason for refusing a library instead.)
+  if (!r.on || state === "invalid") return "";
+  if (reason === "offline") return "Couldn't delete your account. Check your connection and try again.";
+  if (reason === "server") return "Sieve's server couldn't delete your account. Try again in a minute.";
+  return "";
+}
+
+const agentButtons = () => [...$("agentSection").querySelectorAll("button")];
+// Shown: neither the element nor a box it is in is hidden.
+const shown = (el) => {
+  for (let e = el; e && e.id !== "agentSection"; e = e.parentNode) if (e.hidden) return false;
+  return true;
+};
+
+function showAgent(r, had = null) {
   if (!r || r.error) { note = r?.error || "Sieve couldn't read the agent sync status. Reload the extension and try again."; $("agentMsg").textContent = note; return; }
   const on = !!r.on;
   // No record yet (a fresh install) is off; a record that is on but says off (it shouldn't) is on.
@@ -159,39 +179,51 @@ function showAgent(r) {
   $("agentLine").textContent = words({ ...r, state });
   $("agentOff").hidden = on;
   $("agentOnBox").hidden = !on;
+  $("agentSend").hidden = state === "ended";
   $("agentReplace").hidden = !(on && state === "other_device");
   $("agentShrink").hidden = !(on && state === "shrunk");
   // One filled button per section: when an answer button shows, Send now steps back.
   $("agentSend").classList.toggle("quiet", !$("agentReplace").hidden || !$("agentShrink").hidden);
   $("agentUrl").textContent = AGENT_URL;
   $("agentCmd").textContent = CLAUDE_LINE;
-  // Still on with a reason: the account delete didn't reach the server or it said no.
-  const deleteFailed = on && ["offline", "server"].includes(r.detail?.reason);
-  $("agentMsg").textContent = deleteFailed ? "Couldn't delete your account. Check your connection and try again." : note;
+  $("agentMsg").textContent = deleteFailure(r, state) || note;
+  // Focus stays in the section: a button the answer hid hands it to the first one still shown, and one
+  // that was disabled during the request (Chrome drops focus from a disabled button) gets it back.
+  const focused = had || document.activeElement;
+  if (!agentButtons().includes(focused)) return;
+  if (!shown(focused)) agentButtons().find(shown)?.focus();
+  else if (document.activeElement !== focused) focused.focus();
 }
 
 const readAgent = () => agent({ do: "status" }).then(showAgent, () => showAgent({ on: false, state: "off" }));
 
-// One request at a time from this page; the button that started it is disabled until it answers.
+// One request at a time from this page: every button in the section is disabled until it answers,
+// and the status line says what is happening.
 let acting = false;
-async function act(btn, fn) {
+async function act(progress, fn) {
   if (acting) return;
   acting = true;
   note = "";
-  $("agentMsg").textContent = "";
-  btn.disabled = true;
+  $("agentMsg").textContent = progress;
+  const buttons = agentButtons();
+  const had = buttons.includes(document.activeElement) ? document.activeElement : null;
+  for (const b of buttons) b.disabled = true;
+  let r = null;
   try {
-    const r = await fn().catch(() => ({ error: "Sieve couldn't reach its background worker. Reload the extension and try again." }));
-    if (r) showAgent(r);
+    r = await fn().catch(() => ({ error: "Sieve couldn't reach its background worker. Reload the extension and try again." }));
   } finally {
-    btn.disabled = false;
+    for (const b of buttons) b.disabled = false;
     acting = false;
+    if ($("agentMsg").textContent === progress) $("agentMsg").textContent = "";
   }
+  // Drawn once the buttons are back, so focus can move to one that is enabled.
+  if (r) showAgent(r, had);
+  else had?.focus();
 }
 
 // The permission is asked first, from the click: Chrome only grants optional permissions during a
 // user gesture, so nothing is awaited before chrome.permissions.request.
-const turnOn = (btn, provider) => act(btn, async () => {
+const turnOn = (provider) => act("Signing in…", async () => {
   const granted = await chrome.permissions.request(OPTIONAL).catch(() => false);
   if (!granted) {
     note = words({ state: "no_permission" });
@@ -200,15 +232,15 @@ const turnOn = (btn, provider) => act(btn, async () => {
   }
   return agent({ do: "on", provider });
 });
-$("agentOn").onclick = () => turnOn($("agentOn"), "google");
-$("agentEmail").onclick = (e) => { e.preventDefault(); turnOn($("agentEmail"), "email"); };
-$("agentSend").onclick = () => act($("agentSend"), () => agent({ do: "send" }));
-$("agentReplace").onclick = () => act($("agentReplace"), () => agent({ do: "send", replace: true }));
-$("agentShrink").onclick = () => act($("agentShrink"), () => agent({ do: "send", allowShrink: true }));
-$("agentOffBtn").onclick = () => act($("agentOffBtn"), () => agent({ do: "off" }));
+$("agentOn").onclick = () => turnOn("google");
+$("agentEmail").onclick = () => turnOn("email");
+$("agentSend").onclick = () => act("Sending…", () => agent({ do: "send" }));
+$("agentReplace").onclick = () => act("Sending…", () => agent({ do: "send", replace: true }));
+$("agentShrink").onclick = () => act("Sending…", () => agent({ do: "send", allowShrink: true }));
+$("agentOffBtn").onclick = () => act("Turning off…", () => agent({ do: "off" }));
 $("agentDelete").onclick = () => {
   if (!confirm("This deletes your Sieve account and everything your agent reads, from iPhone too. Delete it?")) return;
-  act($("agentDelete"), () => agent({ do: "delete" }));
+  act("Deleting…", () => agent({ do: "delete" }));
 };
 readAgent();
 // A send by the alarm, or a change in another tab, shows when this page is looked at again.

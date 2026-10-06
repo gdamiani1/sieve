@@ -117,11 +117,13 @@ assert.equal(words({ state: "invalid", detail: { reason: "error" } }), "Sieve's 
 assert.equal(words({ state: "nonsense" }), "");
 assert.equal(words(undefined), "");
 assert.equal(words({}), "");
-const all = [{ state: "off" }, { state: "not_invited" }, { state: "on", email: "a@b.co", lastAt: 1, lastItems: 2 }, { state: "on", email: "a@b.co" },
+const all = [{ state: "off" }, { state: "not_invited" }, { state: "on", email: "a@b.co", lastAt: 1, lastItems: 2 }, { state: "on", email: "a@b.co" }, { state: "on" }, { state: "on", lastAt: 1, lastItems: 3 },
   { state: "ended", detail: { endedOn: "1 Nov" } }, { state: "other_device" }, { state: "shrunk", detail: { stored: 4, count: 1 } }, { state: "older" },
   { state: "busy" }, { state: "limit" }, { state: "invalid", detail: { reason: "x" } }, { state: "invalid" }, { state: "signed_out" },
   { state: "no_permission" }, { state: "too_big", detail: { bytes: 9e6 } }];
 for (const s of all) assert.doesNotMatch(words(s), /—|undefined|NaN/, `clean words for ${s.state}`);
+
+assert.equal(words({ state: "on" }), "Sending to your agent. Not sent yet.");
 
 // The manifest: identity and the server are optional, asked on Turn on, so an update shows no prompt.
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
