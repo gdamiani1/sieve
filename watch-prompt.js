@@ -95,7 +95,11 @@ export function parseWatch(text, source) {
   // Code's hooks disclaimer, shown on screen). A stray "warning" key still counts when "ai_directed" is
   // empty: dropping a real report is worse than a false alarm.
   const { ai_directed, ...rb } = r.brief && typeof r.brief === "object" && !Array.isArray(r.brief) ? r.brief : {};
-  let brief = technique ? normalizeBrief({ ...rb, warning: normalizeWarning(ai_directed) || rb.warning, says: points, checks }) : null;
+  const reported = normalizeWarning(ai_directed) ? ai_directed : rb.warning;
+  let brief = technique ? normalizeBrief({ ...rb, warning: reported, says: points, checks }) : null;
+  // The warning as the model or the backstop wrote it, before a warned brief's links and commands are
+  // rewritten out of it: what the planted-name rule below reads.
+  let plantedText = cleanText(reported);
   // The title, channel name and caption are the uploader's words, not the video's own content, so an
   // AI-directed passage there could slip past a model that only watched the video. Same code-level
   // backstop briefMessages runs against a post's title, run here against the source's title, channel
@@ -103,15 +107,16 @@ export function parseWatch(text, source) {
   const uploader = { title: source?.title, text: [source?.channel, source?.caption].filter((s) => typeof s === "string" && s).join("\n") };
   if (brief && !brief.warning) {
     const backstop = aiDirected(uploader);
-    if (backstop) brief = normalizeBrief({ ...brief, warning: backstop });
+    if (backstop) { brief = normalizeBrief({ ...brief, warning: backstop }); plantedText = backstop; }
   }
   // Once the brief is warned, by the model or the backstop, a step or need naming a tool only the plant
   // names goes, as for a post. The uploader's words get the post rule. The video's own speech and
   // on-screen text reach Sieve only as the model's report, so the warning counts as planted from end to
   // end. Whether a name also appears elsewhere is read from the title, channel and caption only, never
   // the model's summary, points or brief: a steered model may repeat the name there. Sieve's own warning
-  // wordings only quote the source, so reading them this way is harmless.
-  if (brief) brief = dropPlanted(brief, uploader, { planted: [brief.warning] });
+  // wordings only quote the source, so reading them this way is harmless. The warning is read as written,
+  // not as the brief shows it: "[command removed]" would hide the very name the plant used.
+  if (brief) brief = dropPlanted(brief, uploader, { planted: [plantedText] });
   const best = r.best_moment && typeof r.best_moment === "object" ? point(r.best_moment) : null;
   return {
     verdict: ["watch", "skim", "skip"].includes(r.verdict) ? r.verdict : "skim",

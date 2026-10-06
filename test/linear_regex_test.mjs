@@ -1,23 +1,20 @@
 // Offline: two patterns that were quadratic on text from strangers (brief.js, DASH and the bare
-// domain in LINKISH), and their linear rewrites. The rewrites must find exactly what the old patterns
-// found, so the old ones are kept here, spelled as they were, and compared on random and hostile text.
+// domain in LINKISH), and their linear rewrites. The rewrites must find exactly what the plain
+// spellings find, so those are kept here and compared on random and hostile text.
 // The phone's LinearPatternTests.swift does the same, with the same generator and inputs.
 import assert from "node:assert/strict";
 import { DASH, BARE_DOMAIN, LINKISH, cleanText } from "../brief.js";
 
-const TLD = "com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1";
+const TLD = "com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1|ly|gl|gd|gy";
 // DASH before 6 Oct 2026.
 const OLD_DASH = /\s*[\u2014\u2013]\s*/g;
-// The bare-domain part of LINKISH before 6 Oct 2026.
-const OLD_BARE_DOMAIN = String.raw`\b[\w-]+(?:\.[\w-]+)*\.(?:${TLD})\b(?!\.)`;
-// LINKISH before 6 Oct 2026.
-const OLD_LINKISH = new RegExp([
-  String.raw`https?:\/\/|\bwww\.`,
-  OLD_BARE_DOMAIN,
-  String.raw`\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b|<\(`,
-  String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`,
-  String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?)\s+(?:i|install|add|get)\b`,
-].join("|"), "i");
+// The bare-domain part of LINKISH spelled the plain, quadratic way: the rule as it reads since the
+// warned-brief filter gaps (6 Oct 2026: a country ending after a known one, a "." alone after a name no
+// longer refusing it, the shorteners' endings).
+const OLD_BARE_DOMAIN = String.raw`\b[\w-]+(?:\.[\w-]+)*\.(?:${TLD})(?:\.[a-z]{2})?\b(?!\.[\w-])`;
+// LINKISH with that plain spelling in place of the linear one.
+const OLD_LINKISH = new RegExp(LINKISH.source.replace(BARE_DOMAIN, OLD_BARE_DOMAIN), "i");
+assert.notEqual(OLD_LINKISH.source, LINKISH.source, "the plain spelling replaced the linear one");
 const oldDomain = new RegExp(OLD_BARE_DOMAIN, "gi");
 const newDomain = new RegExp(BARE_DOMAIN, "gi");
 
@@ -46,7 +43,7 @@ const random = (count) => Array.from({ length: count }, () => {
 const HOSTILE = [
   "", "\u2014", "a \u2014 \u2014 b", "a\u2014\u2014b", "  \u2014  \u2013  ", "\u2014 \n \u2013",
   "1 \u2013 2", " \ufeff\u2014\u000b x", "end \u2014",
-  "foo.com", "-foo.com", "--.foo.com", "-.-.foo.io", "a..foo.com", ".foo.com", "foo.com.", "foo.com.de",
+  "foo.com", "-foo.com", "--.foo.com", "-.-.foo.io", "a..foo.com", ".foo.com", "foo.com.", "foo.com.de", "foo.com.au", "foo.com.a", "foo.com.abc", "foo.sh.", "foo.sh.bak", "bit.ly/x",
   "foo.com-bar.org", "a-b.co-x.com", "foo.co", "foo.comx", "x_y.ps1", "\u00e9foo.com", "caf\u00e9.com",
   "a-.com", "-.com", ".com", "foo..com", "foo.-.com", "see example.com/setup.sh", "a.b.c.d.e.app",
 ];

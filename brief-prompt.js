@@ -3,7 +3,7 @@
 // about network JSON shapes or a model's loose formatting.
 
 import { looseJson } from "./json.js";
-import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE, isLeftOutName, MAX_LEFT_OUT } from "./brief.js";
+import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE, isLeftOutName, MAX_LEFT_OUT, nfkc } from "./brief.js";
 
 // A code-level backstop for the most blatant AI-directed passages, run after the model's own answer
 // so it can't be talked out of firing. Deliberately narrow: the model is the main defense; this only
@@ -64,22 +64,9 @@ export function hidesCharacters(s) {
 // One definition for briefMessages and aiDirected, so the backstop always checks what the model reads.
 const authorOf = (post) => post?.authorName || post?.author;
 
-// NFKC for a check to read: aiDirected's patterns, the digest's "Left out" heading test. Never for text
-// Sieve keeps or shows, because a run of marks is cut to 30 first (the stream-safe limit in UAX #15):
-// putting a long run in canonical order takes quadratic time, and 100,000 marks took 8.6 s in node. No
-// phrase or heading the checks look for carries a run that long. The halfwidth katakana voiced sound marks (U+FF9E, U+FF9F) aren't
-// marks but become marks under NFKC, so they count too, as in the iPhone app: 33,333 of them each
-// followed by a Tibetan vowel sign still took 5.6 s with marks alone counted.
-// The app counts what has a non-zero canonical combining class, plus those two and three Tibetan vowel
-// signs (U+0F73, U+0F75, U+0F81). JavaScript's regexes have no combining-class property, so marks
-// (\p{M}) stand in. Every character with a non-zero class is a mark, and so are the three Tibetan signs
-// (checked against node's Unicode 17 data), so this cuts every run the app cuts. Where they differ: a
-// mark of class 0 continues a run here and resets it in the app. That's 1,572 of node's 2,543 marks,
-// among them Devanagari vowel signs (U+093E), enclosing marks (U+20DD) and the emoji variation selector
-// (U+FE0F). So in a run of more than 30 marks that mixes those in, the extension drops marks the app
-// keeps. Ordinary text, Devanagari included, has no run that long.
-const MARK_RUN = /([\p{M}\uFF9E\uFF9F]{30})[\p{M}\uFF9E\uFF9F]+/gu;
-export const nfkc = (s) => s.replace(MARK_RUN, "$1").normalize("NFKC");
+// nfkc (NFKC for a check to read, with its 30-mark cut) lives in brief.js, beside the warned-brief
+// filters that read through it; exported from here too, as before.
+export { nfkc };
 
 // Every string of a post that reaches the model as its own string: the author, the title, the text,
 // and for a thread each post and the post it quotes (briefMessages sends them separately). Anything
