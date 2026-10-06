@@ -43,10 +43,11 @@ const text = (x) => (typeof x === "string" || typeof x === "number" ? String(x)
 const INVISIBLE = /(?![\t\n\v\f\r\u200d\ufe0f])[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
 // An em or en dash and the spaces around it. The leading spaces are read only from where their run
 // starts: a plain \s* in front was tried at every space of a run and read the rest of it each time,
-// so 10,000 blank lines took 2.4 s on the phone and 0.17 s here, quadratic in both. A run that starts
+// so 10,000 blank lines took 2.4 s on the phone, and 0.17 s here when a dash came after them. A run that starts
 // with the dash itself is still read, without the lookbehind: the previous match ends right before it,
 // on a space, as in "a — — b", and a lookbehind would see that space and leave the second dash alone.
-// Exported for test/linear_regex_test.mjs, which compares it with the old pattern.
+// Exported for test/linear_regex_test.mjs, which compares it with the old pattern. It has the g flag,
+// so use it only with replace or matchAll: test and exec would carry lastIndex from call to call.
 export const DASH = /(?:(?<!\s)\s+)?[—–]\s*/g;
 const clean = (s) => text(s)
   .replace(/[\u0085\u001c-\u001e]/g, " ")
@@ -124,8 +125,8 @@ export function normalizeWarning(w) {
 // 0.19 s here, quadratic in both. A match from inside a name always has one from where the name's
 // first letter or digit is, so nothing is lost: the lazy run of "-" and "." skips what comes before
 // that letter, never past "..", which ends a name. Group 1 holds exactly the old pattern's matches;
-// a match itself may start a few "-" and "." earlier, which LINKISH.test never reads. Exported, with LINKISH,
-// for test/linear_regex_test.mjs.
+// a match itself may start earlier, at the "-" and "." before the name, which LINKISH.test never
+// reads. Exported, with LINKISH, for test/linear_regex_test.mjs.
 export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1)\b(?!\.))`;
 export const LINKISH = new RegExp([
   String.raw`https?:\/\/|\bwww\.`,                                                     // a link
