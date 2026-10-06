@@ -1,11 +1,12 @@
 // Offline: the extension pages' colours in light and dark. No keys, no network.
 // Each page's <style> opens with a :root token block (light) and a prefers-color-scheme: dark block.
-// The digest keeps the quiet material; the settings page and the popup are pinboard version 2 from 1.5.0
-// (design.md, Palette (version 2); extension settings pinboard spec 6).
+// The settings page, the popup and Daily learnings are pinboard version 2 from 1.5.0 (design.md, Palette
+// (version 2); extension settings pinboard spec 6, 9 and 10). The quiet material's tokens stay checked
+// below for the next page that uses them; no extension page does today.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const PAGES = ["digest.html"];
+const PAGES = [];
 
 const LIGHT = {
   paper: "#ece7de", ink: "#14120e", muted: "#6b655b", accent: "#2433f5", "on-accent": "#fff",
@@ -37,6 +38,9 @@ const V2_TEXT = [
   ["blue", "canvas"], ["blue", "card"], ["blue", "note"], ["on-blue", "blue"], ["alert", "alert-tint"], ["on-ink", "ink"],
   ["alert", "card"], ["alert", "canvas"], ["ink", "note"], ["blue", "tint"],
 ];
+// Daily learnings adds none: its titles and bullets are ink on a card, meta ink-muted on a card or the
+// canvas, row actions blue on a card or the canvas, the warning alert on alert-tint, the left-out line
+// ink on the tint, the copy fallback ink on the canvas, the secondary buttons ink on the tint.
 const V2_EDGE = [["canvas", "blue"], ["canvas", "ink-muted"], ["ink-muted", "card"], ["blue", "card"]];
 
 // Text pairs (foreground, background) that must reach 4.5 in both schemes.
@@ -104,7 +108,7 @@ for (const no of ["white-space", "&#10;", "#msg{", "#export{", "#today{", "#day"
   assert.equal(no.match(COLOUR), null, `COLOUR should not match ${no}`);
 }
 
-const SETS = [...PAGES.map((p) => [p, LIGHT, DARK]), ["options.html", V2_LIGHT, V2_DARK], ["popup.html", V2_LIGHT, V2_DARK]];
+const SETS = [...PAGES.map((p) => [p, LIGHT, DARK]), ["options.html", V2_LIGHT, V2_DARK], ["popup.html", V2_LIGHT, V2_DARK], ["digest.html", V2_LIGHT, V2_DARK]];
 for (const [page, LIGHT, DARK] of SETS) {
   const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
   const style = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
