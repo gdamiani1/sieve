@@ -21,7 +21,8 @@ h1{font-size:32px;font-weight:800;letter-spacing:-1.1px;margin:0;line-height:1.1
 .btn.text{background:none;color:var(--blue);padding:0 8px;font-size:14px}
 .btn:active{opacity:.85}
 #msg{display:block;font-size:13px;margin:10px 2px 0;overflow-wrap:anywhere}
-#msg:empty{display:none}
+/* Empty: hidden from sight only, so the next message is still announced. */
+#msg:empty{margin:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 #msg.alert{color:var(--alert)}
 /* Sections: a heading, then a card of rows. */
 h2{font-size:17px;font-weight:600;margin:30px 0 9px}
@@ -30,7 +31,7 @@ h2{font-size:17px;font-weight:600;margin:30px 0 9px}
 .item+.item::before{content:"";position:absolute;top:0;left:16px;right:0;height:1px;background:var(--line)}
 .title{color:var(--ink);font-weight:600;text-decoration:none;overflow-wrap:anywhere}
 .title:hover,.title:focus-visible{color:var(--blue);text-decoration:underline}
-.item .m{font-size:13px;color:var(--ink-muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.item .m{font-size:13px;color:var(--ink-muted);margin-top:2px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .item .t{font-size:14px;white-space:pre-wrap;margin-top:6px;overflow-wrap:anywhere}
 .item .t.clip{max-height:4.4em;overflow:hidden}
 .empty{color:var(--ink-muted);font-size:13px;margin:0 16px}

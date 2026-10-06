@@ -77,30 +77,49 @@ const STORE = {
   digests: [{ at: now - 864e5, count: 4, cost: 0.0012, text: "## Evals\n- Golden sets of 20 cases (Jane Doe)\n## Agents\n- Plan before code (Sam Lee)" }],
 };
 
-// The page itself: header, the one primary, the actions, the folded Saved posts row.
+// The page itself: header, the one primary, the actions, the folded Saved posts row. Read from the DOM
+// built from digest.html; the CSS rules it depends on are checked in the style.
 {
   const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
-  assert.match(html, /<h1>Daily learnings<\/h1>/);
-  assert.match(html, /<svg class="nib"[^>]*aria-hidden="true"/, "the blue nib under the screen name");
-  assert.match(html, /<p class="sub">What Sieve kept from your feeds\. What people posted, not verified facts\.<\/p>/);
-  assert.equal(html.match(/class="btn primary"/g)?.length, 1, "one primary on the page");
-  assert.match(html, /<button type="button" class="btn primary" id="today">Summarise since last digest<\/button>/);
-  assert.match(html, /<button type="button" class="btn secondary" id="day">Last 24 hours<\/button>/);
-  assert.match(html, /<button type="button" class="btn secondary" id="week">Last 7 days<\/button>/);
-  assert.match(html, /<button type="button" class="btn text" id="export">Export library<\/button>/);
-  assert.match(html, /id="msg"[^>]*role="status"/, "the message line is announced");
+  const doc = build();
+  const $ = (id) => doc.getElementById(id);
+  assert.equal(byTag(doc.body, "h1")[0]?.textContent, "Daily learnings");
+  const nib = byClass(doc.body, "nib")[0];
+  assert.equal(nib?.tagName, "SVG", "the blue nib under the screen name");
+  assert.equal(nib.getAttribute("aria-hidden"), "true");
+  assert.equal(byClass(doc.body, "sub")[0]?.textContent, "What Sieve kept from your feeds. What people posted, not verified facts.");
+  const buttons = byTag(doc.body, "button");
+  assert.deepEqual(buttons.filter((b) => b.classList.contains("primary")).map((b) => b.id), ["today"], "one primary on the page");
+  for (const [id, cls, label] of [["today", "primary", "Summarise since last digest"], ["day", "secondary", "Last 24 hours"], ["week", "secondary", "Last 7 days"], ["export", "text", "Export library"]]) {
+    assert.ok($(id).classList.contains("btn") && $(id).classList.contains(cls), `#${id} is a ${cls} button`);
+    assert.equal($(id).textContent, label);
+    assert.equal($(id).getAttribute("type"), "button");
+  }
+  assert.equal($("msg").getAttribute("role"), "status", "the message line is announced");
+  // An empty message line is hidden from sight only: display:none would take it out of the
+  // accessibility tree, and the next message might not be read.
+  const msgEmpty = style.match(/#msg:empty\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.doesNotMatch(msgEmpty, /display\s*:\s*none|visibility\s*:\s*hidden/);
+  assert.match(msgEmpty, /clip-path:\s*inset\(50%\)/);
   // The folded list: a <details> that starts closed, its summary a row with the count and a chevron.
-  const details = html.match(/<details([^>]*)>\s*<summary([^>]*)>([\s\S]*?)<\/summary>/);
-  assert.ok(details, "Saved posts is a <details> that opens on its summary");
-  assert.doesNotMatch(details[1], /\sopen/, "it starts folded");
-  assert.match(details[2], /class="row"/, "its summary is a row");
-  assert.match(details[3], /<span id="savedSum">Saved posts<\/span>/);
-  assert.match(details[3], /<svg class="chev"[^>]*aria-hidden="true"/, "with a chevron");
+  const details = byTag(doc.body, "details")[0];
+  assert.ok(details, "Saved posts is a <details>");
+  assert.equal(details.open, false, "it starts folded");
+  const summary = details.children[0];
+  assert.equal(summary.tagName, "SUMMARY", "it opens on its summary");
+  assert.ok(summary.classList.contains("row"), "its summary is a row");
+  assert.equal(summary.children[0], $("savedSum"));
+  assert.equal($("savedSum").textContent, "Saved posts");
+  const chev = byClass(summary, "chev")[0];
+  assert.equal(chev?.tagName, "SVG", "with a chevron");
+  assert.equal(chev.getAttribute("aria-hidden"), "true");
+  assert.equal(details.children[1], $("saved"), "the list sits inside the fold");
   assert.match(style, /details\[open\]\s*>\s*summary\s+\.chev\s*\{[^}]*transform:\s*rotate\(/, "the chevron turns when open");
   assert.match(style, /summary::-webkit-details-marker\s*\{[^}]*display:\s*none/, "no second, native marker");
-  // Titles are ink until hovered or focused; one blue for actions.
+  // Titles are ink until hovered or focused; one blue for actions. Long names in a meta line wrap.
   assert.match(style, /\.title\s*\{[^}]*color:\s*var\(--ink\)[^}]*font-weight:\s*600/);
   assert.match(style, /\.title:hover\s*,\s*\.title:focus-visible\s*\{[^}]*color:\s*var\(--blue\)/);
+  assert.match(style, /\.item \.m\s*\{[^}]*overflow-wrap:\s*anywhere/);
   for (const [name, src] of [["digest.html", html], ["digest.js", js]]) {
     assert.doesNotMatch(src, /\u2014/, `${name}: no em dashes`);
     assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML/, `${name}: builds with textContent`);
@@ -172,6 +191,78 @@ const STORE = {
     assert.equal($(id).children.length, 2, `${id}: no empty card`);
   }
   assert.equal($("digests").children[1].textContent, "No digests yet.");
+  const [none] = $("saved").children;
+  assert.equal($("saved").children.length, 1);
+  assert.equal(none.className, "empty");
+  assert.equal(none.textContent, "Nothing saved in the last 30 days.", "an opened, empty fold says so");
+}
+
+// A web address that isn't http(s) never becomes a link: a javascript: brief or Reddit row is plain text.
+{
+  const store = structuredClone(STORE);
+  store.briefs["x:1"].url = "javascript:alert(1)";
+  store.briefs["x:2"].url = "chrome://settings";
+  store.saved[0].authorUrl = "javascript:alert(1)";
+  store.saved[2].authorUrl = "data:text/html,hi";
+  const { $ } = await page({ store });
+  for (const row of byClass($("briefs"), "item")) {
+    assert.equal(row.children[0].tagName, "SPAN", "a brief without an http(s) address is plain text");
+    assert.equal(row.children[0].className, "title");
+    assert.equal(row.children[0].href, "");
+  }
+  const thread = byClass($("reddit"), "item")[0];
+  assert.equal(thread.children[0].tagName, "SPAN", "so is a Reddit row");
+  assert.equal(thread.children[0].textContent, "How do you keep evals honest?");
+  assert.equal(byClass($("saved"), "item")[0].children[0].tagName, "SPAN", "and a saved post");
+  assert.equal(byTag($("saved"), "a").length, 1, "only the saved post with an https address links");
+}
+
+// Copy as prompt when the clipboard and execCommand both fail: a failure line and a selected, read-only
+// textarea with the prompt appear after the button's row; a second click reuses them.
+{
+  const { Element } = await import("./fake-dom.mjs");
+  const shims = { select: Element.prototype.select, after: Element.prototype.after, querySelector: Element.prototype.querySelector };
+  const selected = [];
+  Element.prototype.select = function () { selected.push(this); };
+  Element.prototype.after = function (...nodes) {
+    const parent = this.parentNode;
+    const i = parent.childNodes.indexOf(this);
+    for (const n of nodes) n.parentNode?.removeChild(n);
+    for (const n of nodes) n.parentNode = parent;
+    parent.childNodes.splice(i + 1, 0, ...nodes);
+  };
+  Element.prototype.querySelector = function (sel) { return all(this).find((e) => e.classList.contains(sel.slice(1))) || null; };
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async () => { throw new Error("blocked"); } } } });
+  try {
+    const { $, doc, sent } = await page({ store: structuredClone(STORE) });
+    doc.execCommand = () => false;
+    doc.activeElement = null;
+    const plain = byClass($("briefs"), "item")[1];
+    const copy = byTag(plain, "button")[0];
+    copy.click();
+    for (let i = 0; i < 5; i++) await tick();
+    assert.deepEqual(plain.children.map((k) => k.className), ["title", "m", "w", "acts", "fail", "fallback"]);
+    const [fail, area] = plain.children.slice(4);
+    assert.equal(fail.textContent, "The browser blocked copying. The prompt is selected below: copy it with your keyboard.");
+    assert.equal(area.tagName, "TEXTAREA");
+    assert.equal(area.readOnly, true);
+    assert.match(area.value, /Write the plan first\./, "the textarea holds the prompt");
+    assert.equal(area.getAttribute("aria-describedby"), fail.id, "the textarea points at the failure line");
+    assert.equal(selected.at(-1), area, "and is selected");
+    assert.equal(copy.textContent, "Copy as prompt", "the button doesn't claim it copied");
+    assert.ok(!sent.some((m) => m.type === "count" && m.name === "prompt_copied"), "nothing copied, nothing counted");
+    selected.length = 0;
+    copy.click();
+    for (let i = 0; i < 5; i++) await tick();
+    assert.equal(byClass(plain, "fallback").length, 1, "a second click reuses the textarea");
+    assert.equal(byClass(plain, "fail").length, 1, "and the failure line");
+    assert.equal(selected.at(-1), area, "and selects it again");
+  } finally {
+    Object.assign(Element.prototype, shims);
+    for (const [k, v] of Object.entries(shims)) if (v === undefined) delete Element.prototype[k];
+    if (nav) Object.defineProperty(globalThis, "navigator", nav); else delete globalThis.navigator;
+  }
 }
 
 // A section that can't render is a failure note under its heading; the others still show.

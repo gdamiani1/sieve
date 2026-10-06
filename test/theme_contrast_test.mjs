@@ -1,23 +1,9 @@
 // Offline: the extension pages' colours in light and dark. No keys, no network.
 // Each page's <style> opens with a :root token block (light) and a prefers-color-scheme: dark block.
 // The settings page, the popup and Daily learnings are pinboard version 2 from 1.5.0 (design.md, Palette
-// (version 2); extension settings pinboard spec 6, 9 and 10). The quiet material's tokens stay checked
-// below for the next page that uses them; no extension page does today.
+// (version 2); extension settings pinboard spec 6, 9 and 10).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-
-const PAGES = [];
-
-const LIGHT = {
-  paper: "#ece7de", ink: "#14120e", muted: "#6b655b", accent: "#2433f5", "on-accent": "#fff",
-  card: "#fff", panel: "#f6f3ee", field: "#fff", line: "#d6cebf", "field-edge": "#c9c1b3",
-  "ink-soft": "#3a362f", alert: "#9a2a00", "alert-tint": "#fff0ea",
-};
-const DARK = {
-  paper: "#14120e", ink: "#ece7de", muted: "#a9a296", accent: "#7b87ff", "on-accent": "#14120e",
-  card: "#1d1a15", panel: "#1d1a15", field: "#252119", line: "#3a362f", "field-edge": "#6b655b",
-  "ink-soft": "#c9c1b3", alert: "#ffb59b", "alert-tint": "#3a1a0e",
-};
 
 // Pinboard version 2, exactly design.md's values.
 const V2_LIGHT = {
@@ -43,15 +29,6 @@ const V2_TEXT = [
 // ink on the tint, the copy fallback ink on the canvas, the secondary buttons ink on the tint.
 const V2_EDGE = [["canvas", "blue"], ["canvas", "ink-muted"], ["ink-muted", "card"], ["blue", "card"]];
 
-// Text pairs (foreground, background) that must reach 4.5 in both schemes.
-const TEXT = [
-  ["ink", "paper"], ["ink", "card"], ["ink", "field"], ["ink", "panel"],
-  ["muted", "paper"], ["muted", "card"], ["muted", "panel"],
-  ["accent", "paper"], ["accent", "card"], ["accent", "panel"],
-  ["on-accent", "accent"], ["ink-soft", "card"], ["ink-soft", "paper"],
-  ["alert", "alert-tint"], ["alert", "card"], ["alert", "paper"], ["alert", "panel"],
-];
-
 function rgb(hex) {
   let h = hex.slice(1);
   if (h.length === 3) h = [...h].map((c) => c + c).join("");
@@ -75,19 +52,6 @@ function tokens(block) {
 assert.ok(Math.abs(contrast("#14120e", "#ece7de") - 15.19) < 0.01);
 assert.ok(Math.abs(contrast("#fff", "#2433f5") - 7.32) < 0.01);
 
-for (const [scheme, t] of [["light", LIGHT], ["dark", DARK]]) {
-  for (const [fg, bg] of TEXT) {
-    const c = contrast(t[fg], t[bg]);
-    assert.ok(c >= 4.5, `${scheme}: ${fg} on ${bg} is ${c.toFixed(2)}, under 4.5`);
-  }
-}
-assert.notEqual(DARK["on-accent"], "#fff", "dark mode never puts white on the light blue");
-// A field's edge is how someone finds it. Light keeps today's edge until the redesign.
-for (const bg of ["card", "panel", "paper"]) {
-  const c = contrast(DARK["field-edge"], DARK[bg]);
-  assert.ok(c >= 3, `dark: field-edge on ${bg} is ${c.toFixed(2)}, under 3`);
-}
-
 for (const [scheme, t] of [["light", V2_LIGHT], ["dark", V2_DARK]]) {
   for (const [fg, bg] of V2_TEXT) {
     const c = contrast(t[fg], t[bg]);
@@ -108,7 +72,7 @@ for (const no of ["white-space", "&#10;", "#msg{", "#export{", "#today{", "#day"
   assert.equal(no.match(COLOUR), null, `COLOUR should not match ${no}`);
 }
 
-const SETS = [...PAGES.map((p) => [p, LIGHT, DARK]), ["options.html", V2_LIGHT, V2_DARK], ["popup.html", V2_LIGHT, V2_DARK], ["digest.html", V2_LIGHT, V2_DARK]];
+const SETS = [["options.html", V2_LIGHT, V2_DARK], ["popup.html", V2_LIGHT, V2_DARK], ["digest.html", V2_LIGHT, V2_DARK]];
 for (const [page, LIGHT, DARK] of SETS) {
   const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
   const style = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
