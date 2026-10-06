@@ -26,6 +26,7 @@ h2{font-size:17px;font-weight:600;margin:30px 0 9px}
 label.row{cursor:pointer}
 button.row{border:0;background:none;cursor:pointer;border-radius:0}
 .row.action{color:var(--blue);font-weight:600}
+.row:focus-visible{outline-offset:-4px}
 .row.action:disabled{color:var(--ink-muted);cursor:default}
 a.row{text-decoration:none}
 .foot{color:var(--ink-muted);font-size:13px;margin:8px 16px 0;line-height:1.4}
@@ -53,7 +54,7 @@ input[type=number].field{width:64px;text-align:right}
 .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border:0;border-radius:14px;font-weight:600;font-size:15px;line-height:1.2;font-family:inherit;cursor:pointer}
 .btn.primary{background:var(--blue);color:var(--on-blue)}
 .btn.secondary{background:var(--tint);color:var(--ink)}
-.btn.text{background:none;color:var(--blue);padding:0 8px;min-height:36px;font-size:14px}
+.btn.text{background:none;color:var(--blue);padding:0 8px;min-height:44px;font-size:14px}
 .btn.danger{background:none;color:var(--alert);padding:0}
 .btn:active{opacity:.85}
 .btn.primary:disabled,.btn.secondary:disabled{background:var(--tint);color:var(--ink);outline:1px dashed var(--ink-muted);outline-offset:-1px;cursor:default}
@@ -76,8 +77,8 @@ input[type=number].field{width:64px;text-align:right}
 .note h3{font-size:15px;font-weight:600;margin:0}
 .note .chip{background:var(--card)}
 .note .chip[aria-checked=true]{background:var(--ink)}
-.code{display:flex;gap:8px;align-items:flex-start;background:var(--card);border-radius:12px;padding:10px 6px 10px 12px;margin:12px 0 8px}
-.code code{flex:1;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;user-select:all;padding-top:4px}
+.code{display:flex;gap:8px;align-items:center;background:var(--card);border-radius:12px;padding:6px 6px 6px 12px;margin:12px 0 8px}
+.code code{flex:1;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;user-select:all}
 .code code span{display:inline-block;max-width:100%}
 .small{font-size:13px}
 /* Scores. */
@@ -85,6 +86,8 @@ input[type=range]{width:100%;accent-color:var(--blue);margin:4px 0 0}
 output{font-weight:600}
 /* The toast: ink, corner 20, bottom centre. */
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--on-ink);border-radius:20px;padding:10px 18px;font-size:14px;max-width:calc(100% - 36px);z-index:2}
+/* Always in the page, so screen readers hear it; visually hidden while empty. */
+.toast:empty{padding:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .delete{margin:30px 16px 0}
 @media (max-width:480px){
   main{padding:28px 16px 104px}
@@ -141,13 +144,13 @@ output{font-weight:600}
 
 <h2>Keys</h2>
 <div class="group">
-<div class="row stack"><label class="lbl" for="orkey">OpenRouter key <span class="q">(scores posts with Jev, writes briefs and digests, and runs Watch it for me)</span></label><input class="field" id="orkey" type="password" autocomplete="off"></div>
+<div class="row stack"><label class="lbl" for="orkey">OpenRouter key <span class="q">(scores posts with Jev, writes briefs and digests, and runs Watch it for me)</span></label><input class="field" id="orkey" type="password" autocomplete="off" aria-describedby="keysFoot"></div>
 <div class="row kv"><span>Scoring</span><span class="v" id="scoreStatus" aria-live="polite"></span></div>
-<div class="row stack"><label class="lbl" for="key">TypeSafe key <span class="q">(only without an OpenRouter key)</span></label><input class="field" id="key" type="password" autocomplete="off"></div>
+<div class="row stack"><label class="lbl" for="key">TypeSafe key <span class="q">(only without an OpenRouter key)</span></label><input class="field" id="key" type="password" autocomplete="off" aria-describedby="tsFoot"></div>
 <div class="row keys"><button type="button" class="btn primary" id="saveKeys">Check and save keys</button><span class="v" id="keyMsg" aria-live="polite"></span></div>
 </div>
-<p class="foot">Stored only in this browser. Each key is checked before it's saved. Scoring runs on Jev, TypeSafe's decision model, reached through your OpenRouter key: about 3 to 5 US cents per 1,000 posts. Sieve is independent and not made by TypeSafe.</p>
-<p class="foot">A TypeSafe key is only used when no OpenRouter key is saved: then Sieve scores with Jev directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key.</p>
+<p class="foot" id="keysFoot">Stored only in this browser. Each key is checked before it's saved. Scoring runs on Jev, TypeSafe's decision model, reached through your OpenRouter key: about 3 to 5 US cents per 1,000 posts. Sieve is independent and not made by TypeSafe.</p>
+<p class="foot" id="tsFoot">A TypeSafe key is only used when no OpenRouter key is saved: then Sieve scores with Jev directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key.</p>
 
 <h2>What you care about</h2>
 <div class="group">
@@ -194,7 +197,7 @@ output{font-weight:600}
 <div class="group">
 <div class="row stack"><label class="lbl" for="highAt">Highlight posts scoring at least <output id="highAtOut" for="highAt"></output></label><input id="highAt" type="range" min="0.5" max="0.95" step="0.05"></div>
 <div class="row stack"><label class="lbl" for="lowBelow">Treat posts below <output id="lowBelowOut" for="lowBelow"></output> as low</label><input id="lowBelow" type="range" min="0.1" max="0.6" step="0.05"></div>
-<div class="row stack"><p class="lbl" id="lowModeL">Low posts</p><div class="chips" id="lowMode" role="group" aria-labelledby="lowModeL"></div></div>
+<div class="row stack"><p class="lbl" id="lowModeL">Low posts</p><div class="chips" id="lowMode" role="radiogroup" aria-labelledby="lowModeL"></div></div>
 </div>
 
 <h2>Briefs and digests</h2>
@@ -229,5 +232,5 @@ output{font-weight:600}
 
 <div class="delete" id="agentDeleteBox" hidden><button type="button" class="btn danger" id="agentDelete">Delete my Sieve account</button></div>
 
-<div class="toast" id="toast" role="status" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 </main><script type="module" src="options.js"></script></body></html>

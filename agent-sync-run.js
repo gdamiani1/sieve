@@ -210,7 +210,7 @@ let sending = Promise.resolve();
  * unchanged library; `allowShrink` and `replace` are the person's answers to "shrunk" and
  * "other_device". */
 export function send(opts = {}) {
-  const run = sending.then(() => sendOnce(opts));
+  const run = sending.then(() => fillMethod()).then(() => sendOnce(opts));
   sending = run.catch(() => {});
   return run;
 }
@@ -404,11 +404,31 @@ export async function deleteAccount() {
   return load();
 }
 
+// A record signed in before the account's method was kept has none, and the settings page can't say how
+// to sign in from an agent. The next status or send asks GET /v1/account, once per sign-in, and writes
+// the answer only for the sign-in that asked.
+const methodAsked = new Set();
+async function fillMethod() {
+  const s = await load();
+  if (!s.on || s.method || !s.gen || methodAsked.has(s.gen)) return;
+  methodAsked.add(s.gen);
+  try {
+    const res = await call("/v1/account");
+    if (!res?.ok) return;
+    const acct = await json(res);
+    if (typeof acct.method === "string") await saveFor(s.gen, (now) => (now.method ? {} : { method: acct.method }));
+  } catch {}
+}
+
 /** Something unexpected went wrong while acting: say so instead of showing the old state as if fine. */
 export const failed = () => write((s) => ({ ...s, state: s.state || "off", detail: keptReason(s, { reason: "error" }) }));
 
 /** What the settings page shows: never the tokens, the hash or the sign-in's gen. */
 export async function status() {
+  // The page waits a moment for a missing method, never a whole request's timeout.
+  let timer;
+  await Promise.race([fillMethod(), new Promise((r) => { timer = setTimeout(r, 3000); })]);
+  clearTimeout(timer);
   const { access: _a, refresh: _r, expiresAt: _e, lastHash: _h, gen: _g, ...shown } = await load();
   return shown;
 }

@@ -136,7 +136,6 @@ assert.deepEqual(manifest.optional_host_permissions, ["https://mcp.divergada.com
 assert.ok(!manifest.permissions.includes("identity"), "never a required permission: no prompt on update");
 assert.ok(!manifest.host_permissions.some((h) => h.includes("divergada")), "never a required host");
 
-console.log("agent_sync_test: ok");
 
 // The agents' setup lines (connect-your-agent spec 5.2): code and meta, the sign-in method named.
 assert.deepEqual(AGENTS.map((a) => a.id), ["claude-code", "claude-ai", "cursor", "codex", "another"]);
@@ -153,8 +152,11 @@ assert.deepEqual(AGENTS.map((a) => a.code), [
 assert.equal(AGENTS[0].code.endsWith(AGENT_URL), true);
 assert.equal(AGENTS[0].meta("google"), "Then /mcp › sieve › Authenticate, signed in with Google.");
 assert.equal(AGENTS[0].meta("email"), "Then /mcp › sieve › Authenticate, signed in with email.");
-assert.equal(AGENTS[0].meta(undefined), "Then /mcp › sieve › Authenticate, signed in with email.");
-assert.equal(AGENTS[0].meta("apple"), "Then /mcp › sieve › Authenticate, signed in with email.");
+// A method not known yet (a record signed in before it was kept) names none.
+assert.equal(AGENTS[0].meta(undefined), "Then /mcp › sieve › Authenticate, signed in the same way as here.");
+assert.equal(AGENTS[0].meta("apple"), "Then /mcp › sieve › Authenticate, signed in the same way as here.");
+assert.equal(AGENTS[1].meta(undefined), "claude.ai › Customize › Connectors › Add custom connector. Name it Sieve, then Connect, signed in the same way as here.");
+assert.equal(AGENTS[3].meta(undefined), "Then codex mcp login sieve, signed in the same way as here.");
 assert.equal(AGENTS[1].meta("google"), "claude.ai › Customize › Connectors › Add custom connector. Name it Sieve, then Connect with Google.");
 assert.equal(AGENTS[1].meta("email"), "claude.ai › Customize › Connectors › Add custom connector. Name it Sieve, then Connect with email.");
 assert.equal(AGENTS[2].meta("google"), "Add to ~/.cursor/mcp.json, then sign in from Cursor's MCP settings.");
@@ -162,3 +164,5 @@ assert.equal(AGENTS[3].meta("google"), "Then codex mcp login sieve, signed in wi
 assert.equal(AGENTS[3].meta("email"), "Then codex mcp login sieve, signed in with email.");
 assert.equal(AGENTS[4].meta("google"), "Any agent that adds remote MCP servers with sign-in, running on your computer.");
 for (const a of AGENTS) assert.equal(/[\u2014]/.test(a.code + a.meta("google")), false);
+
+console.log("agent_sync_test: ok");

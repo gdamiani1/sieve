@@ -53,10 +53,16 @@ const shows = ($, id) => visible($(id));
   assert.deepEqual(chips.map((c) => c.getAttribute("aria-checked")), ["true", "false", "false", "false", "false"]);
   assert.equal($("agentCode").textContent, AGENTS[0].code);
   assert.equal($("agentMeta").textContent, AGENTS[0].meta(undefined));
-  assert.equal($("agentMeta").textContent, "Then /mcp › sieve › Authenticate, signed in with email.");
+  assert.equal($("agentMeta").textContent, "Then /mcp › sieve › Authenticate, signed in the same way as here.", "a record from before the method was kept names none");
   assert.ok(shows($, "agentDelete"));
   assert.equal($("agentMsg").textContent, "");
   assert.equal($("sub").textContent, "Your library goes to your agent when it changes.");
+}
+
+// A known method is named.
+{
+  const { $ } = await page({ record: { ...on, method: "email" } });
+  assert.equal($("agentMeta").textContent, "Then /mcp › sieve › Authenticate, signed in with email.");
 }
 
 // Not sent yet, no email, a Google account; one pin.
@@ -141,6 +147,17 @@ for (const [rec, button, label] of FAIL) {
   assert.ok(!shows($, "agentInfo"));
   assert.doesNotMatch($("agentFailText").textContent, /\u2014/);
 }
+// A failing state with no words (one this page doesn't know) shows no empty note.
+{
+  const { $ } = await page({ record: { ...on, state: "nonsense" } });
+  assert.ok(!shows($, "agentFail"));
+}
+// Copy is at least 44 px tall (a .btn.text, whose min-height is 44).
+assert.match(html, /\.btn\.text\{[^}]*min-height:44px/);
+assert.match(html, /class="btn text" id="agentCopy"/);
+// The focus outline isn't clipped by the group's rounded edge.
+assert.match(html, /\.row:focus-visible\{outline-offset:-4px\}/);
+
 // The buttons send.
 for (const [rec, id, msg] of [
   [{ ...on, state: "other_device" }, "agentReplace", { type: "agentSync", do: "send", replace: true }],

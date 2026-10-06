@@ -218,6 +218,46 @@ try {
   assert.equal(alarms.has("agent-sync"), false, "the backstop alarm goes once the send is answered");
   assert.equal(rec().dirty, false);
 
+  // 1b. A record signed in before the account's method was kept: the next status fills it from
+  // GET /v1/account, once per sign-in, and only for the sign-in that asked.
+  {
+    const { method: _m, ...old } = rec();
+    store.agentSync = old;
+    let n = requests.length;
+    const s = await sync({ do: "status" });
+    assert.equal(s.method, "email");
+    assert.equal(rec().method, "email");
+    assert.deepEqual(since(n).map((r) => `${r.method} ${r.path}`), ["GET /v1/account"]);
+    n = requests.length;
+    await sync({ do: "status" });
+    assert.equal(since(n).length, 0, "a known method isn't asked for");
+    // Once: the same sign-in without a method again isn't asked a second time.
+    const { method: _m2, ...again } = rec();
+    store.agentSync = again;
+    n = requests.length;
+    await sync({ do: "status" });
+    assert.equal(since(n).length, 0, "asked once per sign-in");
+    // A send fills it too, for a sign-in not yet asked; a late answer for a replaced sign-in writes nothing.
+    const gen = rec().gen;
+    store.agentSync = { ...again, gen: "older-sign-in" };
+    n = requests.length;
+    await sync({ do: "send" });
+    assert.equal(rec().method, "email");
+    assert.equal(since(n)[0].path, "/v1/account", "asked before the send");
+    const { method: _m3, ...third } = rec();
+    store.agentSync = { ...third, gen: "third-sign-in" };
+    const release = hold("GET /v1/account");
+    n = requests.length;
+    const pending = sync({ do: "status" });
+    await waitFor("the account read", () => since(n).some((r) => r.path === "/v1/account"));
+    store.agentSync = { ...rec(), gen: "fourth-sign-in" };
+    release();
+    await pending;
+    for (let i = 0; i < 20; i++) await tick();
+    assert.equal(rec().method, undefined, "not written for a sign-in that was replaced");
+    store.agentSync = { ...rec(), gen, method: "email" };
+  }
+
   // 2. A change to the library: dirty, one alarm; a second change makes no second alarm.
   const c0 = alarmCreates.length;
   await changed({ saved: { newValue: store.saved } });

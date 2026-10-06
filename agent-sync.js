@@ -9,17 +9,19 @@ export const CLIENT_ID = `${SERVER}/clients/chrome.json`;
 export const AGENT_URL = `${SERVER}/sieve`;
 
 // The agents' setup lines (connect-your-agent spec 5.2): the chip, the code to copy, and the meta line.
-// `method` is the account's sign-in method from GET /v1/account: "google" says Google, anything else email.
-const via = (method) => (method === "google" ? "Google" : "email");
+// `method` is the account's sign-in method from GET /v1/account: "google" says Google, "email" email, and
+// anything else (a record signed in before the method was kept) names none.
+const KNOWN = { google: "Google", email: "email" };
+const signedIn = (method) => (KNOWN[method] ? `signed in with ${KNOWN[method]}` : "signed in the same way as here");
 export const AGENTS = [
   { id: "claude-code", name: "Claude Code", code: `claude mcp add --scope user --transport http sieve ${AGENT_URL}`,
-    meta: (m) => `Then /mcp \u203a sieve \u203a Authenticate, signed in with ${via(m)}.` },
+    meta: (m) => `Then /mcp \u203a sieve \u203a Authenticate, ${signedIn(m)}.` },
   { id: "claude-ai", name: "claude.ai", code: AGENT_URL,
-    meta: (m) => `claude.ai \u203a Customize \u203a Connectors \u203a Add custom connector. Name it Sieve, then Connect with ${via(m)}.` },
+    meta: (m) => `claude.ai \u203a Customize \u203a Connectors \u203a Add custom connector. Name it Sieve, then Connect${KNOWN[m] ? ` with ${KNOWN[m]}` : ", signed in the same way as here"}.` },
   { id: "cursor", name: "Cursor", code: `{ "mcpServers": { "sieve": { "url": "${AGENT_URL}" } } }`,
     meta: () => "Add to ~/.cursor/mcp.json, then sign in from Cursor's MCP settings." },
   { id: "codex", name: "Codex", code: `codex mcp add sieve --url ${AGENT_URL}`,
-    meta: (m) => `Then codex mcp login sieve, signed in with ${via(m)}.` },
+    meta: (m) => `Then codex mcp login sieve, ${signedIn(m)}.` },
   { id: "another", name: "Another", code: AGENT_URL,
     meta: () => "Any agent that adds remote MCP servers with sign-in, running on your computer." },
 ];

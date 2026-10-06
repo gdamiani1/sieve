@@ -25,7 +25,7 @@ export function fire(el, type, extra = {}) {
  * error chrome.storage.local.set throws. stats: what a stats message answers. fetchOk: whether the key
  * checks succeed.
  */
-export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null } = {}) {
+export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null, saveDelay = 0 } = {}) {
   const doc = fakeDocument();
   const body = html.slice(html.indexOf("<main>"), html.indexOf("</main>") + 7);
   const stack = [doc.body];
@@ -58,13 +58,25 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   const create = doc.createElement;
   doc.createElement = (t) => { const el = create(t); el.focus = () => { doc.activeElement = el; }; return el; };
   doc.activeElement = doc.body;
+  doc.visibilityState = "visible";
+  doc.listeners = {};
+  doc.addEventListener = (type, fn) => { (doc.listeners[type] ||= []).push(fn); };
 
   const sent = [];
   const asked = [];
   const sets = [];
   const copied = [];
   globalThis.document = doc;
-  globalThis.window = {};
+  const win = { listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); } };
+  globalThis.window = win;
+  globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+  // Prefs writes that come close together are joined; the tests wait for none unless they ask.
+  globalThis.SIEVE_SAVE_DELAY_MS = saveDelay;
+  const changedListeners = [];
+  const tell = (obj) => {
+    const changes = Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, { newValue: structuredClone(v) }]));
+    setTimeout(() => { for (const fn of changedListeners) fn(changes, "local"); }, 0);
+  };
   globalThis.confirm = () => confirmed;
   globalThis.fetch = async () => {
     if (fetchOk === null) throw new Error("no network in this test");
@@ -82,9 +94,10 @@ export async function page({ record, granted = true, confirmed = true, answer, s
           if (setFails) throw setFails;
           sets.push(structuredClone(obj));
           Object.assign(store, structuredClone(obj));
+          tell(obj);
         },
       },
-      onChanged: { addListener: () => {} },
+      onChanged: { addListener: (fn) => changedListeners.push(fn) },
     },
     permissions: { request: async (p) => { asked.push({ p, before: sent.length }); return granted; } },
     runtime: {
@@ -101,7 +114,9 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   await import(`../options.js?page=${++loads}`);
   for (let i = 0; i < 4; i++) await tick();
   const $ = (id) => doc.getElementById(id);
-  return { $, doc, sent, asked, sets, store, copied, window: globalThis.window };
+  // Another page (the popup) writes to storage: Chrome tells this one.
+  const elsewhere = (obj) => { Object.assign(store, structuredClone(obj)); tell(obj); };
+  return { $, doc, sent, asked, sets, store, copied, elsewhere, window: win };
 }
 
 /** Whether an element shows: neither it nor anything it is in is hidden. */
