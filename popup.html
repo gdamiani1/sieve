@@ -1,43 +1,82 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Sieve</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sieve</title>
 <style>
-:root{color-scheme:light dark;--paper:#ece7de;--ink:#14120e;--muted:#6b655b;--accent:#2433f5;--on-accent:#fff;--card:#fff;--panel:#f6f3ee;--field:#fff;--line:#d6cebf;--field-edge:#c9c1b3;--ink-soft:#3a362f;--alert:#9a2a00;--alert-tint:#fff0ea}
-@media (prefers-color-scheme: dark){:root{--paper:#14120e;--ink:#ece7de;--muted:#a9a296;--accent:#7b87ff;--on-accent:#14120e;--card:#1d1a15;--panel:#1d1a15;--field:#252119;--line:#3a362f;--field-edge:#6b655b;--ink-soft:#c9c1b3;--alert:#ffb59b;--alert-tint:#3a1a0e}}
-body{font:13.5px/1.45 -apple-system,system-ui,sans-serif;background:var(--paper);color:var(--ink);margin:0;padding:16px;width:300px}
-h1{font-size:17px;margin:0 0 10px;display:flex;align-items:center;gap:8px}h1 img{width:22px;height:22px}
-label{display:flex;gap:8px;align-items:center;margin:4px 0}
-table{margin:12px 0;border-collapse:collapse;width:100%}td{padding:2px 0}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
-.btns{display:flex;gap:8px}button{flex:1;padding:8px;border:0;border-radius:7px;background:var(--accent);color:var(--on-accent);font-weight:600;cursor:pointer}
-button.alt{background:var(--card);color:var(--ink);border:1px solid var(--field-edge)}
-.wait{margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:13px}.wait a{color:var(--accent)}
-.small{margin-top:8px;font-size:12px;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
-button:disabled{opacity:.6;cursor:default}
-.ask{background:var(--panel);border:1px solid var(--field-edge);border-radius:9px;padding:10px 12px;margin:0 0 12px}
-.ask .err{margin:8px 0 0;color:var(--alert)}.thanks{margin:0 0 12px;font-size:12.5px;color:var(--muted)}.ask .err:empty,.thanks:empty{display:none}
-.ask h2{font-size:13.5px;margin:0 0 4px}.ask p{margin:0 0 10px;font-size:12.5px}
+:root{color-scheme:light dark;--canvas:#FBFAF7;--card:#FFFFFF;--tint:#F0ECE5;--ink:#1D1B17;--on-ink:#FFFFFF;--ink-muted:#77706A;--line:#EBE6DC;--bar-edge:#E4DED2;--blue:#2433F5;--on-blue:#FFFFFF;--alert:#9A2A00;--alert-tint:#FFF0EA;--note:#F7ECD0;--note-tape:#CDBFA5}
+@media (prefers-color-scheme: dark){:root{--canvas:#171511;--card:#221F1A;--tint:#2A2620;--ink:#ECE6DC;--on-ink:#171511;--ink-muted:#A39B8F;--line:#322E27;--bar-edge:#3A352D;--blue:#7B87FF;--on-blue:#14120E;--alert:#FFB59B;--alert-tint:#3A1A0E;--note:#302819;--note-tape:#5A4F3D}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;width:320px;padding:16px 16px 14px;background:var(--canvas);color:var(--ink);font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+p{margin:0}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.head{display:flex;align-items:center;gap:9px}.head img{width:28px;height:28px;border-radius:7px}
+h1{font-size:22px;font-weight:800;letter-spacing:-.6px;margin:0;line-height:1.1}
+.nib{display:block;margin:2px 0 12px 37px}.nib path{fill:var(--blue)}
+.group{background:var(--card);border-radius:14px;overflow:hidden;margin-bottom:12px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:6px 14px;position:relative;margin:0}
+.row+.row::before{content:"";position:absolute;top:0;left:14px;right:0;height:1px;background:var(--line)}
+.row .v{font-variant-numeric:tabular-nums;font-weight:600}
+label.row{cursor:pointer}
+.row:focus-within{outline:2px solid var(--blue);outline-offset:-3px}
+.sw{appearance:none;-webkit-appearance:none;margin:0;width:40px;height:24px;flex:none;border-radius:999px;background:var(--ink-muted);position:relative;cursor:pointer;transition:background .12s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--canvas);transition:left .12s}
+.sw:checked{background:var(--blue)}.sw:checked::after{left:18px}
+.sw:focus-visible{outline:none}
+.title{display:flex;align-items:center;justify-content:space-between;margin:0 2px 4px 2px}
+h2{font-size:13px;font-weight:600;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}
+.tile{background:var(--tint);color:var(--ink);border-radius:12px;padding:9px 10px}
+.tile b{display:block;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.5px;line-height:1.2}
+.tile span{font-size:12px}
+.btn{display:flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:0;border-radius:14px;font:inherit;font-weight:600;line-height:1.2;cursor:pointer}
+.btn:active{opacity:.85}
+.btn.primary{background:var(--blue);color:var(--on-blue)}
+.btn.secondary{background:var(--tint);color:var(--ink)}
+.btn.text{background:none;color:var(--blue);padding:0 8px;font-size:13px}
+.btn:disabled{opacity:.6;cursor:default}
+.title .btn.text{min-height:44px;margin:-6px -8px -6px 0}
+.agent,.wait,.thanks{font-size:12.5px;color:var(--ink-muted)}
+.agent{margin:-4px 2px 12px}
+.btns{display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
+.wait{margin:12px 2px 0}.wait a{font-weight:600;text-decoration:none}
+.ask{background:var(--tint);color:var(--ink);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+.ask h2{font-size:14px}
+.ask p{margin:4px 0 10px;font-size:13px}
+.ask .btns2{display:flex;gap:6px;align-items:center}
+.ask .btn{min-height:44px}
+.ask .btn.secondary{background:var(--card)}
+.fail{background:var(--alert-tint);color:var(--alert);border-radius:14px;padding:10px 14px;margin:-4px 0 12px;font-size:13px}
+.fail:empty,.thanks:empty{display:none}
+.thanks{margin:0 2px 12px}
 </style></head><body>
-<h1><img src="icons/icon48.png" alt="">Sieve</h1>
+<div class="head"><img src="icons/icon48.png" alt=""><h1>Sieve</h1></div>
+<svg class="nib" width="62" height="9" viewBox="0 0 62 9" aria-hidden="true"><path d="M1 5.6 C 12 3.8, 30 3.6, 61 3.2 C 61.6 3.7, 61.5 4.4, 61 4.7 C 40 5.6, 22 5.8, 2 7.0 C 0.8 6.8, 0.6 6.0, 1 5.6 Z"/></svg>
 <div class="ask" id="ask" hidden role="region" aria-labelledby="askTitle">
 <h2 id="askTitle">Send usage counts?</h2>
-<p>Once a day, Sieve can send me counts of what you used it for, like posts scored and briefs made, with a random install ID, through Google Analytics. Never post text, links, names or keys. It shows me whether Sieve is worth building on. Nothing is sent unless you say yes, and you can turn it off in settings at any time.</p>
-<div class="btns"><button type="button" id="askYes">Yes, send counts</button><button type="button" id="askNo" class="alt">No thanks</button></div>
-<p class="err" id="askErr" role="status"></p>
+<p>Once a day, counts of what you used, like posts scored and briefs made, with a random install ID, through Google Analytics. Never post text, links, names or keys.</p>
+<div class="btns2"><button type="button" class="btn secondary" id="askYes">Yes, send counts</button><button type="button" class="btn text" id="askNo">No thanks</button></div>
 </div>
+<p class="fail" id="askErr" role="status"></p>
 <p class="thanks" id="askThanks" role="status"></p>
-<label><input id="linkedinOn" type="checkbox"> LinkedIn</label>
-<label><input id="xOn" type="checkbox"> X</label>
-<label><input id="redditOn" type="checkbox"> Reddit</label>
-<label><input id="youtubeOn" type="checkbox"> YouTube</label>
-<table>
-<tr><td>Posts scored</td><td id="posts">0</td></tr>
-<tr><td>Highlighted</td><td id="strong">0</td></tr>
-<tr><td>Maybe</td><td id="maybe">0</td></tr>
-<tr><td>Briefs written</td><td id="briefs">0</td></tr>
-<tr><td>Videos watched for you</td><td id="watched">0</td></tr>
-<tr><td>Cost (all models)</td><td id="cost">$0.0000</td></tr>
-</table>
-<div class="btns"><button id="settings" class="alt">Settings</button><button id="digest">Daily learnings</button></div>
-<button class="small" id="reset">Reset counters</button>
-<p class="wait"><a href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Sieve account is coming: join the waitlist</a></p>
+<div class="group">
+<label class="row"><span>LinkedIn</span><input class="sw" id="linkedinOn" type="checkbox"></label>
+<label class="row"><span>X</span><input class="sw" id="xOn" type="checkbox"></label>
+<label class="row"><span>Reddit</span><input class="sw" id="redditOn" type="checkbox"></label>
+<label class="row"><span>YouTube</span><input class="sw" id="youtubeOn" type="checkbox"></label>
+</div>
+<div class="title"><h2>Since you reset</h2><button type="button" class="btn text" id="reset">Reset</button></div>
+<div class="tiles">
+<div class="tile"><b id="posts">0</b><span>scored</span></div>
+<div class="tile"><b id="strong">0</b><span>highlighted</span></div>
+<div class="tile"><b id="maybe">0</b><span>maybe</span></div>
+</div>
+<div class="group">
+<div class="row"><span>Briefs written</span><span class="v" id="briefs">0</span></div>
+<div class="row"><span>Videos watched for you</span><span class="v" id="watched">0</span></div>
+<div class="row"><span>Cost, all models</span><span class="v" id="cost">$0.0000</span></div>
+</div>
+<p class="agent" id="agent" hidden></p>
+<div class="btns"><button type="button" class="btn secondary" id="settings">Settings</button><button type="button" class="btn primary" id="digest">Daily learnings</button></div>
+<p class="wait">A Sieve account is coming. <a href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Join the waitlist</a></p>
 <script type="module" src="popup.js"></script>
 </body></html>

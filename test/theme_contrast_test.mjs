@@ -1,11 +1,11 @@
 // Offline: the extension pages' colours in light and dark. No keys, no network.
 // Each page's <style> opens with a :root token block (light) and a prefers-color-scheme: dark block.
-// The popup and digest keep the quiet material; the settings page is pinboard version 2 from 1.5.0
+// The digest keeps the quiet material; the settings page and the popup are pinboard version 2 from 1.5.0
 // (design.md, Palette (version 2); extension settings pinboard spec 6).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const PAGES = ["popup.html", "digest.html"];
+const PAGES = ["digest.html"];
 
 const LIGHT = {
   paper: "#ece7de", ink: "#14120e", muted: "#6b655b", accent: "#2433f5", "on-accent": "#fff",
@@ -104,7 +104,7 @@ for (const no of ["white-space", "&#10;", "#msg{", "#export{", "#today{", "#day"
   assert.equal(no.match(COLOUR), null, `COLOUR should not match ${no}`);
 }
 
-const SETS = [...PAGES.map((p) => [p, LIGHT, DARK]), ["options.html", V2_LIGHT, V2_DARK]];
+const SETS = [...PAGES.map((p) => [p, LIGHT, DARK]), ["options.html", V2_LIGHT, V2_DARK], ["popup.html", V2_LIGHT, V2_DARK]];
 for (const [page, LIGHT, DARK] of SETS) {
   const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
   const style = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
