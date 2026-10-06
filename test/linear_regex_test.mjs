@@ -112,6 +112,7 @@ const warnedLong = [
   " [".repeat(size / 2),
   "\\[".repeat(size / 2),
   "\\".repeat(size) + "(",
+  "\\".repeat(size),
   "| env -u".repeat(size / 8),
   "| xargs -n 1 -I x".repeat(size / 17),
   "bash" + " -x".repeat(size / 3),

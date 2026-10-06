@@ -209,8 +209,10 @@ const IDEOGRAPHIC_STOP = /\u3002/g;
 // A run of brackets is tried only where it starts, one space allowed between two (the fields arrive
 // cleaned, with single spaces): tried at every bracket of a long run, it read the rest each time.
 const DEFANGED_COLON = /(?:(?<! ) )?(?<![[(]|[[(] )(?:[[(] ?)+:(\/\/)?(?: ?[\])])+ ?/g;
-// Markdown escapes a bracket with a backslash ("evil\[.\]biz"): the view reads it unescaped.
-const ESCAPED_BRACKET = /\\+([[\](){}])/g;
+// Markdown escapes a bracket with a backslash ("evil\[.\]biz"): the view reads it unescaped. Tried
+// only where a run of backslashes starts: tried at every one, a long run with no bracket was read to
+// its end from each.
+const ESCAPED_BRACKET = /(?<!\\)\\+([[\](){}])/g;
 const BRACKETED = String.raw`(?<![[({]|[[({] )(?:[[({] ?)+(?:\.|dot)(?: ?[\])}])+\s*`;
 // Inside a name the spaces before the bracket follow a name character, so they are read once; on its
 // own, the spaces are read only from where their run starts, as DASH does.
