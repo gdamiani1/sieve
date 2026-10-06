@@ -372,8 +372,9 @@ export function videoBriefRecord(w) {
   return { ...b, key: videoRecordKey(platform, w.id), platform, title: w.title || "", author: w.channel || "", url: w.url || "", at: w.at || Date.now(), cost: w.cost || 0 };
 }
 
-// Every kind of line break, including the separators a post can use to fake a new line.
-const LINE_BREAK = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u{2028}\u{2029}]/u;
+// Every kind of line break, including the separators a post can use to fake a new line. brief-prompt.js
+// folds the same set for what its checks read.
+export const LINE_BREAK = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u{2028}\u{2029}]/u;
 
 // Source text as quoted lines: split on every kind of line break, cleaned, blanks dropped, each line
 // prefixed with "> " so none can pass for one of Sieve's own lines.
