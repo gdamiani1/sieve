@@ -183,19 +183,21 @@ const LINK = new RegExp(String.raw`${SCHEME}\S*|\bwww\.\S*|${BARE_DOMAIN}`, "gi"
 // What the warned-brief filters read: the pipe look-alikes as "|" (before NFKC, which turns U+FE31 into
 // a dash, and after it, which makes U+FFE8 a box-drawing bar), with any marks right after a pipe gone;
 // NFKC (which turns the fullwidth "｜" and letters into plain ones); and the ways people defang a link
-// read as the link: "hxxps", "[:]" and "[://]" as the scheme, and a dot written "[.]", "(.)", "{.}",
-// "[dot]", "(dot)" or "{dot}". A name with a bracketed dot is an address whatever its ending, since
+// read as the link: "hxxps", "[:]" and "[://]" as the scheme, and a dot written in brackets, as deep as
+// they go: "[.]", "(.)", "{.}", "[dot]", "(dot)", "{dot}", "[[.]]", "[ ( dot ) ]". A name with a bracketed dot is an address whatever its ending, since
 // nobody writes one otherwise: it reads with "http://" in front. A " dot " between two name characters
 // is only a dot ("evil dot sh"), so its name still needs a known ending; "port it to dot net" reads as
 // "to.net", which a warned brief then loses: only a warned brief is read this way. Again until nothing
-// changes, so "evil[[.]]sh" reads as "http://evil.sh" too (a bracketed dot with no name around it reads
-// as a dot, which the next pass sees); each pass that changes anything shortens the text
+// changes (a fold can make another: NFKC after a look-alike, a name after a lone bracketed dot); each
+// pass that changes anything shortens the text
 // or turns an "x" or "*" of "hxxp" into a "t", so it ends. Each replacement reads its text once.
-const PIPE_LIKE = /[¦ǀ׀।‖∣∥│┃╽⎸⎹⏐❘-❚ⵏꓲ︱\u{1d100}]/gu;
+const PIPE_LIKE = /[\u00a6\u01c0\u05c0\u0964\u2016\u2223\u2225\u2502\u2503\u257d\u23b8\u23b9\u23d0\u2758-\u275a\u2d4f\ua4f2\ufe31\u{1d100}]/gu;
 const PIPE_MARKS = /\|\p{M}+/gu;
-const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s?)(?=\s*(?:\[:\]|[[(]:\/\/[\])]|:))/gi;
-const DEFANGED_COLON = /\[:\]|\[:\/\/\]|\(:\/\/\)/g;
-const BRACKETED = String.raw`(?:\[\s*(?:\.|dot)\s*\]|\(\s*(?:\.|dot)\s*\)|\{\s*(?:\.|dot)\s*\})\s*`;
+const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s?)(?=\s*(?:[[(]|:))/gi;
+// A run of brackets is tried only where it starts, one space allowed between two (the fields arrive
+// cleaned, with single spaces): tried at every bracket of a long run, it read the rest each time.
+const DEFANGED_COLON = /(?<![[(]|[[(] )(?:[[(] ?)+:(\/\/)?(?: ?[\])])+/g;
+const BRACKETED = String.raw`(?<![[({]|[[({] )(?:[[({] ?)+(?:\.|dot)(?: ?[\])}])+\s*`;
 // Inside a name the spaces before the bracket follow a name character, so they are read once; on its
 // own, the spaces are read only from where their run starts, as DASH does.
 const DEFANGED_NAME = new RegExp(String.raw`(?<![\w.-])[\w-]+(?:(?:\.|\s*${BRACKETED})[\w-]+)+`, "gi");
@@ -205,7 +207,7 @@ const viewOnce = (s) => nfkc(s.replace(PIPE_LIKE, "|"))
   .replace(PIPE_LIKE, "|")
   .replace(PIPE_MARKS, "|")
   .replace(DEFANGED_SCHEME, "http$1")
-  .replace(DEFANGED_COLON, (c) => (c === "[:]" ? ":" : "://"))
+  .replace(DEFANGED_COLON, (c, slashes) => (slashes ? "://" : ":"))
   .replace(DEFANGED_NAME, (name, at, all) => {
     const plain = name.replace(BRACKET_DOT_RE, ".");
     return plain === name ? name : `${all.slice(Math.max(0, at - 3), at) === "://" ? "" : "http://"}${plain}`;
@@ -258,11 +260,11 @@ function removeCommands(view) {
     // instead, and so does one that never closes.
     const inSpan = t % 2 === 1;
     const start = inSpan ? Math.max(at, ticks[t - 1]) : m.index;
-    const after = m.index + m[0].length;
+    const firstWord = m.index + m[0].search(/\s|$/);
     let end;
-    if (inSpan && t < ticks.length && view.slice(after, ticks[t]).trim()) end = ticks[t] + 1;
+    if (inSpan && t < ticks.length && view.slice(firstWord, ticks[t]).trim()) end = ticks[t] + 1;
     else {
-      CLAUSE_END.lastIndex = after;
+      CLAUSE_END.lastIndex = m.index + m[0].length;
       end = CLAUSE_END.exec(view)?.index ?? view.length;
     }
     out += view.slice(at, start) + "[command removed]";

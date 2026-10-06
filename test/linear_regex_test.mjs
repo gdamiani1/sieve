@@ -102,9 +102,16 @@ const warnedLong = [
   "a.com.".repeat(size / 6),
   " ".repeat(size) + "[",
   "\ufe58".repeat(size),
+  "a" + "[".repeat(size / 2) + "." + "]".repeat(size / 2) + "b",
+  "a" + "[ ".repeat(size / 4) + "dot" + " ]".repeat(size / 4) + "b",
+  "hxxp" + "(".repeat(size / 2) + ":" + ")".repeat(size / 2),
+  "`a ".repeat(size / 3),
+  "[".repeat(size),
+  "[ (".repeat(size / 3),
+  "a" + "[".repeat(size),
 ];
 const warnedStarted = performance.now();
 for (const s of warnedLong) { LINKISH.test(warnedView(s)); redactWarned(s); normalizeBrief({ what: s, warning: "x", try: [s], says: [s] }); }
 const warnedMs = performance.now() - warnedStarted;
-assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over fifteen 100,000-character hostile inputs: ${warnedMs.toFixed(1)} ms`);
+assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over twenty-two 100,000-character hostile inputs: ${warnedMs.toFixed(1)} ms`);
 console.log(`linear_regex_test: ok (${compared} inputs compared, hostile 100k in ${ms.toFixed(1)} ms, warned filters in ${warnedMs.toFixed(1)} ms)`);
