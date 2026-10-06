@@ -11,6 +11,8 @@ export const CLAUDE_LINE = `claude mcp add --transport http sieve ${AGENT_URL}`;
 // The server's rule for a Chrome id (mcp-server src/core.js CHROME_ID).
 export const CHROME_ID = /^chrome:[A-Za-z0-9_:.-]{1,200}$/;
 export const SEND_EVERY_MIN = 15;
+// The server's cap on one upload (bytes of JSON).
+export const MAX_BODY = 8 * 1024 * 1024;
 
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -22,7 +24,8 @@ export async function pkcePair(verifier = b64url(crypto.getRandomValues(new Uint
 
 export const randomState = () => b64url(crypto.getRandomValues(new Uint8Array(16)));
 
-export function authorizeUrl({ redirect, challenge, state, device, provider = "google" }) {
+export function authorizeUrl({ redirect, challenge, state, device, provider = "google" } = {}) {
+  if (!redirect || !challenge || !state || !device) throw new Error("authorizeUrl needs redirect, challenge, state and device");
   const u = new URL(`${SERVER}/authorize`);
   u.search = new URLSearchParams({
     response_type: "code", client_id: CLIENT_ID, redirect_uri: redirect, code_challenge: challenge,
@@ -35,7 +38,9 @@ export function authorizeUrl({ redirect, challenge, state, device, provider = "g
 export function readCallback(href, state) {
   let u;
   try { u = new URL(href); } catch { return { error: "denied" }; }
+  // The server always answers in the query string, never the fragment, so only the query is read.
   const p = u.searchParams;
+  if (p.has("iss") && p.get("iss") !== SERVER) return { error: "denied" };
   if (p.get("state") !== state) return { error: "state" };
   if (p.get("error")) return { error: p.get("error_description") === "new_accounts_closed" ? "not_invited" : "denied" };
   const code = p.get("code");
@@ -48,22 +53,25 @@ export const refreshForm = (refresh) => new URLSearchParams({ grant_type: "refre
 
 /** { access, refresh, expiresAt } from a /token answer (a minute early), or null. */
 export function readTokens(j, now = Date.now()) {
-  if (!j || typeof j.access_token !== "string" || typeof j.refresh_token !== "string") return null;
-  const secs = Number.isFinite(j.expires_in) ? j.expires_in : 3600;
-  return { access: j.access_token, refresh: j.refresh_token, expiresAt: now + secs * 1000 - 60e3 };
+  if (!j || typeof j.access_token !== "string" || !j.access_token || typeof j.refresh_token !== "string" || !j.refresh_token) return null;
+  const secs = Number.isFinite(j.expires_in) && j.expires_in > 0 ? j.expires_in : 3600;
+  return { access: j.access_token, refresh: j.refresh_token, expiresAt: now + Math.max(secs * 1000 - 60e3, secs * 500) };
 }
 
 /** What is sent: the Export library items with ids under chrome:, no digests. `left` counts items
- * whose id the server wouldn't take. */
+ * whose id the server wouldn't take. `json` is the body as text and `bytes` its size, so the sender
+ * checks MAX_BODY and sends `json` without stringifying twice. */
 export function libraryBody(data, now = Date.now()) {
   const ex = buildExport({ saved: data?.saved, watched: data?.watched, briefs: data?.briefs }, now);
   const items = [];
   let left = 0;
   for (const it of ex.items) {
-    const id = it.id.startsWith("chrome:") ? it.id : `chrome:${it.id}`;
+    const id = `chrome:${it.id}`;
     if (CHROME_ID.test(id)) items.push({ ...it, id }); else left++;
   }
-  return { body: { format: ex.format, version: ex.version, exportedAt: ex.exportedAt, items }, left };
+  const body = { format: ex.format, version: ex.version, exportedAt: ex.exportedAt, items };
+  const json = JSON.stringify(body);
+  return { body, json, bytes: new TextEncoder().encode(json).length, left };
 }
 
 /** Hex SHA-256 of the items only: a library that didn't change hashes the same at any time. */
@@ -72,21 +80,25 @@ export async function libraryHash(body) {
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-const when = (ms) => new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const when = (ms) => new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const whole = (n) => (Number.isFinite(n) ? n : 0);
 
-/** The line the settings section shows for a state. */
+/** The line the settings section shows for the stored record { state, email, lastAt, lastItems, detail }. */
 export function words(s) {
-  switch (s.state) {
+  const d = s?.detail || {};
+  switch (s?.state) {
     case "off": return "Your coding agent can read what you save here and on iPhone. Invite-only for now.";
     case "not_invited": return "Sending your library to your agent is invite-only for now.";
-    case "on": return `Sending to your agent as ${s.email}. ${s.lastAt ? `Last sent ${when(s.lastAt)}, ${s.items} item${s.items === 1 ? "" : "s"}.` : "Not sent yet."}`;
-    case "ended": return `Your invite ended${s.endedOn ? ` on ${s.endedOn}` : ""}. Your agent no longer reads this library.`;
+    case "on": return `Sending to your agent as ${s.email}. ${s.lastAt ? `Last sent ${when(s.lastAt)}, ${count(whole(s.lastItems), "item", "items")}.` : "Not sent yet."}`;
+    case "ended": return `Your invite ended${d.endedOn ? ` on ${d.endedOn}` : ""}. Your agent no longer reads this library.`;
     case "other_device": return "Another Chrome already sends its library to this account.";
-    case "shrunk": return `Your agent's copy has ${s.stored} pins and this Chrome has ${s.count}. Send anyway?`;
+    case "shrunk": return `Your agent's copy has ${count(whole(d.stored), "pin", "pins")} and this Chrome has ${count(whole(d.count), "pin", "pins")}. Send anyway?`;
     case "older": return "This computer's clock is behind the copy your agent has. Check the date and time, then send again.";
     case "busy": return `Couldn't reach Sieve's server. Sieve tries again in ${SEND_EVERY_MIN} minutes.`;
     case "limit": return "Sieve sent as many times as it may today. It tries again tomorrow.";
-    case "invalid": return `Sieve's server refused the library: ${s.reason}`;
+    case "invalid": return d.reason ? `Sieve's server refused the library: ${d.reason}` : "Sieve's server refused the library.";
+    case "too_big": return `Your library is too big to send (${(whole(d.bytes) / (1024 * 1024)).toFixed(1)} MB; the limit is ${MAX_BODY / (1024 * 1024)} MB).`;
     case "signed_out": return "This Chrome was signed out. Turn sync on again to keep sending.";
     case "no_permission": return "Sieve needs that permission to send your library.";
     default: return "";
