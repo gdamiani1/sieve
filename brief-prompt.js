@@ -3,7 +3,7 @@
 // about network JSON shapes or a model's loose formatting.
 
 import { looseJson } from "./json.js";
-import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE, isLeftOutName, MAX_LEFT_OUT, LINE_BREAK } from "./brief.js";
+import { normalizeBrief, normalizeWarning, PLATFORM_NAMES, cleanText, stripInvisible, saysNo, CHECK_SOURCE, isLeftOutName, MAX_LEFT_OUT } from "./brief.js";
 
 // A code-level backstop for the most blatant AI-directed passages, run after the model's own answer
 // so it can't be talked out of firing. Deliberately narrow: the model is the main defense; this only
@@ -89,17 +89,18 @@ const postParts = (post) => {
   const threadParts = Array.isArray(post?.posts) ? post.posts.flatMap((x) => [x?.text, x?.quoted?.author, x?.quoted?.text]) : [];
   return [authorOf(post), post?.title, post?.text, ...threadParts].map((s) => (typeof s === "string" ? s : ""));
 };
-// What a check reads: every line break LINE_BREAK knows ("\r\n", a lone "\r", "\v", "\f", U+001C to
-// U+001E, NEL, U+2028) read as "\n" and U+2029, the paragraph separator, as "\n\n", so a blank line
-// made of any of them still ends a paragraph; then invisible characters gone (after the fold, which
-// would otherwise lose NEL and U+001C to U+001E to stripInvisible); then NFKC, which folds the "bold"
-// and fullwidth letters LinkedIn posts use for styling into plain ones, so styling can't hide a phrase
-// from the patterns. Only the checks read this: what Sieve keeps, shows and sends is untouched.
+// What a check reads: invisible characters gone; then every line break stripInvisible keeps and the
+// model sees ("\r\n", a lone "\r", "\v", "\f", U+2028) read as "\n" and U+2029, the paragraph
+// separator, as "\n\n", so a blank line made of any of them still ends a paragraph; then NFKC, which
+// folds the "bold" and fullwidth letters LinkedIn posts use for styling into plain ones, so styling
+// can't hide a phrase from the patterns. NEL and U+001C to U+001E are not folded: stripInvisible deletes
+// them, as from what the model is sent, so one can't split "ignore" for the checks while the model reads
+// it whole. Only the checks read this: what Sieve keeps, shows and sends is untouched.
 // The parts are read one by one and joined with "\n", by aiDirected and plantedNames alike: a part
 // ending in "\r" reads as ending in "\n", where the joined post would read "\r" and the joining "\n"
 // as one line break.
-const ANY_BREAK = new RegExp(LINE_BREAK.source, "gu");
-const readable = (s) => nfkc(stripInvisible(s.replace(ANY_BREAK, (b) => (b === "\u2029" ? "\n\n" : "\n"))));
+const SEEN_BREAK = /\r\n|[\r\v\f\u2028\u2029]/g;
+const readable = (s) => nfkc(stripInvisible(s).replace(SEEN_BREAK, (b) => (b === "\u2029" ? "\n\n" : "\n")));
 
 // Every match of one AI_DIRECTED pattern, in order, minus the ones a "quoted" pattern excuses. A quoted
 // example only excuses itself: every match is looked at, so an explanation that quotes the phrase can't
@@ -316,7 +317,7 @@ export function plantedNames(post = {}, briefText, { planted = [] } = {}) {
       continue;
     }
     if (open.length && (c === '"' || (c === "'" && last && "{[,:".includes(last)))) { quote = c; last = c; continue; }
-    if (c !== " " && c !== "\t" && c !== "\n" && c !== "\r") last = c;
+    if (c !== " " && c !== "\t" && c !== "\n") last = c; // readable leaves no "\r"
     if (c === "{") open.push(i);
     else if (c === "}" && open.length) {
       const start = open.pop();
