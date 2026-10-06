@@ -22,7 +22,8 @@ export function fire(el, type, extra = {}) {
 /**
  * record: what the worker's agentSync status answers. answer: what an agentSync action answers (or a
  * function of the message). store: chrome.storage.local's contents (kept and changed). setFails: the
- * error chrome.storage.local.set throws. stats: what a stats message answers. fetchOk: whether the key
+ * error chrome.storage.local.set throws, or a function of what is written that returns one (or nothing).
+ * stats: what a stats message answers. fetchOk: whether the key
  * checks succeed.
  */
 export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null, saveDelay = 0 } = {}) {
@@ -62,6 +63,7 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   doc.listeners = {};
   doc.addEventListener = (type, fn) => { (doc.listeners[type] ||= []).push(fn); };
 
+  const hang = { on: false };
   const sent = [];
   const asked = [];
   const sets = [];
@@ -86,12 +88,15 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   globalThis.chrome = {
     storage: {
       local: {
+        // While `hang.on`, a read never answers: a page being closed doesn't get its answer.
         get: async (keys) => {
+          if (hang.on) await new Promise(() => {});
           const list = keys === undefined || keys === null ? Object.keys(store) : [].concat(keys);
           return Object.fromEntries(list.filter((k) => k in store).map((k) => [k, structuredClone(store[k])]));
         },
         set: async (obj) => {
-          if (setFails) throw setFails;
+          const fails = typeof setFails === "function" ? setFails(obj) : setFails;
+          if (fails) throw fails;
           sets.push(structuredClone(obj));
           Object.assign(store, structuredClone(obj));
           tell(obj);
@@ -116,7 +121,7 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   const $ = (id) => doc.getElementById(id);
   // Another page (the popup) writes to storage: Chrome tells this one.
   const elsewhere = (obj) => { Object.assign(store, structuredClone(obj)); tell(obj); };
-  return { $, doc, sent, asked, sets, store, copied, elsewhere, window: win };
+  return { $, doc, sent, asked, sets, store, copied, elsewhere, hang, window: win };
 }
 
 /** Whether an element shows: neither it nor anything it is in is hidden. */

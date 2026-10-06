@@ -291,6 +291,54 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn", "youtubeDescript
   await settle();
   assert.equal(store.orKey, undefined);
 }
+// Closing the tab: the write starts at once, from what the page already knows, with nothing read first
+// (a closing page never gets a read's answer).
+{
+  const { $, store, sets, hang, window } = await page({ record: off, saveDelay: 500, store: { prefs: { xOn: false }, model: "m/old" } });
+  chip($, "kinds", "promo").click(); // waiting to be joined
+  await settle();
+  assert.deepEqual(sets, []);
+  $("role").focus();
+  $("role").value = "typed then closed";
+  hang.on = true;
+  for (const fn of window.listeners.pagehide) fn({ type: "pagehide" });
+  assert.equal(sets.length, 1, "written in the same turn, nothing awaited");
+  assert.deepEqual(sets[0].prefs, saved({ xOn: false, role: "typed then closed", kinds: { ...DEFAULT_PREFS.kinds, promo: true } }));
+  assert.equal(store.prefs.role, "typed then closed");
+}
+{
+  const { $, sets, hang, doc } = await page({ record: off, store: { model: "m/old" } });
+  $("model").focus();
+  $("model").value = "m/closing";
+  hang.on = true;
+  doc.visibilityState = "hidden";
+  for (const fn of doc.listeners.visibilitychange) fn({ type: "visibilitychange" });
+  assert.deepEqual(sets, [{ model: "m/closing" }], "the other saved keys too, alone");
+  await settle(); // this page's change listener runs before the next page takes the globals
+}
+{
+  // Nothing changed: nothing written.
+  const { $, sets, hang, window } = await page({ record: off });
+  $("role").focus();
+  hang.on = true;
+  for (const fn of window.listeners.pagehide) fn({ type: "pagehide" });
+  $("model").focus();
+  for (const fn of window.listeners.pagehide) fn({ type: "pagehide" });
+  assert.deepEqual(sets, [], "not even a default for a field left as it was");
+}
+
+// A later toast isn't cut short by an earlier one: a "Couldn't save" shown just after a "Saved" stays
+// its full 4 seconds.
+{
+  const { $ } = await page({ record: off, setFails: (obj) => (obj.model === "m/bad" ? new Error("nope") : null) });
+  $("model").value = "m/good"; fire($("model"), "change");
+  $("model").value = "m/bad"; fire($("model"), "change");
+  await settle();
+  assert.match($("toast").textContent, /^Couldn't save: nope/);
+  await new Promise((r) => setTimeout(r, 2000));
+  assert.match($("toast").textContent, /^Couldn't save: nope/, "still there after 2 seconds");
+}
+
 // Visible again: nothing is saved.
 {
   const { $, sets, doc } = await page({ record: off });

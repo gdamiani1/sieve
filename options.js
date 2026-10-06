@@ -14,13 +14,17 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---- The toast: "Saved", or why a save failed. A live region always in the page (visually hidden while
 // empty); emptied first and filled on the next frame, so a second "Saved" is announced too.
+// Only the latest toast's frame counts, so an earlier "Saved" can't cut a later "Couldn't save" short.
 let toastTimer = 0;
+let toastSeq = 0;
 const nextFrame = globalThis.requestAnimationFrame || ((fn) => setTimeout(fn, 16));
 function toast(text, ms = 1500) {
   const t = $("toast");
+  const seq = ++toastSeq;
   clearTimeout(toastTimer);
   t.textContent = "";
   nextFrame(() => {
+    if (seq !== toastSeq) return;
     t.textContent = text;
     toastTimer = setTimeout(() => { t.textContent = ""; }, ms);
   });
@@ -147,6 +151,11 @@ function drawPrefs(p, skip = () => false) {
   for (const [id, draw] of Object.entries(DRAW_PREFS)) if (!skip(id)) draw(p);
 }
 
+// What is stored, as this page last knew it: filled by load(), each save and the change listener, so
+// closing the tab can write at once without reading first.
+let cachedPrefs = null;
+const cachedOther = {};
+
 // Prefs changes that come within about half a second are written together, so a run of chip clicks
 // re-scores open tabs once. Leaving the page writes at once.
 const SAVE_DELAY = globalThis.SIEVE_SAVE_DELAY_MS ?? 500;
@@ -156,12 +165,15 @@ let typed = {}; // what each text field said when its change was taken, so a red
 let topicsCut = false;
 let flushTimer = 0;
 function savePrefs(id) {
+  takePending(id);
+  if (!flushTimer) flushTimer = setTimeout(flushPrefs, SAVE_DELAY);
+}
+function takePending(id) {
   Object.assign(pending, PREFS[id]());
   pendingIds.add(id);
   if (id === "highAt" || id === "lowBelow") { pendingIds.add("highAt"); pendingIds.add("lowBelow"); }
   if ("value" in $(id) && !kids(id).length) typed[id] = $(id).value;
   if (id === "topics") topicsCut = lines("topics").length > 8;
-  if (!flushTimer) flushTimer = setTimeout(flushPrefs, SAVE_DELAY);
 }
 function flushPrefs() {
   clearTimeout(flushTimer);
@@ -174,6 +186,7 @@ function flushPrefs() {
     const next = { ...p, ...change };
     const wrote = !Object.keys(change).every((k) => same(p[k], next[k]));
     if (wrote) await chrome.storage.local.set({ prefs: next });
+    cachedPrefs = next;
     // The fields show what was saved (a default, the first 8 topics), unless typed in since.
     drawPrefs(await loadPrefs(), (id) => !ids.includes(id) || (id in seen && $(id).value !== seen[id]) || pendingIds.has(id));
     if (!wrote) return "";
@@ -201,6 +214,7 @@ function saveOther(id) {
     const s = await chrome.storage.local.get(key);
     const wrote = !same(s[key], value);
     if (wrote) await chrome.storage.local.set({ [key]: value });
+    cachedOther[key] = value;
     if ($(id).value === seen) draw(value);
     return wrote ? "Saved" : "";
   });
@@ -222,10 +236,37 @@ $("remind").addEventListener("change", () => { $("rtime").disabled = !$("remind"
 // Typing and then closing the tab or switching away: the field being typed in saves now, and any
 // joined prefs changes are written at once. Key fields never save this way.
 const TYPED = ["role", "topics", "subreddits", "freshHours", "freshComments", "redditAbout", "boostWords", "muteWords", "model", "videoModel"];
+// The page may be gone before any read answers, so the write starts in this same turn, from the cached
+// copy, with nothing awaited first.
 function leaving() {
   const id = document.activeElement?.id;
-  if (TYPED.includes(id)) { if (id in PREFS) savePrefs(id); else saveOther(id); }
-  flushPrefs();
+  if (!cachedPrefs) {
+    // Not loaded yet: nothing typed here can be newer than what is stored, but write what is waiting.
+    if (TYPED.includes(id)) { if (id in PREFS) savePrefs(id); else saveOther(id); }
+    flushPrefs();
+    return;
+  }
+  const now = {};
+  if (TYPED.includes(id)) {
+    if (id in PREFS) takePending(id);
+    else {
+      // Compared with what the field showed for the stored value (a default when nothing is stored).
+      const { key, read } = OTHER[id];
+      const shown = cachedOther[key] || { model: DEFAULT_MODEL, videoModel: DEFAULT_VIDEO_MODEL, redditAbout: DEFAULT_REDDIT_ABOUT }[key];
+      if (!same(shown, read())) now[key] = read();
+    }
+  }
+  if (pendingIds.size) {
+    const next = { ...cachedPrefs, ...pending };
+    if (!same(next, cachedPrefs)) now.prefs = next;
+  }
+  clearTimeout(flushTimer);
+  flushTimer = 0;
+  pending = {}; pendingIds = new Set(); typed = {}; topicsCut = false;
+  if (!Object.keys(now).length) return;
+  if (now.prefs) cachedPrefs = now.prefs;
+  for (const k of OTHER_KEYS) if (k in now) cachedOther[k] = now[k];
+  chrome.storage.local.set(now).catch(() => {});
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") leaving(); });
 window.addEventListener("pagehide", leaving);
@@ -234,8 +275,10 @@ window.addEventListener("pagehide", leaving);
 const busy = (id) => typingIn(id) || pendingIds.has(id);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes.prefs || changes.dimLow) loadPrefs().then((p) => drawPrefs(p, busy), () => {});
+  if (changes.prefs && cachedPrefs) cachedPrefs = { ...cachedPrefs, ...(changes.prefs.newValue || {}) };
+  if (changes.prefs || changes.dimLow) loadPrefs().then((p) => { cachedPrefs = p; drawPrefs(p, busy); }, () => {});
   const keys = OTHER_KEYS.filter((k) => k in changes);
+  for (const k of keys) cachedOther[k] = changes[k].newValue;
   if (keys.length) drawOther(Object.fromEntries(keys.map((k) => [k, changes[k].newValue])), typingIn);
   if (changes.orKey || changes.apiKey) readKeys();
 });
@@ -244,6 +287,8 @@ async function load() {
   const p = await loadPrefs();
   const s = await chrome.storage.local.get(["apiKey", "orKey", ...OTHER_KEYS]);
   showKeys(s);
+  cachedPrefs = p;
+  for (const k of OTHER_KEYS) cachedOther[k] = s[k];
   drawPrefs(p);
   drawOther(Object.fromEntries(OTHER_KEYS.map((k) => [k, s[k]])));
 }
