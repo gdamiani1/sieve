@@ -1,9 +1,11 @@
 // Offline: the extension pages' colours in light and dark. No keys, no network.
 // Each page's <style> opens with a :root token block (light) and a prefers-color-scheme: dark block.
+// The popup and digest keep the quiet material; the settings page is pinboard version 2 from 1.5.0
+// (design.md, Palette (version 2); extension settings pinboard spec 6).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const PAGES = ["popup.html", "options.html", "digest.html"];
+const PAGES = ["popup.html", "digest.html"];
 
 const LIGHT = {
   paper: "#ece7de", ink: "#14120e", muted: "#6b655b", accent: "#2433f5", "on-accent": "#fff",
@@ -15,6 +17,27 @@ const DARK = {
   card: "#1d1a15", panel: "#1d1a15", field: "#252119", line: "#3a362f", "field-edge": "#6b655b",
   "ink-soft": "#c9c1b3", alert: "#ffb59b", "alert-tint": "#3a1a0e",
 };
+
+// Pinboard version 2, exactly design.md's values.
+const V2_LIGHT = {
+  canvas: "#fbfaf7", card: "#ffffff", tint: "#f0ece5", ink: "#1d1b17", "on-ink": "#ffffff", "ink-muted": "#77706a",
+  line: "#ebe6dc", "bar-edge": "#e4ded2", blue: "#2433f5", "on-blue": "#ffffff", alert: "#9a2a00", "alert-tint": "#fff0ea",
+  note: "#f7ecd0", "note-tape": "#cdbfa5",
+};
+const V2_DARK = {
+  canvas: "#171511", card: "#221f1a", tint: "#2a2620", ink: "#ece6dc", "on-ink": "#171511", "ink-muted": "#a39b8f",
+  line: "#322e27", "bar-edge": "#3a352d", blue: "#7b87ff", "on-blue": "#14120e", alert: "#ffb59b", "alert-tint": "#3a1a0e",
+  note: "#302819", "note-tape": "#5a4f3d",
+};
+// The pairs the settings page uses: spec 6's list, then the ones it adds (the scoring value and a bad
+// key check in alert on a card, Delete in alert on the canvas, the paper note's words, Start here's links
+// on the tint, the switch's knob on its track).
+const V2_TEXT = [
+  ["ink", "canvas"], ["ink", "card"], ["ink", "tint"], ["ink-muted", "canvas"], ["ink-muted", "card"],
+  ["blue", "canvas"], ["blue", "card"], ["blue", "note"], ["on-blue", "blue"], ["alert", "alert-tint"], ["on-ink", "ink"],
+  ["alert", "card"], ["alert", "canvas"], ["ink", "note"], ["blue", "tint"],
+];
+const V2_EDGE = [["canvas", "blue"], ["canvas", "ink-muted"], ["ink-muted", "card"], ["blue", "card"]];
 
 // Text pairs (foreground, background) that must reach 4.5 in both schemes.
 const TEXT = [
@@ -61,6 +84,17 @@ for (const bg of ["card", "panel", "paper"]) {
   assert.ok(c >= 3, `dark: field-edge on ${bg} is ${c.toFixed(2)}, under 3`);
 }
 
+for (const [scheme, t] of [["light", V2_LIGHT], ["dark", V2_DARK]]) {
+  for (const [fg, bg] of V2_TEXT) {
+    const c = contrast(t[fg], t[bg]);
+    assert.ok(c >= 4.5, `version 2 ${scheme}: ${fg} on ${bg} is ${c.toFixed(2)}, under 4.5`);
+  }
+  for (const [fg, bg] of V2_EDGE) {
+    const c = contrast(t[fg], t[bg]);
+    assert.ok(c >= 3, `version 2 ${scheme}: ${fg} on ${bg} is ${c.toFixed(2)}, under 3`);
+  }
+}
+
 const COLOUR = /(?<!&)#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b(?!-)/gi;
 // The regex itself. str.match with /g is stateless, unlike COLOUR.test.
 for (const yes of ["#fff8", "#fff", "#c9c1b3", "#c9c1b3cc", "oklch(", "color(", "lab(", "hwb(", "rgb(", "hsla(", "white;", "color:black"]) {
@@ -70,7 +104,8 @@ for (const no of ["white-space", "&#10;", "#msg{", "#export{", "#today{", "#day"
   assert.equal(no.match(COLOUR), null, `COLOUR should not match ${no}`);
 }
 
-for (const page of PAGES) {
+const SETS = [...PAGES.map((p) => [p, LIGHT, DARK]), ["options.html", V2_LIGHT, V2_DARK]];
+for (const [page, LIGHT, DARK] of SETS) {
   const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
   const style = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
   assert.ok(style, `${page}: has a <style>`);
