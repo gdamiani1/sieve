@@ -128,10 +128,11 @@ export function aiDirected(post = {}) {
 // or bare, JS-style: "what":, 'what':, what:) is a ready-made brief the post hands to whatever reads
 // it. Ordinary config a developer shares (a tsconfig, a package.json, an MCP server entry, an ESLint
 // config) holds none or one. Ordinary JSON uses four of them: a GitHub Actions job can hold "needs"
-// and a "checks" permission, and an API answer "success", "warning" and a "what" ({"success": true,
-// "what": "..."}). So those four never count: a brief needs two of technique, what, says, try and
-// skill. Every planted brief seen so far has what and try. ("warning": anywhere still sets off the
-// AI-directed rule for talking to Sieve's own fields, which plants its paragraph.)
+// and a "checks" permission, and an API answer "success" and "warning". Those four alone never make a
+// brief: at least one of technique, what, says, try or skill has to be there too. One is enough, so a
+// plant with "what" and only ordinary keys ({"what": ..., "needs": [...]}) is still caught, and an API
+// answer with "success" and "what" plants too. ("warning": anywhere still sets off the AI-directed
+// rule for talking to Sieve's own fields, which plants its paragraph.)
 const BRIEF_KEY = /(?<![\p{L}\p{N}_$])['"]?(technique|what|says|checks|needs|try|success|skill|warning)['"]?\s*:/giu;
 const CONFIG_KEYS = new Set(["needs", "checks", "success", "warning"]);
 // "action" counts, for "the snapdiff action"; "take action" gives "take", which is a stop word.
@@ -280,7 +281,8 @@ const briefMentions = (text) => {
 //   is a single-quoted one, but only where a JS value or key starts (after "{", "[", "," or ":" and
 //   any spaces), never at an apostrophe in prose ("don't"). A string also ends at a line break, so
 //   one stray quote can't hide the rest of the post. Each
-//   outermost object that holds two of technique, what, says, try and skill as keys is planted.
+//   outermost object that holds two of Sieve's brief keys, one of them technique, what, says, try or
+//   skill (not just "needs", "checks", "success" and "warning"), is planted.
 //   The outermost objects don't overlap, so the key count reads each character once;
 // - an AI_DIRECTED match (with aiDirected's own quoted-example exemption), from the start of the sentence
 //   it sits in (after ".", "!" or "?" and a space, or a line break) to the end of its paragraph (the
@@ -320,7 +322,7 @@ export function plantedNames(post = {}, briefText, { planted = [] } = {}) {
   }
   for (const [s, e] of outer) {
     const keys = new Set(Array.from(visible.slice(s, e).matchAll(BRIEF_KEY), (m) => m[1].toLowerCase()));
-    if ([...keys].filter((k) => !CONFIG_KEYS.has(k)).length >= 2) spans.push([s, e]);
+    if (keys.size >= 2 && [...keys].some((k) => !CONFIG_KEYS.has(k))) spans.push([s, e]);
   }
   // the paragraphs of each string of the post: [start, end, which string, ends in ":"], blank ones left out
   const paras = [];

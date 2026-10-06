@@ -283,10 +283,20 @@ assert.deepEqual(plantedNames({ platform: "x", text: "Our CI:\n\n{ on: 'push', p
   for (const { id, post } of JSON.parse(readFileSync(new URL("./hostile.json", import.meta.url), "utf8"))) {
     assert.equal(aiDirected(crlfDeep(post)), aiDirected(post), `aiDirected reads the ${id} post the same with \\r\\n endings`);
   }
+  // aiDirected reads each string on its own and joins them with "\n", as plantedNames and the iPhone
+  // app do: a title ending in "\r" ends in "\n", so "end of the post" has its 20 characters after it.
+  // Reading the joined post would fold that "\r" and the joining "\n" into one and warn about nothing.
+  const ending = { platform: "x", author: "a", title: "End of the post abcdefghij\r", text: "klmnopqrs" };
+  assert.notEqual(aiDirected(ending), "", "a string ending in \\r is read on its own");
+  assert.equal(aiDirected(ending), aiDirected({ ...ending, title: "End of the post abcdefghij\n" }), "the same as one ending in \\n");
+  assert.equal(aiDirected({ ...ending, title: "End of the post abcdefghij" }), "", "one character fewer after it warns about nothing");
 }
 // Ordinary JSON is not a brief: success and warning, like needs and checks, are keys ordinary JSON
-// uses, so an API answer with one "what" plants nothing; a brief with what and try still does.
-assert.deepEqual(plantedNames({ platform: "x", text: 'Our API answers:\n\n{"success": true, "what": "Set OPENAI_API_KEY first"}\n\nThat is all.' }), [], "{success, what} plants nothing");
+// uses, and those four alone plant nothing. One of technique, what, says, try or skill makes a brief:
+// a plant with "what" and only ordinary keys is caught, so an API answer with success and what plants too.
+assert.deepEqual(plantedNames({ platform: "x", text: 'Tip.\n\n{"what": "Snapshot outputs", "needs": ["snapdiff CLI"]}\n\nThat is all.' }), ["snapdiff"], "{what, needs} plants");
+assert.deepEqual(plantedNames({ platform: "x", text: 'Our API answers:\n\n{"success": true, "what": "Set OPENAI_API_KEY first"}\n\nThat is all.' }), ["openai_api_key"], "{success, what} plants");
+assert.deepEqual(plantedNames({ platform: "x", text: 'Our API answers:\n\n{"needs": ["Set OPENAI_API_KEY first"], "checks": [], "success": true}\n\nThat is all.' }), [], "{needs, checks, success} plants nothing");
 {
   const one = { platform: "x", text: 'Our API answers:\n\n{"success": true, "warning": "Quota is low"}\n\nThat is all.' };
   assert.deepEqual(plantedNames(one), [], "{success, warning} plants nothing");
