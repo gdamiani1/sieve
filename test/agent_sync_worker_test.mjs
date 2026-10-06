@@ -1,0 +1,415 @@
+// Offline: the real worker signs in to Sieve's server, sends the library to the agent in batches, and
+// turns off (agent-sync-run.js, wired in background.js). chrome.* and the server are stubbed: no keys,
+// no network. Tokens here are made up; nothing prints them.
+import assert from "node:assert/strict";
+import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { MAX_BODY } from "../agent-sync.js";
+
+const SERVER = "https://mcp.divergada.com";
+const post = (key, at) => ({ key, platform: "linkedin", authorName: "Jane", text: `Golden sets caught ${key}.`, savedAt: at });
+const store = { saved: [post("d1", 3), post("d2", 2), post("d3", 1)] };
+
+// ---- chrome ----
+const listeners = { message: null, changed: [], alarm: [] };
+const alarms = new Map();
+const alarmCreates = [];
+const permissionRemovals = [];
+const event = { addListener: () => {} };
+let authAnswer = null; // a test sets a function (state) => href to change what the sign-in window returns
+const authUrls = [];
+globalThis.chrome = {
+  storage: {
+    local: {
+      get: async (keys) => structuredClone(Object.fromEntries([keys].flat().filter((k) => Object.hasOwn(store, k)).map((k) => [k, store[k]]))),
+      set: async (obj) => { Object.assign(store, structuredClone(obj)); },
+      remove: async (keys) => { for (const k of [keys].flat()) delete store[k]; },
+    },
+    sync: {
+      get: async () => { throw new Error("agent sync must never use chrome.storage.sync"); },
+      set: async () => { throw new Error("agent sync must never use chrome.storage.sync"); },
+    },
+    onChanged: { addListener: (fn) => listeners.changed.push(fn) },
+  },
+  runtime: {
+    onMessage: { addListener: (fn) => { listeners.message = fn; } }, onInstalled: event, onStartup: event,
+    getManifest: () => ({ version: "1.5.0" }), getURL: (p) => "chrome-extension://test/" + p,
+  },
+  alarms: {
+    onAlarm: { addListener: (fn) => listeners.alarm.push(fn) },
+    get: async (name) => alarms.get(name),
+    clear: async (name) => alarms.delete(name),
+    create: (name, info) => { alarmCreates.push([name, info]); alarms.set(name, { name, ...info }); },
+  },
+  identity: {
+    getRedirectURL: () => "https://test.chromiumapp.org/",
+    launchWebAuthFlow: async ({ url }) => {
+      const u = new URL(url);
+      authUrls.push(u);
+      server.device = u.searchParams.get("device"); // the device the next tokens are issued for
+      const state = u.searchParams.get("state");
+      return authAnswer ? authAnswer(state) : `https://test.chromiumapp.org/?code=K&state=${state}`;
+    },
+  },
+  permissions: { contains: async () => true, remove: async (p) => { permissionRemovals.push(p); return true; } },
+  notifications: { onClicked: event, create: () => {} },
+  tabs: { create: () => {} },
+};
+
+// ---- Sieve's server ----
+const requests = []; // { method, path, headers, body }
+const server = {
+  put: null, // null: stored/unchanged; or { status, body } for every PUT while set
+  token: 200, // the status /token answers a refresh with
+  down: false, // every request throws, as with no network
+  access: null, refresh: null, device: null, issued: 0, lastStored: null,
+};
+const answer = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+// The worker catches network errors, so a broken rule inside the fake server is kept here and checked
+// at the end instead of being swallowed.
+const broken = [];
+globalThis.fetch = async (url, init = {}) => {
+  try { return await serve(url, init); } catch (e) { if (e instanceof assert.AssertionError) { broken.push(e); console.error(e.message); } throw e; }
+};
+async function serve(url, init) {
+  const u = new URL(String(url));
+  assert.equal(u.origin, SERVER, "agent sync talks only to Sieve's server");
+  const method = init.method || "GET";
+  const headers = Object.fromEntries(Object.entries(init.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
+  requests.push({ method, path: u.pathname, headers, body: init.body });
+  await new Promise((r) => setTimeout(r, 2)); // a real answer takes a moment, so two requests can overlap
+  if (server.down) throw new TypeError("Failed to fetch");
+  if (u.pathname === "/token") {
+    assert.equal(method, "POST");
+    assert.equal(headers["content-type"], "application/x-www-form-urlencoded");
+    const form = new URLSearchParams(init.body);
+    assert.equal(form.get("client_id"), `${SERVER}/clients/chrome.json`);
+    assert.equal(form.get("client_secret"), null);
+    if (form.get("grant_type") === "authorization_code") {
+      assert.equal(form.get("code"), "K");
+      assert.ok(form.get("code_verifier"));
+    } else {
+      assert.equal(form.get("grant_type"), "refresh_token");
+      if (server.token !== 200 || form.get("refresh_token") !== server.refresh) return answer(server.token === 200 ? 400 : server.token, { error: "invalid_grant" });
+    }
+    server.issued++;
+    server.access = `acc-${server.issued}`;
+    server.refresh = `ref-${server.issued}`;
+    return answer(200, { access_token: server.access, refresh_token: server.refresh, expires_in: 3600, token_type: "bearer" });
+  }
+  // Every /v1 request carries this Chrome's token and the device the token was issued for.
+  assert.match(headers["x-sieve-device"], /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.equal(headers["x-sieve-device"], server.device);
+  if (headers.authorization !== `Bearer ${server.access}`) return answer(401);
+  const route = `${method} ${u.pathname}`;
+  if (route === "GET /v1/account") return answer(200, { email: "dev@example.com", method: "google", plan: "trial", trialEndsAt: "2026-11-10T23:59:59.999Z" });
+  if (route === "PUT /v1/library/chrome") {
+    assert.equal(headers["content-type"], "application/json");
+    if (server.put) return answer(server.put.status, server.put.body);
+    const items = JSON.parse(init.body).items;
+    const result = init.body === server.lastStored ? "unchanged" : "stored";
+    server.lastStored = init.body;
+    return answer(200, { result, items: items.length, boards: 0, at: "2026-10-06T10:00:00.000Z" });
+  }
+  if (route === "DELETE /v1/library/chrome") return answer(200, { result: "deleted" });
+  if (route === "POST /v1/account/sign-out") return answer(200, { ok: true });
+  if (route === "DELETE /v1/account") return answer(200, { ok: true });
+  return answer(404);
+}
+
+const src = fileURLToPath(new URL("..", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "sieve-agent-sync-"));
+for (const f of readdirSync(src)) if (f.endsWith(".js")) copyFileSync(join(src, f), join(dir, f));
+await import(pathToFileURL(join(dir, "background.js")).href);
+
+const SETTINGS = { url: "chrome-extension://test/options.html" };
+const ask = (msg, sender = SETTINGS) => new Promise((resolve) => { listeners.message(msg, sender, resolve); });
+const sync = (extra = {}, sender) => ask({ type: "agentSync", ...extra }, sender);
+const changed = (changes) => Promise.all(listeners.changed.map((fn) => fn(changes, "local")));
+const fire = (name) => { alarms.delete(name); return Promise.all(listeners.alarm.map((fn) => fn({ name }))); };
+const puts = () => requests.filter((r) => r.method === "PUT");
+const rec = () => store.agentSync || {};
+const since = (n) => requests.slice(n);
+
+try {
+  // 15. Nothing but Sieve's own settings page may act.
+  for (const sender of [
+    { url: "chrome-extension://test/popup.html" },
+    { url: "https://www.linkedin.com/feed/", tab: { id: 1 } },
+    { url: "chrome-extension://test/options.html.evil" },
+    { url: "chrome-extension://other/options.html" },
+    {},
+  ]) {
+    for (const what of ["on", "off", "delete", "send"]) {
+      const r = await sync({ do: what }, sender);
+      assert.ok(r.error, `${what} from ${sender.url} is refused`);
+    }
+  }
+  assert.equal(requests.length, 0);
+  assert.equal(authUrls.length, 0);
+  assert.equal(store.agentSync, undefined);
+  assert.ok((await sync({ do: "nonsense" })).error);
+  assert.ok((await sync({ do: "toString" })).error);
+  assert.ok((await ask({ type: "agentSync", do: "status" }, { url: "https://evil.example/" })).error);
+  assert.deepEqual(await ask({ type: "agentSync", do: "status" }, { url: "chrome-extension://test/popup.html" }), {});
+
+  // 14 (before ever turning on). A library change with sync off sets nothing and makes no alarm.
+  await changed({ saved: { newValue: store.saved } });
+  assert.equal(store.agentSync, undefined);
+  assert.equal(alarmCreates.length, 0);
+
+  // 1. Turn on: sign in, then send at once.
+  const on = await sync({ do: "on" });
+  assert.equal(authUrls.length, 1);
+  assert.match(server.device, /^[0-9a-f-]{36}$/);
+  assert.equal(on.on, true);
+  assert.equal(on.email, "dev@example.com");
+  assert.equal(on.state, "on");
+  assert.equal(on.lastItems, 3);
+  assert.equal(on.device, server.device);
+  for (const k of ["access", "refresh", "expiresAt", "lastHash"]) assert.equal(k in on, false, `status hides ${k}`);
+  assert.equal(rec().access, server.access);
+  assert.equal(puts().length, 1);
+  const body = JSON.parse(puts()[0].body);
+  assert.equal(body.items.length, 3);
+  assert.ok(body.items.every((it) => it.id.startsWith("chrome:")));
+  assert.equal("digests" in body, false);
+  assert.equal(alarmCreates.length, 0, "nothing dirty after the first send");
+  assert.equal(rec().dirty, false);
+
+  // 2. A change to the library: dirty, one alarm; a second change makes no second alarm.
+  await changed({ saved: { newValue: store.saved } });
+  assert.equal(rec().dirty, true);
+  assert.deepEqual(alarmCreates, [["agent-sync", { delayInMinutes: 15 }]]);
+  await changed({ briefs: { newValue: {} } });
+  assert.equal(alarmCreates.length, 1);
+  await changed({ agentSync: { newValue: {} }, orKey: { newValue: "x" } });
+  assert.equal(alarmCreates.length, 1, "other keys aren't the library");
+
+  // 3. The alarm fires, nothing really changed: no PUT, not dirty.
+  let n = requests.length;
+  await fire("agent-sync");
+  assert.equal(since(n).length, 0);
+  assert.equal(rec().dirty, false);
+
+  // 4. A real change, then the alarm: one PUT, a new hash.
+  const hash1 = rec().lastHash;
+  store.saved = [post("d0", 4), ...store.saved];
+  await changed({ saved: { newValue: store.saved } });
+  n = requests.length;
+  await fire("agent-sync");
+  assert.equal(since(n).filter((r) => r.method === "PUT").length, 1);
+  assert.notEqual(rec().lastHash, hash1);
+  assert.equal(rec().lastItems, 4);
+  assert.equal(rec().dirty, false);
+
+  // 5. The server's copy is bigger: "shrunk" with both counts; the person's yes sends X-Sieve-Empty.
+  server.put = { status: 409, body: { result: "shrunk", items: 3, storedItems: 40 } };
+  let s = await sync({ do: "send" });
+  assert.equal(s.state, "shrunk");
+  assert.deepEqual(s.detail, { stored: 40, count: 3 });
+  server.put = null;
+  n = requests.length;
+  s = await sync({ do: "send", allowShrink: true });
+  assert.equal(s.state, "on");
+  assert.equal(s.detail, null);
+  assert.equal(since(n).find((r) => r.method === "PUT").headers["x-sieve-empty"], "yes");
+
+  // 6. Another Chrome's copy is there: the person's choice sends X-Sieve-Replace (from settings with a hash).
+  server.put = { status: 409, body: { result: "other_device", device: "someone" } };
+  assert.equal((await sync({ do: "send" })).state, "other_device");
+  server.put = null;
+  n = requests.length;
+  s = await ask({ type: "agentSync", do: "send", replace: true }, { url: "chrome-extension://test/options.html#agent" });
+  assert.equal(s.state, "on");
+  const replaced = since(n).find((r) => r.method === "PUT");
+  assert.equal(replaced.headers["x-sieve-replace"], "yes");
+  assert.equal(replaced.headers["x-sieve-empty"], undefined);
+  server.put = { status: 409, body: { result: "older" } };
+  assert.equal((await sync({ do: "send" })).state, "older");
+  server.put = null;
+
+  // 7. Busy (503): tried again at the next alarm.
+  alarms.clear();
+  server.put = { status: 503, body: { result: "busy" } };
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "busy");
+  assert.equal(rec().dirty, true);
+  assert.ok(alarms.has("agent-sync"));
+  assert.deepEqual(alarmCreates.at(-1), ["agent-sync", { delayInMinutes: 15 }]);
+  server.put = null;
+  await fire("agent-sync");
+  assert.equal(rec().state, "on");
+  assert.equal(rec().dirty, false);
+
+  // Offline: busy too, and the alarm.
+  server.down = true;
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "busy");
+  assert.equal(s.on, true);
+  assert.ok(alarms.has("agent-sync"));
+  server.down = false;
+  await fire("agent-sync");
+  assert.equal(rec().state, "on");
+
+  // Limit (429): tomorrow, and a change before then doesn't bring it forward.
+  server.put = { status: 429, body: { result: "limit" } };
+  assert.equal((await sync({ do: "send" })).state, "limit");
+  assert.deepEqual(alarms.get("agent-sync").delayInMinutes, 24 * 60);
+  await changed({ saved: { newValue: store.saved } });
+  assert.equal(alarms.get("agent-sync").delayInMinutes, 24 * 60);
+  server.put = null;
+  await fire("agent-sync");
+  assert.equal(rec().state, "on");
+
+  // Invalid (400): the reason, and no retry until something changes.
+  server.put = { status: 400, body: { result: "invalid", reason: "items[0].id" } };
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "invalid");
+  assert.deepEqual(s.detail, { reason: "items[0].id" });
+  server.put = null;
+  await changed({ saved: { newValue: store.saved } });
+  n = requests.length;
+  await fire("agent-sync");
+  assert.equal(since(n).length, 0, "the same library isn't sent again");
+  assert.equal(rec().state, "invalid");
+  assert.equal((await sync({ do: "send" })).state, "on", "Send now is the person's choice");
+
+  // 8. An expired token: one refresh before the PUT, even for two sends at once.
+  store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+  const oldAccess = rec().access;
+  n = requests.length;
+  const [a, b] = await Promise.all([sync({ do: "send" }), sync({ do: "send" })]);
+  assert.equal(a.state, "on");
+  assert.equal(b.state, "on");
+  const after = since(n);
+  assert.equal(after.filter((r) => r.path === "/token").length, 1);
+  assert.equal(after[0].path, "/token", "the refresh comes before the PUT");
+  assert.notEqual(rec().access, oldAccess);
+  assert.ok(after.filter((r) => r.method === "PUT").every((r) => r.headers.authorization === `Bearer ${server.access}`));
+
+  // A token the server no longer takes (401): one refresh and one more try.
+  server.access = "revoked-on-the-server";
+  n = requests.length;
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "on");
+  assert.deepEqual(since(n).map((r) => `${r.method} ${r.path}`), ["PUT /v1/library/chrome", "POST /token", "PUT /v1/library/chrome"]);
+
+  // Too big for the server (checked here, before sending): nothing sent, and the same library isn't retried.
+  const big = post("huge", 9);
+  big.text = "x".repeat(MAX_BODY + 10);
+  store.saved = [big, ...store.saved];
+  n = requests.length;
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "too_big");
+  assert.ok(s.detail.bytes > MAX_BODY);
+  assert.equal(since(n).length, 0);
+  await changed({ saved: { newValue: store.saved } });
+  await fire("agent-sync");
+  assert.equal(since(n).length, 0);
+  store.saved = store.saved.slice(1);
+
+  // 413 from the server: the same.
+  server.put = { status: 413, body: { result: "too-big", max: MAX_BODY } };
+  store.saved = [post("d9", 5), ...store.saved];
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "too_big");
+  assert.ok(s.detail.bytes > 0);
+  await changed({ saved: { newValue: store.saved } });
+  n = requests.length;
+  await fire("agent-sync");
+  assert.equal(since(n).length, 0);
+  server.put = null;
+
+  // 10. The invite ended: stop sending, with the day it ended.
+  server.put = { status: 403, body: { result: "ended" } };
+  s = await sync({ do: "send" });
+  assert.equal(s.state, "ended");
+  assert.deepEqual(s.detail, { endedOn: "10 November" });
+  assert.equal(alarms.has("agent-sync"), false);
+  store.saved = [post("d10", 6), ...store.saved];
+  await changed({ saved: { newValue: store.saved } });
+  assert.equal(alarms.has("agent-sync"), false);
+  n = requests.length;
+  await fire("agent-sync");
+  await sync({ do: "send" });
+  assert.equal(since(n).length, 0);
+  server.put = null;
+
+  // 12. Turn off: the Chrome copy deleted, signed out, permissions given back; the device id kept.
+  const dev = rec().device;
+  n = requests.length;
+  s = await sync({ do: "off" });
+  assert.deepEqual(since(n).map((r) => `${r.method} ${r.path}`), ["DELETE /v1/library/chrome", "POST /v1/account/sign-out"]);
+  assert.deepEqual(permissionRemovals.at(-1), { permissions: ["identity"], origins: [`${SERVER}/*`] });
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  assert.deepEqual(s, { on: false, device: dev, state: "off" });
+
+  // 14. Off: a library change sets nothing and makes no alarm.
+  const creates = alarmCreates.length;
+  await changed({ saved: { newValue: store.saved } });
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  assert.equal(alarmCreates.length, creates);
+
+  // Off with the network down: the tokens still go.
+  server.put = null;
+  assert.equal((await sync({ do: "on" })).state, "on");
+  assert.equal(rec().device, dev, "the same device signs in again");
+  server.down = true;
+  s = await sync({ do: "off" });
+  server.down = false;
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "offline" } });
+
+  // 11. Not invited: no tokens kept.
+  authAnswer = (state) => `https://test.chromiumapp.org/?error=access_denied&error_description=new_accounts_closed&state=${state}`;
+  s = await sync({ do: "on" });
+  assert.equal(s.state, "not_invited");
+  assert.equal(s.on, false);
+  assert.equal(rec().access, undefined);
+  assert.equal(rec().refresh, undefined);
+  // A different state in the answer, or the window closed: off, nothing kept.
+  authAnswer = () => "https://test.chromiumapp.org/?code=K&state=forged";
+  assert.equal((await sync({ do: "on" })).state, "off");
+  authAnswer = () => { throw new Error("The user did not approve access."); };
+  assert.equal((await sync({ do: "on" })).state, "off");
+  assert.equal(rec().access, undefined);
+  authAnswer = null;
+
+  // 9. A refused refresh signs this Chrome out.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+  server.token = 400;
+  s = await sync({ do: "send" });
+  server.token = 200;
+  assert.equal(s.on, false);
+  assert.equal(s.state, "signed_out");
+  assert.equal(rec().access, undefined);
+  assert.equal(rec().refresh, undefined);
+  assert.equal(rec().device, dev);
+
+  // A refresh that can't reach the server keeps everything: busy, try later.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+  server.down = true;
+  s = await sync({ do: "send" });
+  server.down = false;
+  assert.equal(s.state, "busy");
+  assert.equal(s.on, true);
+  assert.ok(rec().refresh);
+
+  // 13. Delete the account: DELETE /v1/account, then the same clean-up as off.
+  n = requests.length;
+  s = await sync({ do: "delete" });
+  assert.ok(since(n).some((r) => r.method === "DELETE" && r.path === "/v1/account"));
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  assert.deepEqual(permissionRemovals.at(-1), { permissions: ["identity"], origins: [`${SERVER}/*`] });
+
+  // No request ever carried a token in its URL.
+  assert.ok(requests.every((r) => !/acc-|ref-/.test(r.path)));
+  assert.deepEqual(broken, [], "every request kept the server's rules");
+  console.log("agent_sync_worker_test: ok");
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
