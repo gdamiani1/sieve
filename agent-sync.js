@@ -102,7 +102,8 @@ export function words(s) {
     case "busy": return `Couldn't reach Sieve's server. Sieve tries again in ${SEND_EVERY_MIN} minutes.`;
     case "limit": return "Sieve sent as many times as it may today. It tries again tomorrow.";
     case "invalid": return d.reason ? `Sieve's server refused the library: ${d.reason}` : "Sieve's server refused the library.";
-    case "too_big": return `Your library is too big to send (${(whole(d.bytes) / (1024 * 1024)).toFixed(1)} MB; the limit is ${MAX_BODY / (1024 * 1024)} MB).`;
+    // Rounded up, so a library just over the limit never shows as the limit itself.
+    case "too_big": return `Your library is too big to send (${(Math.ceil((whole(d.bytes) / (1024 * 1024)) * 10) / 10).toFixed(1)} MB; the limit is ${MAX_BODY / (1024 * 1024)} MB).`;
     case "signed_out": return "This Chrome was signed out. Turn sync on again to keep sending.";
     case "no_permission": return "Sieve needs that permission to send your library.";
     default: return "";

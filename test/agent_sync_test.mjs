@@ -105,6 +105,10 @@ assert.equal(words({ state: "invalid" }), "Sieve's server refused the library.")
 assert.equal(words({ state: "signed_out" }), "This Chrome was signed out. Turn sync on again to keep sending.");
 assert.equal(words({ state: "no_permission" }), "Sieve needs that permission to send your library.");
 assert.equal(words({ state: "too_big", detail: { bytes: 9.26 * 1024 * 1024 } }), "Your library is too big to send (9.3 MB; the limit is 8 MB).");
+// Rounded up: a library just over the limit never shows as the limit itself.
+assert.equal(words({ state: "too_big", detail: { bytes: 8 * 1024 * 1024 + 1 } }), "Your library is too big to send (8.1 MB; the limit is 8 MB).");
+assert.equal(words({ state: "too_big", detail: { bytes: 8.01 * 1024 * 1024 } }), "Your library is too big to send (8.1 MB; the limit is 8 MB).");
+assert.equal(words({ state: "too_big", detail: { bytes: 9 * 1024 * 1024 } }), "Your library is too big to send (9.0 MB; the limit is 8 MB).");
 // Turned off, but the server didn't confirm the delete and sign-out.
 const mayRemain = "Turned off here, but your agent's copy may still be on Sieve's server. Turn on and off again to delete it.";
 assert.equal(words({ state: "off", detail: { reason: "offline" } }), mayRemain);

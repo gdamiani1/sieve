@@ -7,7 +7,7 @@
 //   { on, gen, email, device, access, refresh, expiresAt, dirty, changes, lastHash, lastAt, lastItems,
 //     state, detail }
 // `state` is one of the states agent-sync.js words() knows; `detail` holds that state's numbers
-// ({ stored, count, reason, endedOn, bytes }). `gen` is new at every sign-in: anything that finishes
+// ({ stored, count, replace, reason, endedOn, bytes }). `gen` is new at every sign-in: anything that finishes
 // after an await writes only if the record is still on with the same `gen`, so a late answer can't
 // bring back a session that was turned off. `changes` counts library changes, so a send clears
 // `dirty` only when nothing changed while it was out. Tokens, the hash and `gen` never leave the
@@ -67,10 +67,13 @@ const MAY_REMAIN = ["offline", "server"];
 const keptReason = (s, detail) => (!s.on && MAY_REMAIN.includes(s.detail?.reason) ? s.detail : detail);
 
 // A sign-in that didn't finish: a session that's already on carries on; otherwise off (or not
-// invited), keeping a copy-may-remain reason rather than overwriting it.
+// invited), keeping a copy-may-remain reason rather than overwriting it, and the optional permissions
+// the settings page asked for go back.
 const signInFailed = async (state, detail = null) => {
   if ((await load()).on) return load();
-  return write((s) => offRecord(s, state, keptReason(s, detail)));
+  const next = await write((s) => offRecord(s, state, keptReason(s, detail)));
+  try { await chrome.permissions.remove(OPTIONAL); } catch {}
+  return next;
 };
 
 // Signed out by the server (a refused refresh or token), only if that session is still the live one.
@@ -80,8 +83,9 @@ const signedOutFor = async (gen) => {
   if (applied) await chrome.alarms.clear(SYNC_ALARM);
 };
 
-// One refresh at a time: a second caller waits for the first one's answer. A refused refresh signs
-// this Chrome out; a server that can't be reached leaves everything as it was. The last tokens a
+// One refresh at a time: a second caller waits for the first one's answer. A refused refresh (400 or
+// 401) signs this Chrome out; any other answer (429, 408, 5xx), or a server that can't be reached,
+// leaves everything as it was, to try again later. The last tokens a
 // refresh got are kept here too, so Turn off can sign out with them after it dropped the record's.
 let refreshing = null;
 let refreshed = null; // { gen, access }
@@ -92,7 +96,7 @@ async function refresh(s) {
   let t = null;
   if (res.ok) { try { t = readTokens(await res.json()); } catch {} }
   if (!t) {
-    if (res.status >= 400 && res.status < 500) await signedOutFor(gen);
+    if (res.status === 400 || res.status === 401) await signedOutFor(gen);
     return null;
   }
   refreshed = { gen, access: t.access };
@@ -121,8 +125,9 @@ const authed = async (token, init) => ({ ...init, headers: { ...(init.headers ||
 
 /** A /v1 request with this Chrome's token and device. Null when there is no token to send (signed out,
  * or the refresh couldn't reach the server). A 401 or 404 (a token the server no longer takes, or one
- * for another app) gets one fresh token and one more try; a second one signs this Chrome out. Throws
- * when the network is down or the request times out. */
+ * for another app) gets one fresh token and one more try. Only a second 401 signs this Chrome out; a
+ * second 404 is returned to the caller (the server's fault, not the token's). Throws when the network
+ * is down or the request times out. */
 async function call(path, init = {}, ms = TIMEOUT) {
   const { gen } = await load();
   const token = await accessToken();
@@ -132,7 +137,7 @@ async function call(path, init = {}, ms = TIMEOUT) {
   const fresh = await accessToken({ stale: true });
   if (!fresh) return null;
   const again = await net(path, await authed(fresh, init), ms);
-  if (again.status === 401 || again.status === 404) { await signedOutFor(gen); return null; }
+  if (again.status === 401) { await signedOutFor(gen); return null; }
   return again;
 }
 
@@ -212,6 +217,9 @@ const later = async () => { if (!(await chrome.alarms.get(SYNC_ALARM))) chrome.a
 async function sendOnce({ force = false, allowShrink = false, replace = false } = {}) {
   const s = await load();
   if (!s.on || s.state === "ended" || (deletingGen && deletingGen === s.gen)) return s;
+  // The server checks another device's copy before the shrink: a "shrunk" that answered a replace
+  // needs the replace again with Send anyway, or the person goes round between the two answers.
+  if (allowShrink && s.state === "shrunk" && s.detail?.replace) replace = true;
   const { gen } = s;
   const changes = s.changes || 0;
 
@@ -257,12 +265,15 @@ async function sendOnce({ force = false, allowShrink = false, replace = false } 
   }
   if (res.status === 403 && j.result === "ended") return ended(gen);
   if (res.status === 409 && (j.result === "empty" || j.result === "shrunk")) {
-    return final({ state: "shrunk", detail: { stored: Number(j.storedItems) || 0, count: Number(j.items) || 0 } });
+    const detail = { stored: Number(j.storedItems) || 0, count: Number(j.items) || 0 };
+    return final({ state: "shrunk", detail: replace ? { ...detail, replace: true } : detail });
   }
   if (res.status === 409 && j.result === "other_device") return final({ state: "other_device", detail: null });
   if (res.status === 409 && j.result === "older") return final({ state: "older", detail: null });
   if (res.status === 413) return final({ state: "too_big", detail: { bytes }, lastHash: hash });
   if (res.status === 400) return final({ state: "invalid", detail: { reason: String(j.reason || "").slice(0, 200) }, lastHash: hash });
+  // A 404 even after a fresh token: the server's fault, so try again later.
+  if (res.status === 404) return retry({ state: "busy", detail: { reason: "server" } });
   if (res.status === 429) {
     // Try tomorrow: a library change before then doesn't bring the alarm forward.
     if (await saveFor(gen, { state: "limit", detail: null, dirty: true, lastHash: null })) {

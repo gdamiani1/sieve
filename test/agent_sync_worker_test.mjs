@@ -78,6 +78,7 @@ const server = {
   unauthorized: false, // every /v1 request is answered 401, whatever the token
   deleteLibrary: null, deleteAccount: null, // { status, body } instead of success
   put: null, // null: stored/unchanged; or { status, body } for every PUT while set
+  guards: null, // { other, stored }: the server's PUT guards, in its order (other device, then shrink)
   token: 200, // the status /token answers a refresh with
   down: false, // every request throws, as with no network
   access: null, refresh: null, device: null, issued: 0, lastStored: null,
@@ -132,6 +133,11 @@ async function serve(url, init) {
     if (server.timeout) throw new DOMException("The operation timed out.", "TimeoutError");
     if (server.put) return answer(server.put.status, server.put.body);
     const items = JSON.parse(init.body).items;
+    // upload.ts order: the other-device guard first, then the shrink guard.
+    if (server.guards?.other && headers["x-sieve-replace"] !== "yes") return answer(409, { result: "other_device", device: "someone", at: "2026-10-05T10:00:00.000Z" });
+    if (server.guards?.stored && items.length * 2 < server.guards.stored && headers["x-sieve-empty"] !== "yes") {
+      return answer(409, { result: items.length === 0 ? "empty" : "shrunk", items: items.length, storedItems: server.guards.stored });
+    }
     const result = init.body === server.lastStored ? "unchanged" : "stored";
     server.lastStored = init.body;
     return answer(200, { result, items: items.length, boards: 0, at: "2026-10-06T10:00:00.000Z" });
@@ -248,6 +254,7 @@ try {
   assert.equal(s.state, "on");
   assert.equal(s.detail, null);
   assert.equal(since(n).find((r) => r.method === "PUT").headers["x-sieve-empty"], "yes");
+  assert.equal(since(n).find((r) => r.method === "PUT").headers["x-sieve-replace"], undefined, "a plain shrunk answer doesn't replace");
 
   // 6. Another Chrome's copy is there: the person's choice sends X-Sieve-Replace (from settings with a hash).
   server.put = { status: 409, body: { result: "other_device", device: "someone" } };
@@ -262,6 +269,23 @@ try {
   server.put = { status: 409, body: { result: "older" } };
   assert.equal((await sync({ do: "send" })).state, "older");
   server.put = null;
+
+  // Replace, then shrunk: the server checks the other device before the shrink. Use this Chrome's
+  // library comes back "shrunk" (remembered), and Send anyway then sends both headers, not a loop.
+  server.guards = { other: true, stored: 40 };
+  assert.equal((await sync({ do: "send" })).state, "other_device");
+  s = await sync({ do: "send", replace: true });
+  assert.equal(s.state, "shrunk");
+  assert.deepEqual(s.detail, { stored: 40, count: store.saved.length, replace: true });
+  n = requests.length;
+  s = await sync({ do: "send", allowShrink: true });
+  assert.equal(s.state, "on");
+  assert.equal(s.detail, null);
+  const both = since(n).filter((r) => r.method === "PUT");
+  assert.equal(both.length, 1);
+  assert.equal(both[0].headers["x-sieve-replace"], "yes");
+  assert.equal(both[0].headers["x-sieve-empty"], "yes");
+  server.guards = null;
 
   // 7. Busy (503): tried again at the next alarm.
   alarms.clear();
@@ -329,6 +353,21 @@ try {
   assert.equal(s.state, "on");
   assert.deepEqual(since(n).map((r) => `${r.method} ${r.path}`), ["PUT /v1/library/chrome", "POST /token", "PUT /v1/library/chrome"]);
 
+  // A 404 after one refresh and one more try isn't a sign-out: busy, the server's fault, try later.
+  server.put = { status: 404, body: { error: "not_found" } };
+  alarms.delete("agent-sync");
+  n = requests.length;
+  s = await sync({ do: "send" });
+  server.put = null;
+  assert.deepEqual(since(n).map((r) => `${r.method} ${r.path}`), ["PUT /v1/library/chrome", "POST /token", "PUT /v1/library/chrome"]);
+  assert.equal(s.on, true);
+  assert.equal(s.state, "busy");
+  assert.deepEqual(s.detail, { reason: "server" });
+  assert.ok(rec().refresh);
+  assert.equal(rec().dirty, true);
+  assert.ok(alarms.has("agent-sync"));
+  assert.equal((await sync({ do: "send" })).state, "on");
+
   // Too big for the server (checked here, before sending): nothing sent, and the same library isn't retried.
   const big = post("huge", 9);
   big.text = "x".repeat(MAX_BODY + 10);
@@ -379,6 +418,14 @@ try {
   assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
   assert.deepEqual(s, { on: false, device: dev, state: "off" });
 
+  // A delete that leaves another live device's copy is still a yes: off, nothing may remain here.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  server.deleteLibrary = { status: 200, body: { result: "deleted", kept: "other_device" } };
+  s = await sync({ do: "off" });
+  server.deleteLibrary = null;
+  assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off" });
+  assert.deepEqual(s, { on: false, device: dev, state: "off" });
+
   // 14. Off: a library change sets nothing and makes no alarm.
   const creates = alarmCreates.length;
   await changed({ saved: { newValue: store.saved } });
@@ -394,22 +441,66 @@ try {
   server.down = false;
   assert.deepEqual(store.agentSync, { on: false, device: dev, state: "off", detail: { reason: "offline" } });
 
-  // 11. Not invited: no tokens kept.
+  // 11. Not invited: no tokens kept, and the optional permissions given back.
+  const OPTIONAL = { permissions: ["identity"], origins: [`${SERVER}/*`] };
+  let removals = permissionRemovals.length;
   authAnswer = (state) => `https://test.chromiumapp.org/?error=access_denied&error_description=new_accounts_closed&state=${state}`;
   s = await sync({ do: "on" });
   assert.equal(s.state, "not_invited");
   assert.equal(s.on, false);
   assert.equal(rec().access, undefined);
   assert.equal(rec().refresh, undefined);
-  // A different state in the answer, or the window closed: off, nothing kept.
+  assert.deepEqual(permissionRemovals.slice(removals), [OPTIONAL], "not invited gives the permissions back");
+  // A different state in the answer, or the window closed: off, nothing kept, permissions given back.
+  removals = permissionRemovals.length;
   authAnswer = () => "https://test.chromiumapp.org/?code=K&state=forged";
   assert.equal((await sync({ do: "on" })).state, "off");
+  assert.deepEqual(permissionRemovals.slice(removals), [OPTIONAL]);
+  removals = permissionRemovals.length;
   authAnswer = () => { throw new Error("The user did not approve access."); };
   assert.equal((await sync({ do: "on" })).state, "off");
   assert.equal(rec().access, undefined);
+  assert.deepEqual(permissionRemovals.slice(removals), [OPTIONAL], "a closed window gives the permissions back");
   authAnswer = null;
+  // The token step refused: the same.
+  removals = permissionRemovals.length;
+  server.code = 400;
+  s = await sync({ do: "on" });
+  server.code = 200;
+  assert.equal(s.on, false);
+  assert.deepEqual(permissionRemovals.slice(removals), [OPTIONAL], "a refused token gives the permissions back");
+  // While on, a sign-in that doesn't finish leaves the live session and its permissions alone.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  removals = permissionRemovals.length;
+  authAnswer = () => { throw new Error("The user did not approve access."); };
+  s = await sync({ do: "on" });
+  authAnswer = null;
+  assert.equal(s.on, true);
+  assert.equal(permissionRemovals.length, removals, "a live session keeps its permissions");
+  await sync({ do: "off" });
 
-  // 9. A refused refresh signs this Chrome out.
+  // 9. A refresh answered 429, 408 or 5xx is like offline: busy, still signed in, try later.
+  assert.equal((await sync({ do: "on" })).state, "on");
+  for (const status of [429, 408, 500, 503]) {
+    store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+    server.token = status;
+    s = await sync({ do: "send" });
+    server.token = 200;
+    assert.equal(s.on, true, `a refresh answered ${status} doesn't sign out`);
+    assert.equal(s.state, "busy");
+    assert.ok(rec().refresh);
+    assert.ok(alarms.has("agent-sync"));
+  }
+  assert.equal((await sync({ do: "send" })).state, "on");
+  // A refresh answered 401 signs this Chrome out.
+  store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
+  server.token = 401;
+  s = await sync({ do: "send" });
+  server.token = 200;
+  assert.equal(s.on, false);
+  assert.equal(s.state, "signed_out");
+  await sync({ do: "off" });
+  // A refused refresh (400) signs this Chrome out.
   assert.equal((await sync({ do: "on" })).state, "on");
   store.agentSync = { ...rec(), expiresAt: Date.now() - 1000 };
   server.token = 400;
