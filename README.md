@@ -76,7 +76,9 @@ you do the part that needs judgement.
 
 ## Make it yours
 
-Settings (right-click the icon → Options, or **Settings** in the popup):
+Settings (right-click the icon → Options, or **Settings** in the popup). Since 1.5.0 the page follows Sieve for
+iPhone's design: **Your agent** comes first, and every change saves as you make it (a field when you leave it,
+a switch or choice at once), with a short "Saved" note. Keys save only through **Check and save keys**:
 - **What you care about:** one line about who you are and up to 8 topics. Every post is scored against these,
   and the badge shows which of your topics a post is about.
 - **Kinds of posts** to show on LinkedIn and X (technique to try, built something, opinions, questions, news,
@@ -91,15 +93,15 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
   never do (crypto, webinar, "we're hiring").
 - **Scores:** where highlighting starts, what counts as low, and whether low posts fade, hide or stay.
 - **Reddit:** only in the subreddits you list, and your own definition of "still fresh".
-- LinkedIn, X, Reddit and YouTube can each be switched off from the popup. Saving settings re-scores what's
-  on screen.
+- LinkedIn, X, Reddit and YouTube can each be switched off from the popup. A saved change re-scores what's
+  on screen in open tabs.
 
 ## Setup
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
    - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 5 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
-   - **Have a TypeSafe key? (optional)**, closed under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
+   - **TypeSafe key (optional)**, under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
    - **Your facts for Reddit.** Only true, first-hand things. The scorer uses them to judge whether you could answer a thread.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
 
@@ -190,6 +192,7 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/agent_sync_test.mjs       # sending the library to your agent: sign-in URL and answers, the body, the hash, the words (offline)
     node test/agent_sync_worker_test.mjs # the worker's sign-in, sends, retries, turning off and deleting, against a fake server (offline)
     node test/agent_sync_options_test.mjs # the settings page's Your agent section (offline)
+    node test/options_autosave_test.mjs # the settings page saves each change as it's made, and on closing the tab (offline)
     node test/analytics_test.mjs        # opt-in usage stats: counting, consent, the daily send (offline)
     node test/analytics_worker_test.mjs # the worker counts actions only after a yes (offline)
     node test/store_zip_test.mjs    # the store package: leaves out tests and tools, refuses forbidden words and missing loads (offline)
