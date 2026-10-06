@@ -159,6 +159,7 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/watch_parse_test.mjs  # the video answer parser (offline)
     node test/brief_parse_test.mjs  # technique briefs: shape, safety header, prompt text (offline)
     node test/brief_prompt_test.mjs # the post brief prompt and its parser (offline)
+    node test/linear_regex_test.mjs # the dash and bare-domain patterns: the same matches as before, linear on hostile text (offline)
     node test/digest_prompt_test.mjs # the digest prompt, which posts reach it, the Left out note (offline)
     node test/digest_worker_test.mjs # the digest through the real worker: flagged posts never sent (offline)
     node test/export_test.mjs       # the library export (offline)

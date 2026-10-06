@@ -41,12 +41,19 @@ const text = (x) => (typeof x === "string" || typeof x === "number" ? String(x)
 // text/emoji variation selector VS-16). Wider than a fixed list of "known bad" characters: it also
 // catches the next invisible code point someone adds to Unicode, not just the ones already known.
 const INVISIBLE = /(?![\t\n\v\f\r\u200d\ufe0f])[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+// An em or en dash and the spaces around it. The leading spaces are read only from where their run
+// starts: a plain \s* in front was tried at every space of a run and read the rest of it each time,
+// so 10,000 blank lines took 2.4 s on the phone and 0.17 s here, quadratic in both. A run that starts
+// with the dash itself is still read, without the lookbehind: the previous match ends right before it,
+// on a space, as in "a — — b", and a lookbehind would see that space and leave the second dash alone.
+// Exported for test/linear_regex_test.mjs, which compares it with the old pattern.
+export const DASH = /(?:(?<!\s)\s+)?[—–]\s*/g;
 const clean = (s) => text(s)
   .replace(/[\u0085\u001c-\u001e]/g, " ")
   .replace(INVISIBLE, "")
   .replace(/(\d)\s*–\s*(\d)/g, "$1-$2")
   .replace(/(\d)—(\d)/g, "$1-$2")
-  .replace(/\s*[—–]\s*/g, ", ")
+  .replace(DASH, ", ")
   .replace(/\s+/g, " ")
   .trim();
 // The same cleaning, under the name the rest of the codebase (brief-prompt.js, watch-prompt.js) uses.
@@ -111,9 +118,18 @@ export function normalizeWarning(w) {
 // run: a link, a bare domain or script file, a pipe into a shell (including "sudo" and process
 // substitution), a fetch-and-run tool (curl, wget, iwr/iex, npx and friends, chmod +x), or a package
 // install (pip/npm/pnpm/yarn/bun/brew/gem/cargo/go/apt).
-const LINKISH = new RegExp([
+//
+// The bare domain is tried only where a dotted name starts: tried at every word boundary inside one,
+// the name was read to its end from each, so "a-" or "a." 5,000 times took 3.6 s on the phone and
+// 0.19 s here, quadratic in both. A match from inside a name always has one from where the name's
+// first letter or digit is, so nothing is lost: the lazy run of "-" and "." skips what comes before
+// that letter, never past "..", which ends a name. Group 1 holds exactly the old pattern's matches;
+// a match itself may start a few "-" and "." earlier, which LINKISH.test never reads. Exported, with LINKISH,
+// for test/linear_regex_test.mjs.
+export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1)\b(?!\.))`;
+export const LINKISH = new RegExp([
   String.raw`https?:\/\/|\bwww\.`,                                                     // a link
-  String.raw`\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|dev|sh|ai|app|co|xyz|me|gg|hr|de|uk|us|info|tech|site|cloud|run|page|ps1)\b(?!\.)`, // a bare domain or a script file
+  BARE_DOMAIN,                                                                          // a bare domain or a script file
   String.raw`\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b|<\(`,                                 // a pipe into a shell, process substitution
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
   String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?)\s+(?:i|install|add|get)\b`, // package installs
