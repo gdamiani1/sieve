@@ -26,6 +26,9 @@ button{padding:8px 14px;border:0;border-radius:7px;background:var(--accent);colo
 details{margin-top:14px}
 summary{cursor:pointer;font-weight:600;padding:4px 0}
 .status{font-size:13px;margin:12px 0 0}
+button.quiet{background:transparent;color:var(--accent);border:1px solid var(--field-edge)}button.quiet.danger{color:var(--alert)}
+button:disabled{background:var(--panel);color:var(--muted);border:1px solid var(--line);cursor:default}
+#agentSection [hidden]{display:none}#agentSection a{color:var(--accent)}#agentSection code{overflow-wrap:anywhere}
 #start{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}#start ol{margin:8px 0 0;padding-left:20px}#start li{margin:6px 0}#start a{color:var(--accent)}
 </style></head><body><main>
 <h1>Sieve settings</h1>
@@ -56,6 +59,24 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
 </details>
 <p class="status" id="scoreStatus" aria-live="polite"></p>
 <div style="margin-top:10px"><button id="saveKeys">Check and save keys</button> <span class="msg" id="keyMsg" aria-live="polite"></span></div>
+</section>
+
+<section id="agentSection" aria-labelledby="agentH">
+<h2 id="agentH">Your agent</h2>
+<p class="hint" id="agentLine"></p>
+<div class="inline" id="agentOff"><button id="agentOn" type="button">Turn on</button><a href="#" id="agentEmail" role="button">Use email instead</a></div>
+<div id="agentOnBox" hidden>
+<p class="hint">Your agent reads your pins from iPhone and Chrome at <code id="agentUrl"></code>. In Claude Code:</p>
+<p class="hint"><code id="agentCmd"></code></p>
+<div class="inline">
+<button id="agentSend" type="button">Send now</button>
+<button id="agentReplace" type="button" hidden>Use this Chrome's library instead</button>
+<button id="agentShrink" type="button" hidden>Send anyway</button>
+<button id="agentOffBtn" type="button" class="quiet">Turn off</button>
+<button id="agentDelete" type="button" class="quiet danger">Delete my Sieve account</button>
+</div>
+</div>
+<p class="status" id="agentMsg" role="status"></p>
 </section>
 
 <section>

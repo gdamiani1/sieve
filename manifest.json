@@ -12,6 +12,12 @@
     "https://api.typesafe.ai/*",
     "https://openrouter.ai/*"
   ],
+  "optional_permissions": [
+    "identity"
+  ],
+  "optional_host_permissions": [
+    "https://mcp.divergada.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

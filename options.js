@@ -2,6 +2,7 @@ import { DEFAULT_MODEL } from "./models.js";
 import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs, DEFAULT_REDDIT_ABOUT } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL } from "./watch-prompt.js";
 import { scoringKey } from "./jev.js";
+import { AGENT_URL, CLAUDE_LINE, SERVER, words } from "./agent-sync.js";
 
 const $ = (id) => document.getElementById(id);
 const lines = (id) => $(id).value.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -141,3 +142,74 @@ $("statsOn").onchange = async () => {
     readStats();
   }
 };
+
+// Your agent (extension library sync spec 5.4): the worker signs in and sends (agent-sync-run.js); this
+// page only asks it, shows the stored record in words() and asks for the optional permissions.
+const OPTIONAL = { permissions: ["identity"], origins: [`${SERVER}/*`] };
+const agent = (msg) => chrome.runtime.sendMessage({ type: "agentSync", ...msg });
+// A line for an outcome words() has no line for (a refused permission, the worker's error). Cleared
+// when the next action starts; a status read keeps it.
+let note = "";
+
+function showAgent(r) {
+  if (!r || r.error) { note = r?.error || "Sieve couldn't read the agent sync status. Reload the extension and try again."; $("agentMsg").textContent = note; return; }
+  const on = !!r.on;
+  // No record yet (a fresh install) is off; a record that is on but says off (it shouldn't) is on.
+  const state = on ? (!r.state || r.state === "off" ? "on" : r.state) : r.state || "off";
+  $("agentLine").textContent = words({ ...r, state });
+  $("agentOff").hidden = on;
+  $("agentOnBox").hidden = !on;
+  $("agentReplace").hidden = !(on && state === "other_device");
+  $("agentShrink").hidden = !(on && state === "shrunk");
+  // One filled button per section: when an answer button shows, Send now steps back.
+  $("agentSend").classList.toggle("quiet", !$("agentReplace").hidden || !$("agentShrink").hidden);
+  $("agentUrl").textContent = AGENT_URL;
+  $("agentCmd").textContent = CLAUDE_LINE;
+  // Still on with a reason: the account delete didn't reach the server or it said no.
+  const deleteFailed = on && ["offline", "server"].includes(r.detail?.reason);
+  $("agentMsg").textContent = deleteFailed ? "Couldn't delete your account. Check your connection and try again." : note;
+}
+
+const readAgent = () => agent({ do: "status" }).then(showAgent, () => showAgent({ on: false, state: "off" }));
+
+// One request at a time from this page; the button that started it is disabled until it answers.
+let acting = false;
+async function act(btn, fn) {
+  if (acting) return;
+  acting = true;
+  note = "";
+  $("agentMsg").textContent = "";
+  btn.disabled = true;
+  try {
+    const r = await fn().catch(() => ({ error: "Sieve couldn't reach its background worker. Reload the extension and try again." }));
+    if (r) showAgent(r);
+  } finally {
+    btn.disabled = false;
+    acting = false;
+  }
+}
+
+// The permission is asked first, from the click: Chrome only grants optional permissions during a
+// user gesture, so nothing is awaited before chrome.permissions.request.
+const turnOn = (btn, provider) => act(btn, async () => {
+  const granted = await chrome.permissions.request(OPTIONAL).catch(() => false);
+  if (!granted) {
+    note = words({ state: "no_permission" });
+    $("agentMsg").textContent = note;
+    return null;
+  }
+  return agent({ do: "on", provider });
+});
+$("agentOn").onclick = () => turnOn($("agentOn"), "google");
+$("agentEmail").onclick = (e) => { e.preventDefault(); turnOn($("agentEmail"), "email"); };
+$("agentSend").onclick = () => act($("agentSend"), () => agent({ do: "send" }));
+$("agentReplace").onclick = () => act($("agentReplace"), () => agent({ do: "send", replace: true }));
+$("agentShrink").onclick = () => act($("agentShrink"), () => agent({ do: "send", allowShrink: true }));
+$("agentOffBtn").onclick = () => act($("agentOffBtn"), () => agent({ do: "off" }));
+$("agentDelete").onclick = () => {
+  if (!confirm("This deletes your Sieve account and everything your agent reads, from iPhone too. Delete it?")) return;
+  act($("agentDelete"), () => agent({ do: "delete" }));
+};
+readAgent();
+// A send by the alarm, or a change in another tab, shows when this page is looked at again.
+window.onfocus = () => { if (!acting) readAgent(); };

@@ -1,6 +1,7 @@
 // Offline: the pure part of sending the library to the agent. No keys, no network.
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   SERVER, CLIENT_ID, CHROME_ID, pkcePair, authorizeUrl, readCallback, tokenForm, refreshForm, readTokens,
   libraryBody, libraryHash, words, MAX_BODY,
@@ -121,5 +122,12 @@ const all = [{ state: "off" }, { state: "not_invited" }, { state: "on", email: "
   { state: "busy" }, { state: "limit" }, { state: "invalid", detail: { reason: "x" } }, { state: "invalid" }, { state: "signed_out" },
   { state: "no_permission" }, { state: "too_big", detail: { bytes: 9e6 } }];
 for (const s of all) assert.doesNotMatch(words(s), /—|undefined|NaN/, `clean words for ${s.state}`);
+
+// The manifest: identity and the server are optional, asked on Turn on, so an update shows no prompt.
+const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
+assert.deepEqual(manifest.optional_permissions, ["identity"]);
+assert.deepEqual(manifest.optional_host_permissions, ["https://mcp.divergada.com/*"]);
+assert.ok(!manifest.permissions.includes("identity"), "never a required permission: no prompt on update");
+assert.ok(!manifest.host_permissions.some((h) => h.includes("divergada")), "never a required host");
 
 console.log("agent_sync_test: ok");
