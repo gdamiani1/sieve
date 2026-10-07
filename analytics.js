@@ -4,7 +4,8 @@
 // What is sent: once a day, for each finished day Sieve was used, how many posts were scored, saved,
 // briefed, copied as a prompt, watched, put in a digest and exported, per platform, with the extension
 // version, which scorer answered (Jev or the fallback model), and a random install ID made in this
-// browser (and the 6-character install code shown in settings, which is the start of that ID). Never post
+// browser (and the 6-character install code shown in settings, which is the start of that ID), and
+// whether sending to your agent is on ("on" or "off", as it is when the day is sent). Never post
 // text, links, names, titles, facts, keys or anything typed.
 // Where: Google Analytics 4, through its Measurement Protocol: a plain POST per day (two if a day has many
 // kinds of counts) from this worker. No Google script is loaded, and no permission is needed (a
@@ -151,7 +152,8 @@ function settle(day, sent, drop = false) {
 }
 
 async function sendDay(clientId, day, counts) {
-  const shared = { version: chrome.runtime.getManifest().version, install: codeOf(clientId), session_id: Number(day.replace(/-/g, "")), engagement_time_msec: 1 };
+  const { agentSync } = await chrome.storage.local.get("agentSync");
+  const shared = { version: chrome.runtime.getManifest().version, install: codeOf(clientId), agent_sync: plain(agentSync).on === true ? "on" : "off", session_id: Number(day.replace(/-/g, "")), engagement_time_msec: 1 };
   const pairs = []; // [stored key, event]
   for (const [key, n] of Object.entries(counts)) {
     const event = toEvent(key, n, shared);

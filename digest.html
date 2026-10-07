@@ -1,51 +1,90 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Sieve: daily learnings</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sieve: daily learnings</title>
 <style>
-:root{color-scheme:light dark;--paper:#ece7de;--ink:#14120e;--muted:#6b655b;--accent:#2433f5;--on-accent:#fff;--card:#fff;--panel:#f6f3ee;--field:#fff;--line:#d6cebf;--field-edge:#c9c1b3;--ink-soft:#3a362f;--alert:#9a2a00;--alert-tint:#fff0ea}
-@media (prefers-color-scheme: dark){:root{--paper:#14120e;--ink:#ece7de;--muted:#a9a296;--accent:#7b87ff;--on-accent:#14120e;--card:#1d1a15;--panel:#1d1a15;--field:#252119;--line:#3a362f;--field-edge:#6b655b;--ink-soft:#c9c1b3;--alert:#ffb59b;--alert-tint:#3a1a0e}}
-body{font:15px/1.55 -apple-system,system-ui,sans-serif;background:var(--paper);color:var(--ink);margin:0}
-main{max-width:760px;margin:0 auto;padding:32px 20px 60px}
-h1{font-size:24px;margin:0 0 4px}
-.sub{color:var(--muted);margin:0 0 20px}
-.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:22px}
-button{font:600 13px/1 -apple-system,system-ui,sans-serif;padding:9px 14px;border-radius:7px;border:1px solid var(--field-edge);background:var(--card);color:var(--ink);cursor:pointer}
-button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-#msg{color:var(--accent);font-size:13px;flex-basis:100%}
+:root{color-scheme:light dark;--canvas:#FBFAF7;--card:#FFFFFF;--tint:#F0ECE5;--ink:#1D1B17;--on-ink:#FFFFFF;--ink-muted:#77706A;--line:#EBE6DC;--bar-edge:#E4DED2;--blue:#2433F5;--on-blue:#FFFFFF;--alert:#9A2A00;--alert-tint:#FFF0EA;--note:#F7ECD0;--note-tape:#CDBFA5}
+@media (prefers-color-scheme: dark){:root{--canvas:#171511;--card:#221F1A;--tint:#2A2620;--ink:#ECE6DC;--on-ink:#171511;--ink-muted:#A39B8F;--line:#322E27;--bar-edge:#3A352D;--blue:#7B87FF;--on-blue:#14120E;--alert:#FFB59B;--alert-tint:#3A1A0E;--note:#302819;--note-tape:#5A4F3D}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:720px;margin:0 auto;padding:36px 20px 72px}
+p{margin:0}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+/* Header: the screen name, the blue nib underline, the subline. */
+h1{font-size:32px;font-weight:800;letter-spacing:-1.1px;margin:0;line-height:1.1}
+.nib{display:block;margin:4px 0 6px}.nib path{fill:var(--blue)}
+.sub{color:var(--ink-muted);font-size:13px}
+/* Actions: one primary, two secondaries, a text button; the message line under them. */
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:20px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border:0;border-radius:14px;font-weight:600;font-size:15px;line-height:1.2;font-family:inherit;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--blue);color:var(--on-blue)}
+.btn.secondary{background:var(--tint);color:var(--ink)}
+.btn.text{background:none;color:var(--blue);padding:0 8px;font-size:14px}
+.btn:active{opacity:.85}
+#msg{display:block;font-size:13px;margin:10px 2px 0;overflow-wrap:anywhere}
+/* Empty: hidden from sight only, so the next message is still announced. */
+#msg:empty{margin:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 #msg.alert{color:var(--alert)}
-#export{margin-left:auto}
-.digest{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:16px}
-.digest .meta{font-size:12px;color:var(--muted);margin-bottom:6px}
-.digest h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px;color:var(--accent)}
-.digest ul{margin:0;padding-left:20px}.digest li{margin:4px 0}
-details{margin-top:28px}summary{cursor:pointer;font-weight:600}
-.post{border-top:1px solid var(--line);padding:10px 0;font-size:13.5px}
-.post a{color:var(--accent);font-weight:600;text-decoration:none}
-.post .t{color:var(--ink-soft);white-space:pre-wrap;max-height:4.6em;overflow:hidden}
-.rlist{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin-bottom:16px}.rlist h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;color:var(--accent)}
-.post .m{font-size:12px;color:var(--muted)}
-.brief .w{margin:4px 0 8px}.brief button{padding:7px 12px;font-size:12px}
-.brief .warn{margin:4px 0;padding:8px 12px;border-radius:8px;background:var(--alert-tint);color:var(--alert);font-weight:600}
-.brief .note{margin-top:6px;font-size:11.5px;color:var(--ink)}
-.brief .warn+.note{margin:6px 0 8px}
-.brief .warn,.brief .note{overflow-wrap:anywhere}
-.brief .status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.brief .fail{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--alert-tint);color:var(--alert)}
-.brief .fallback{display:block;width:100%;box-sizing:border-box;height:140px;margin-top:6px;padding:6px;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--ink);background:var(--field);border:1px solid var(--field-edge);border-radius:8px;resize:vertical}
-.empty{color:var(--muted);font-size:13.5px;margin:0}
-.sect-err{margin:4px 0;padding:8px 12px;border-radius:8px;background:var(--alert-tint);color:var(--alert);font-size:13.5px}
+/* Sections: a heading, then a card of rows. */
+h2{font-size:17px;font-weight:600;margin:30px 0 9px}
+.group{background:var(--card);border-radius:16px;overflow:hidden}
+.item{position:relative;min-height:52px;padding:12px 16px}
+.item+.item::before{content:"";position:absolute;top:0;left:16px;right:0;height:1px;background:var(--line)}
+.title{color:var(--ink);font-weight:600;text-decoration:none;overflow-wrap:anywhere}
+.title:hover,.title:focus-visible{color:var(--blue);text-decoration:underline}
+.item .m{font-size:13px;color:var(--ink-muted);margin-top:2px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.item .t{font-size:14px;white-space:pre-wrap;margin-top:6px;overflow-wrap:anywhere}
+.item .t.clip{max-height:4.4em;overflow:hidden}
+.empty{color:var(--ink-muted);font-size:13px;margin:0 16px}
+/* A brief: what it is, then its action. Notes: failure (alert on its tint), info (ink on the tint). */
+.brief .w{font-size:14px;margin-top:6px}
+.acts{display:flex;align-items:center;margin:2px 0 -8px -8px}
+.brief .warn,.brief .note,.brief .fail,.sect-err{border-radius:12px;padding:10px 12px;font-size:13px;margin-top:8px}
+.brief .warn,.brief .fail,.sect-err{background:var(--alert-tint);color:var(--alert)}
+.brief .warn{font-weight:600}
+.brief .note{background:var(--tint);color:var(--ink)}
+.brief .foot{font-size:13px;margin-top:8px}
+.brief .warn,.brief .note,.brief .foot{overflow-wrap:anywhere}
+.brief .status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.brief .fallback{display:block;width:100%;height:140px;margin-top:8px;padding:10px 12px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);background:var(--canvas);border:1px solid var(--bar-edge);border-radius:12px;resize:vertical}
+.brief .fallback:focus{outline:none;border-color:var(--ink)}
+.brief .fallback:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+/* A digest: a card, its date and count in meta, its headings, its bullets. */
+.digest{background:var(--card);border-radius:16px;padding:14px 18px 16px;margin-bottom:12px}
+.digest .meta{font-size:13px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.digest h3{font-size:17px;font-weight:600;margin:14px 0 4px}
+.digest ul{margin:0;padding-left:20px}.digest li{margin:4px 0;overflow-wrap:anywhere}
+/* Saved posts: folded, a row with its count and a chevron. */
+details{margin-top:30px}
+summary.row{display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 16px;background:var(--card);border-radius:16px;cursor:pointer;list-style:none;font-weight:600}
+summary::-webkit-details-marker{display:none}
+summary .v{margin-left:auto;font-size:13px;font-weight:400;color:var(--ink-muted)}
+summary .chev{flex:none;transition:transform .12s}
+summary .chev path{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+details[open] > summary .chev{transform:rotate(90deg)}
+#saved{margin-top:8px}
+@media (prefers-reduced-motion: reduce){summary .chev{transition:none}}
+@media (max-width:480px){
+  main{padding:28px 16px 56px}
+  .bar .btn.primary{flex:1 1 100%}
+  .bar .btn.secondary{flex:1 1 auto}
+}
 </style></head><body><main>
 <h1>Daily learnings</h1>
-<p class="sub">What Sieve kept from your feeds: posts it rated worth a close read, videos it watched and briefs you asked for. These are what people posted, not verified facts.</p>
+<svg class="nib" width="226" height="12" viewBox="0 0 226 12" aria-hidden="true"><path d="M2 7.6 C 34 5.2, 80 4.6, 120 5.0 C 158 5.3, 192 5.0, 224 4.2 C 225 4.6, 225 5.4, 224 5.8 C 190 7.4, 156 7.6, 120 7.5 C 80 7.4, 38 8.0, 3 9.2 C 1.4 9.0, 1.2 8.0, 2 7.6 Z"/></svg>
+<p class="sub">What Sieve kept from your feeds. What people posted, not verified facts.</p>
 <div class="bar">
-  <button class="primary" id="today">Summarise since last digest</button>
-  <button id="day">Last 24 hours</button>
-  <button id="week">Last 7 days</button>
-  <button id="export">Export library</button>
-  <span id="msg"></span>
+<button type="button" class="btn primary" id="today">Summarise since last digest</button>
+<button type="button" class="btn secondary" id="day">Last 24 hours</button>
+<button type="button" class="btn secondary" id="week">Last 7 days</button>
+<button type="button" class="btn text" id="export">Export library</button>
 </div>
+<p id="msg" role="status"></p>
 <section id="reddit"></section>
 <section id="briefs"></section>
 <section id="videos"></section>
 <section id="digests"></section>
-<details><summary id="savedSum">Saved posts</summary><div id="saved"></div></details>
+<details>
+<summary class="row"><span id="savedSum">Saved posts</span><span class="v">Kept 30 days</span><svg class="chev" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 L10.5 8 L6 12.5"/></svg></summary>
+<div id="saved"></div>
+</details>
 </main><script type="module" src="digest.js"></script></body></html>

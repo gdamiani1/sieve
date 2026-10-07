@@ -23,11 +23,16 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn"]) {
 }
 $("settings").onclick = () => chrome.runtime.openOptionsPage();
 $("digest").onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL("digest.html") });
-$("reset").onclick = async () => { await chrome.storage.local.remove("stats"); load(); };
+$("reset").onclick = async () => {
+  if (!confirm("Reset the counters? This can't be undone.")) return;
+  await chrome.storage.local.remove("stats");
+  await load();
+};
 // The one usage-stats question: shown until it's answered, only in a build that can send (analytics.js).
 async function ask() {
   const s = await chrome.runtime.sendMessage({ type: "stats", action: "status" }).catch(() => null);
   $("ask").hidden = !(s && s.available && s.consent === null);
+  document.body.classList.toggle("asking", !$("ask").hidden);
 }
 const answer = (on) => async () => {
   $("askYes").disabled = $("askNo").disabled = true;
@@ -35,6 +40,7 @@ const answer = (on) => async () => {
   const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on }).catch(() => null);
   if (r && !r.error) {
     $("ask").hidden = true;
+    document.body.classList.remove("asking");
     $("askThanks").textContent = "Thanks. You can change this in Settings.";
     return;
   }
@@ -45,3 +51,23 @@ $("askYes").onclick = answer(true);
 $("askNo").onclick = answer(false);
 ask();
 load();
+
+// Your agent: one line, only while sending to the agent is on (the same status the settings page reads).
+const sentAt = (ms) => {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${time}`;
+};
+async function agent() {
+  const r = await chrome.runtime.sendMessage({ type: "agentSync", do: "status" }).catch(() => null);
+  // Once the invite ended the agent no longer reads this library: nothing to say.
+  const shows = !!(r && !r.error && r.on && r.state !== "ended");
+  $("agent").hidden = !shows;
+  if (!shows) return;
+  // Anything but on (a failing state): the details are in Settings.
+  if (r.state && r.state !== "on" && r.state !== "off") { $("agent").textContent = "Your agent needs attention. Open Settings."; return; }
+  if (!r.lastAt) { $("agent").textContent = "Your agent is on. Nothing sent yet."; return; }
+  const n = Number.isFinite(r.lastItems) ? r.lastItems : 0;
+  $("agent").textContent = `Your agent reads ${n} ${n === 1 ? "pin" : "pins"} from Chrome, sent ${sentAt(r.lastAt)}.`;
+}
+agent();

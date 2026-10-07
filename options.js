@@ -2,116 +2,340 @@ import { DEFAULT_MODEL } from "./models.js";
 import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs, DEFAULT_REDDIT_ABOUT } from "./prefs.js";
 import { DEFAULT_VIDEO_MODEL } from "./watch-prompt.js";
 import { scoringKey } from "./jev.js";
+import { AGENTS, SERVER, words } from "./agent-sync.js";
+
+// The settings page (extension settings pinboard spec): every setting saves as it changes, a toast says
+// so; keys save only through Check and save keys; Your agent asks the worker.
 
 const $ = (id) => document.getElementById(id);
 const lines = (id) => $(id).value.split("\n").map((l) => l.trim()).filter(Boolean);
+const kids = (id) => [...$(id).children];
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-function checks(container, names, values) {
+// ---- The toast: "Saved", or why a save failed. A live region always in the page (visually hidden while
+// empty); emptied first and filled on the next frame, so a second "Saved" is announced too.
+// Only the latest toast's frame counts, so an earlier "Saved" can't cut a later "Couldn't save" short.
+let toastTimer = 0;
+let toastSeq = 0;
+const nextFrame = globalThis.requestAnimationFrame || ((fn) => setTimeout(fn, 16));
+function toast(text, ms = 1500) {
+  const t = $("toast");
+  const seq = ++toastSeq;
+  clearTimeout(toastTimer);
+  t.textContent = "";
+  nextFrame(() => {
+    if (seq !== toastSeq) return;
+    t.textContent = text;
+    toastTimer = setTimeout(() => { t.textContent = ""; }, ms);
+  });
+}
+
+// Saves run one after another, so an Enter and the change that follows it never race. `fn` resolves to
+// what the toast says ("Saved" or more), or nothing when nothing was written.
+let queue = Promise.resolve();
+function save(fn) {
+  queue = queue.then(fn).then(
+    (said) => { if (said) toast(said); },
+    (e) => toast(`Couldn't save: ${e?.message || e}. Try again.`, 4000),
+  );
+  return queue;
+}
+
+// ---- Chips: the kinds lists (several chosen) and Low posts (one chosen, a radio group).
+const LOW_MODES = { fade: "Fade them", hide: "Hide them", show: "Leave them alone" };
+const pressed = (b) => b.getAttribute("aria-pressed") === "true";
+
+function chips(container, names) {
   $(container).replaceChildren(...Object.entries(names).map(([key, text]) => {
-    const label = document.createElement("label");
-    const box = document.createElement("input");
-    box.type = "checkbox"; box.dataset.key = key; box.checked = values[key] !== false;
-    label.append(box, text);
-    return label;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.dataset.key = key; b.textContent = text;
+    b.setAttribute("aria-pressed", "false");
+    b.onclick = () => { b.setAttribute("aria-pressed", String(!pressed(b))); savePrefs(container); };
+    return b;
   }));
 }
-const readChecks = (container) => Object.fromEntries([...$(container).querySelectorAll("input")].map((b) => [b.dataset.key, b.checked]));
+const drawChips = (container, values) => { for (const b of kids(container)) b.setAttribute("aria-pressed", String(values[b.dataset.key] !== false)); };
+const readChips = (container) => Object.fromEntries(kids(container).map((b) => [b.dataset.key, pressed(b)]));
+
+// A radio group of chips: one chosen, arrow keys move the choice and focus.
+const ARROWS = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+function drawRadios(container, attr, value) {
+  for (const c of kids(container)) {
+    const on = c.dataset[attr] === value;
+    c.setAttribute("aria-checked", String(on));
+    c.tabIndex = on ? 0 : -1;
+  }
+}
+function radios(container, attr, entries, pick) {
+  $(container).replaceChildren(...entries.map(([value, text], i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.dataset[attr] = value; b.textContent = text;
+    b.setAttribute("role", "radio");
+    b.onclick = () => pick(value);
+    b.addEventListener("keydown", (e) => {
+      const step = ARROWS[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const [next] = entries[(i + step + entries.length) % entries.length];
+      pick(next);
+      kids(container).find((c) => c.dataset[attr] === next)?.focus();
+    });
+    return b;
+  }));
+}
+radios("lowMode", "value", Object.entries(LOW_MODES), (mode) => { drawRadios("lowMode", "value", mode); savePrefs("lowMode"); });
+chips("kinds", KINDS);
+chips("redditKinds", REDDIT_KINDS);
+chips("youtubeKinds", YOUTUBE_KINDS);
+
+// ---- Prefs: each control reads its own part, with saveAll's rules (defaults when empty, topics capped
+// at 8, lowBelow kept under highAt, numbers kept within the field's own min and max). A save merges it
+// into the stored prefs, so a change the popup made meanwhile is kept.
+function scores() {
+  const highAt = Number($("highAt").value);
+  let lowBelow = Number($("lowBelow").value);
+  if (lowBelow >= highAt) lowBelow = Math.max(0.1, highAt - 0.1);
+  return { highAt, lowBelow };
+}
+function wholeIn(id, fallback) {
+  const raw = String($(id).value ?? "").trim();
+  const n = Number(raw);
+  if (!raw || !Number.isFinite(n)) return fallback;
+  return Math.min(Number($(id).max ?? $(id).getAttribute("max")), Math.max(Number($(id).min ?? $(id).getAttribute("min")), Math.round(n)));
+}
+const checked = (id) => () => ({ [id]: $(id).checked });
+const listOf = (id) => () => ({ [id]: lines(id) });
+const PREFS = {
+  role: () => ({ role: $("role").value.trim() || DEFAULT_PREFS.role }),
+  topics: () => ({ topics: lines("topics").slice(0, 8) }),
+  kinds: () => ({ kinds: readChips("kinds") }),
+  redditKinds: () => ({ redditKinds: readChips("redditKinds") }),
+  youtubeKinds: () => ({ youtubeKinds: readChips("youtubeKinds") }),
+  linkedinOn: checked("linkedinOn"), xOn: checked("xOn"), redditOn: checked("redditOn"),
+  youtubeOn: checked("youtubeOn"), youtubeDescriptions: checked("youtubeDescriptions"),
+  subreddits: listOf("subreddits"), boostWords: listOf("boostWords"), muteWords: listOf("muteWords"),
+  freshHours: () => ({ freshHours: wholeIn("freshHours", DEFAULT_PREFS.freshHours) }),
+  freshComments: () => ({ freshComments: wholeIn("freshComments", DEFAULT_PREFS.freshComments) }),
+  highAt: scores, lowBelow: scores,
+  lowMode: () => ({ lowMode: kids("lowMode").find((c) => c.getAttribute("aria-checked") === "true")?.dataset.value || DEFAULT_PREFS.lowMode }),
+};
+
+// Drawing the saved prefs into the controls. `skip(id)` leaves a control alone: the one being typed in,
+// or one whose change is still waiting to be written.
+const showRange = (id, v) => { $(id).value = v; $(`${id}Out`).textContent = Number(v).toFixed(2); };
+const DRAW_PREFS = {
+  role: (p) => { $("role").value = p.role; },
+  topics: (p) => { $("topics").value = p.topics.join("\n"); },
+  kinds: (p) => drawChips("kinds", p.kinds),
+  redditKinds: (p) => drawChips("redditKinds", p.redditKinds),
+  youtubeKinds: (p) => drawChips("youtubeKinds", p.youtubeKinds),
+  linkedinOn: (p) => { $("linkedinOn").checked = p.linkedinOn; },
+  xOn: (p) => { $("xOn").checked = p.xOn; },
+  redditOn: (p) => { $("redditOn").checked = p.redditOn; },
+  youtubeOn: (p) => { $("youtubeOn").checked = p.youtubeOn; },
+  youtubeDescriptions: (p) => { $("youtubeDescriptions").checked = p.youtubeDescriptions; },
+  subreddits: (p) => { $("subreddits").value = p.subreddits.join("\n"); },
+  boostWords: (p) => { $("boostWords").value = p.boostWords.join("\n"); },
+  muteWords: (p) => { $("muteWords").value = p.muteWords.join("\n"); },
+  freshHours: (p) => { $("freshHours").value = p.freshHours; },
+  freshComments: (p) => { $("freshComments").value = p.freshComments; },
+  highAt: (p) => showRange("highAt", p.highAt),
+  lowBelow: (p) => showRange("lowBelow", p.lowBelow),
+  lowMode: (p) => drawRadios("lowMode", "value", p.lowMode),
+};
+const typingIn = (id) => {
+  const a = document.activeElement;
+  return !!a && (a === $(id) || a.parentNode === $(id));
+};
+function drawPrefs(p, skip = () => false) {
+  for (const [id, draw] of Object.entries(DRAW_PREFS)) if (!skip(id)) draw(p);
+}
+
+// What is stored, as this page last knew it: filled by load(), each save and the change listener, so
+// closing the tab can write at once without reading first.
+let cachedPrefs = null;
+const cachedOther = {};
+
+// Prefs changes that come within about half a second are written together, so a run of chip clicks
+// re-scores open tabs once. Leaving the page writes at once.
+const SAVE_DELAY = globalThis.SIEVE_SAVE_DELAY_MS ?? 500;
+let pending = {};
+let pendingIds = new Set();
+let typed = {}; // what each text field said when its change was taken, so a redraw never eats newer typing
+let topicsCut = false;
+let flushTimer = 0;
+function savePrefs(id) {
+  takePending(id);
+  if (!flushTimer) flushTimer = setTimeout(flushPrefs, SAVE_DELAY);
+}
+function takePending(id) {
+  Object.assign(pending, PREFS[id]());
+  pendingIds.add(id);
+  if (id === "highAt" || id === "lowBelow") { pendingIds.add("highAt"); pendingIds.add("lowBelow"); }
+  if ("value" in $(id) && !kids(id).length) typed[id] = $(id).value;
+  if (id === "topics") topicsCut = lines("topics").length > 8;
+}
+function flushPrefs() {
+  clearTimeout(flushTimer);
+  flushTimer = 0;
+  if (!pendingIds.size) return queue;
+  const change = pending, ids = [...pendingIds], seen = typed, cut = topicsCut;
+  pending = {}; pendingIds = new Set(); typed = {}; topicsCut = false;
+  return save(async () => {
+    const p = await loadPrefs();
+    const next = { ...p, ...change };
+    const wrote = !Object.keys(change).every((k) => same(p[k], next[k]));
+    if (wrote) await chrome.storage.local.set({ prefs: next });
+    cachedPrefs = next;
+    // The fields show what was saved (a default, the first 8 topics), unless typed in since.
+    drawPrefs(await loadPrefs(), (id) => !ids.includes(id) || (id in seen && $(id).value !== seen[id]) || pendingIds.has(id));
+    if (!wrote) return "";
+    return cut ? "Saved the first 8 topics." : "Saved";
+  });
+}
+
+// The settings kept beside prefs, each under its own key.
+const OTHER = {
+  model: { key: "model", read: () => $("model").value.trim() || DEFAULT_MODEL, draw: (v) => { $("model").value = v || DEFAULT_MODEL; } },
+  videoModel: { key: "videoModel", read: () => $("videoModel").value.trim() || DEFAULT_VIDEO_MODEL, draw: (v) => { $("videoModel").value = v || DEFAULT_VIDEO_MODEL; } },
+  redditAbout: { key: "redditAbout", read: () => $("redditAbout").value.trim() || DEFAULT_REDDIT_ABOUT, draw: (v) => { $("redditAbout").value = v || DEFAULT_REDDIT_ABOUT; } },
+  remind: { key: "reminderOn", read: () => $("remind").checked, draw: (v) => { $("remind").checked = v !== false; $("rtime").disabled = v === false; } },
+  rtime: { key: "reminderTime", read: () => $("rtime").value || "18:00", draw: (v) => { $("rtime").value = v || "18:00"; } },
+};
+const OTHER_KEYS = Object.values(OTHER).map((o) => o.key);
+function drawOther(s, skip = () => false) {
+  for (const [id, { key, draw }] of Object.entries(OTHER)) if (key in s && !skip(id)) draw(s[key]);
+}
+function saveOther(id) {
+  const { key, read, draw } = OTHER[id];
+  const value = read();
+  const seen = $(id).value;
+  return save(async () => {
+    const s = await chrome.storage.local.get(key);
+    const wrote = !same(s[key], value);
+    if (wrote) await chrome.storage.local.set({ [key]: value });
+    cachedOther[key] = value;
+    if ($(id).value === seen) draw(value);
+    return wrote ? "Saved" : "";
+  });
+}
+
+// Text saves when it loses focus (change), and on Enter in a single-line field; switches, ranges and
+// the time save at once (change); a range's number follows as it moves.
+const enter = (id, fn) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } });
+for (const id of Object.keys(PREFS)) {
+  if (["kinds", "redditKinds", "youtubeKinds", "lowMode"].includes(id)) continue;
+  $(id).addEventListener("change", () => savePrefs(id));
+}
+for (const id of ["role", "freshHours", "freshComments"]) enter(id, () => savePrefs(id));
+for (const id of Object.keys(OTHER)) $(id).addEventListener("change", () => saveOther(id));
+for (const id of ["model", "videoModel"]) enter(id, () => saveOther(id));
+for (const id of ["highAt", "lowBelow"]) $(id).addEventListener("input", () => { $(`${id}Out`).textContent = Number($(id).value).toFixed(2); });
+$("remind").addEventListener("change", () => { $("rtime").disabled = !$("remind").checked; });
+
+// Typing and then closing the tab or switching away: the field being typed in saves now, and any
+// joined prefs changes are written at once. Key fields never save this way.
+const TYPED = ["role", "topics", "subreddits", "freshHours", "freshComments", "redditAbout", "boostWords", "muteWords", "model", "videoModel"];
+// The page may be gone before any read answers, so the write starts in this same turn, from the cached
+// copy, with nothing awaited first.
+function leaving() {
+  const id = document.activeElement?.id;
+  if (!cachedPrefs) {
+    // Not loaded yet: nothing typed here can be newer than what is stored, but write what is waiting.
+    if (TYPED.includes(id)) { if (id in PREFS) savePrefs(id); else saveOther(id); }
+    flushPrefs();
+    return;
+  }
+  const now = {};
+  if (TYPED.includes(id)) {
+    if (id in PREFS) takePending(id);
+    else {
+      // Compared with what the field showed for the stored value (a default when nothing is stored).
+      const { key, read } = OTHER[id];
+      const shown = cachedOther[key] || { model: DEFAULT_MODEL, videoModel: DEFAULT_VIDEO_MODEL, redditAbout: DEFAULT_REDDIT_ABOUT }[key];
+      if (!same(shown, read())) now[key] = read();
+    }
+  }
+  if (pendingIds.size) {
+    const next = { ...cachedPrefs, ...pending };
+    if (!same(next, cachedPrefs)) now.prefs = next;
+  }
+  clearTimeout(flushTimer);
+  flushTimer = 0;
+  pending = {}; pendingIds = new Set(); typed = {}; topicsCut = false;
+  if (!Object.keys(now).length) return;
+  if (now.prefs) cachedPrefs = now.prefs;
+  for (const k of OTHER_KEYS) if (k in now) cachedOther[k] = now[k];
+  chrome.storage.local.set(now).catch(() => {});
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") leaving(); });
+window.addEventListener("pagehide", leaving);
+
+// A change from elsewhere (the popup, another settings tab) redraws what isn't being typed in or waiting.
+const busy = (id) => typingIn(id) || pendingIds.has(id);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (changes.prefs && cachedPrefs) cachedPrefs = { ...cachedPrefs, ...(changes.prefs.newValue || {}) };
+  if (changes.prefs || changes.dimLow) loadPrefs().then((p) => { cachedPrefs = p; drawPrefs(p, busy); }, () => {});
+  const keys = OTHER_KEYS.filter((k) => k in changes);
+  for (const k of keys) cachedOther[k] = changes[k].newValue;
+  if (keys.length) drawOther(Object.fromEntries(keys.map((k) => [k, changes[k].newValue])), typingIn);
+  if (changes.orKey || changes.apiKey) readKeys();
+});
 
 async function load() {
   const p = await loadPrefs();
-  const s = await chrome.storage.local.get(["apiKey", "orKey", "model", "redditAbout", "reminderOn", "reminderTime", "videoModel"]);
-  $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Paste your TypeSafe key";
+  const s = await chrome.storage.local.get(["apiKey", "orKey", ...OTHER_KEYS]);
+  showKeys(s);
+  cachedPrefs = p;
+  for (const k of OTHER_KEYS) cachedOther[k] = s[k];
+  drawPrefs(p);
+  drawOther(Object.fromEntries(OTHER_KEYS.map((k) => [k, s[k]])));
+}
+
+// ---- Keys: checked before they're saved, only by Check and save keys.
+// Says which key scores (jev.js scoringKey() decides, as the worker does).
+function showKeys(s) {
+  $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Not added";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
   $("start").hidden = Boolean(s.orKey || s.apiKey);
-  showScorer(scoringKey(s)?.via, Boolean(s.apiKey));
-  $("role").value = p.role;
-  $("topics").value = p.topics.join("\n");
-  $("linkedinOn").checked = p.linkedinOn;
-  $("xOn").checked = p.xOn;
-  $("redditOn").checked = p.redditOn;
-  checks("kinds", KINDS, p.kinds);
-  checks("redditKinds", REDDIT_KINDS, p.redditKinds);
-  checks("youtubeKinds", YOUTUBE_KINDS, p.youtubeKinds);
-  $("youtubeOn").checked = p.youtubeOn;
-  $("youtubeDescriptions").checked = p.youtubeDescriptions;
-  $("videoModel").value = s.videoModel || DEFAULT_VIDEO_MODEL;
-  $("subreddits").value = p.subreddits.join("\n");
-  $("freshHours").value = p.freshHours;
-  $("freshComments").value = p.freshComments;
-  $("boostWords").value = p.boostWords.join("\n");
-  $("muteWords").value = p.muteWords.join("\n");
-  for (const id of ["highAt", "lowBelow"]) { $(id).value = p[id]; $(`${id}Out`).textContent = Number(p[id]).toFixed(2); }
-  document.querySelector(`input[name=lowMode][value=${p.lowMode}]`).checked = true;
-  $("model").value = s.model || DEFAULT_MODEL;
-  $("redditAbout").value = s.redditAbout || DEFAULT_REDDIT_ABOUT;
-  $("remind").checked = s.reminderOn !== false;
-  $("rtime").value = s.reminderTime || "18:00";
-}
-
-for (const id of ["highAt", "lowBelow"]) $(id).oninput = () => { $(`${id}Out`).textContent = Number($(id).value).toFixed(2); };
-
-$("saveAll").onclick = async () => {
-  let highAt = Number($("highAt").value), lowBelow = Number($("lowBelow").value);
-  if (lowBelow >= highAt) lowBelow = Math.max(0.1, highAt - 0.1);
-  const prefs = {
-    role: $("role").value.trim() || DEFAULT_PREFS.role,
-    topics: lines("topics").slice(0, 8),
-    kinds: readChecks("kinds"),
-    redditKinds: readChecks("redditKinds"),
-    youtubeKinds: readChecks("youtubeKinds"),
-    youtubeOn: $("youtubeOn").checked,
-    youtubeDescriptions: $("youtubeDescriptions").checked,
-    linkedinOn: $("linkedinOn").checked,
-    xOn: $("xOn").checked,
-    redditOn: $("redditOn").checked,
-    subreddits: lines("subreddits"),
-    freshHours: Number($("freshHours").value) || DEFAULT_PREFS.freshHours,
-    freshComments: Number($("freshComments").value) || DEFAULT_PREFS.freshComments,
-    boostWords: lines("boostWords"),
-    muteWords: lines("muteWords"),
-    highAt, lowBelow,
-    lowMode: document.querySelector("input[name=lowMode]:checked").value,
-  };
-  await chrome.storage.local.set({
-    prefs,
-    model: $("model").value.trim() || DEFAULT_MODEL,
-    videoModel: $("videoModel").value.trim() || DEFAULT_VIDEO_MODEL,
-    redditAbout: $("redditAbout").value.trim() || DEFAULT_REDDIT_ABOUT,
-    reminderOn: $("remind").checked,
-    reminderTime: $("rtime").value || "18:00",
-  });
-  $("saveMsg").textContent = "Saved. Open tabs re-score what's on screen.";
-  load();
-};
-
-// Says which key scores (jev.js scoringKey() decides, as the worker does). The TypeSafe field opens itself
-// for someone who scores with it, and is never closed here, so it stays open for someone who opened it.
-function showScorer(via, hasKey) {
-  if (via === "typesafe") $("tsBox").open = true;
+  const via = scoringKey(s)?.via;
   $("scoreStatus").textContent = via === "openrouter"
-    ? `Jev scores your posts through your OpenRouter key.${hasKey ? " The saved TypeSafe key isn't used." : ""}`
-    : via === "typesafe" ? "Jev scores your posts with your TypeSafe key." : "Nothing scores your posts until an OpenRouter key is saved.";
+    ? `Jev, through OpenRouter${s.apiKey ? ". The saved TypeSafe key isn't used." : ""}`
+    : via === "typesafe" ? "Jev, with your TypeSafe key" : "Nothing scores your posts until an OpenRouter key is saved.";
+  $("scoreStatus").classList.toggle("bad", !via);
 }
+const readKeys = () => chrome.storage.local.get(["apiKey", "orKey"]).then(showKeys);
 
+// Disabled while the keys are checked, so a second click can't check (and charge) twice.
 $("saveKeys").onclick = async () => {
+  $("saveKeys").disabled = true;
+  try { await checkKeys(); } finally { $("saveKeys").disabled = false; }
+};
+async function checkKeys() {
   const msgs = [];
+  let bad = false;
   const ts = $("key").value.trim(), or = $("orkey").value.trim();
   if (ts) {
     const r = await fetch("https://api.typesafe.ai/v1/models", { headers: { Authorization: `Bearer ${ts}` } }).catch(() => null);
     if (r && r.ok) { await chrome.storage.local.set({ apiKey: ts }); $("key").value = ""; msgs.push("TypeSafe key saved"); }
-    else msgs.push(r ? `TypeSafe said ${r.status}, not saved` : "TypeSafe unreachable, not saved");
+    else { bad = true; msgs.push(r ? `TypeSafe said ${r.status}, not saved` : "TypeSafe unreachable, not saved"); }
   }
   if (or) {
     const r = await fetch("https://openrouter.ai/api/v1/key", { headers: { Authorization: `Bearer ${or}` } }).catch(() => null);
     if (r && r.ok) { await chrome.storage.local.set({ orKey: or }); $("orkey").value = ""; msgs.push("OpenRouter key saved"); }
-    else msgs.push(r ? `OpenRouter said ${r.status}, not saved` : "OpenRouter unreachable, not saved");
+    else { bad = true; msgs.push(r ? `OpenRouter said ${r.status}, not saved` : "OpenRouter unreachable, not saved"); }
   }
   $("keyMsg").textContent = msgs.join(". ") || "Paste a key first.";
-  load();
-};
-load();
+  $("keyMsg").classList.toggle("bad", bad);
+  $("keyMsg").classList.toggle("good", msgs.length > 0 && !bad);
+  await readKeys();
+}
 
-// Usage stats (analytics.js): shown only in a build that can send. The switch acts at once.
+load();
+$("version").textContent = chrome.runtime.getManifest?.()?.version || "";
+
+// ---- Usage stats (analytics.js): shown only in a build that can send. The switch acts at once.
 function showStats(s) {
   if (!s || !s.available) return;
   $("statsSection").hidden = false;
@@ -131,13 +355,201 @@ readStats();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.statsConsent) readStats();
 });
-$("statsOn").onchange = async () => {
+$("statsOn").addEventListener("change", async () => {
   const r = await chrome.runtime.sendMessage({ type: "stats", action: "consent", on: $("statsOn").checked }).catch(() => null);
   if (r && !r.error) {
     $("statsMsg").textContent = "";
     showStats(r);
+    toast("Saved");
   } else {
     $("statsMsg").textContent = (r && r.error) || "Sieve couldn't change usage stats. Reload the extension and try again.";
     readStats();
   }
+});
+
+// ---- Your agent (extension library sync spec 5.4, settings pinboard spec 4): the worker signs in and
+// sends (agent-sync-run.js); this page only asks it, shows the stored record and asks for the optional
+// permissions.
+const OPTIONAL = { permissions: ["identity"], origins: [`${SERVER}/*`] };
+const agent = (msg) => chrome.runtime.sendMessage({ type: "agentSync", ...msg });
+// A line for an outcome the record has no words for (a refused permission, the worker's error). Cleared
+// when the next action starts; a status read keeps it.
+let note = "";
+// The account's sign-in method, for the agents' meta lines.
+let method;
+
+// What the status line says about a failed account delete, or "" when there's none to tell.
+function deleteFailure(r, state) {
+  const reason = r.detail?.reason;
+  // Signed out by the server while deleting: the account is still there.
+  if (!r.on && state === "signed_out" && reason === "server") return "Couldn't delete your account: this Chrome was signed out. Turn on again, then delete.";
+  // Still on with a reason: the delete didn't reach the server, or it said no. ("invalid" carries the
+  // server's reason for refusing a library instead.)
+  if (!r.on || state === "invalid") return "";
+  if (reason === "offline") return "Couldn't delete your account. Check your connection and try again.";
+  if (reason === "server") return "Sieve's server couldn't delete your account. Try again in a minute.";
+  return "";
+}
+
+// The section's buttons, and Delete at the bottom of the page.
+const agentButtons = () => [...$("agentSection").querySelectorAll("button"), $("agentDelete")];
+// Shown: neither the element nor anything it is in is hidden.
+const shown = (el) => {
+  for (let e = el; e; e = e.parentNode) if (e.hidden) return false;
+  return true;
 };
+
+const whole = (n) => (Number.isFinite(n) ? n : 0);
+function sentAt(ms) {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${time}`;
+}
+function reads(r) {
+  if (!r.lastAt) return "Not sent yet";
+  const n = whole(r.lastItems);
+  return `${n} ${n === 1 ? "pin" : "pins"} from Chrome, sent ${sentAt(r.lastAt)}`;
+}
+
+// The failure note's one button forward, by state; none for limit, older, too_big and invalid.
+const FIX = { other_device: "agentReplace", shrunk: "agentShrink", busy: "agentRetry", error: "agentRetry" };
+
+function showAgent(r, had = null) {
+  if (!r || r.error) { note = r?.error || "Sieve couldn't read the agent sync status. Reload the extension and try again."; $("agentMsg").textContent = note; return; }
+  const on = !!r.on;
+  // No record yet (a fresh install) is off; a record that is on but says off (it shouldn't) is on.
+  const state = on ? (!r.state || r.state === "off" ? "on" : r.state) : r.state || "off";
+  const line = words({ ...r, state });
+  // Something unexpected while acting shows as its own failure, in any state but invalid.
+  const kind = r.detail?.reason === "error" && state !== "invalid" ? "error" : state;
+  const ended = on && state === "ended";
+  // A state with no words (one this page doesn't know) shows no empty note.
+  const failing = on && kind !== "on" && !ended && !!line;
+
+  $("sub").textContent = on && !ended ? "Your library goes to your agent when it changes." : "Sieve works in your browser with your own key.";
+  $("agentOff").hidden = on;
+  $("agentFootOff").hidden = on;
+  $("agentLine").textContent = on ? "" : line;
+  $("agentOnBox").hidden = !on;
+  $("agentFootOn").hidden = !on;
+  $("agentWho").textContent = r.email || "";
+  $("agentReads").textContent = reads(r);
+  // Once the invite ended the agent no longer reads this library: no Send now and nothing to set up.
+  $("agentSend").hidden = ended;
+  $("agentNote").hidden = !on || ended;
+  $("agentFail").hidden = !failing;
+  $("agentFailText").textContent = failing ? line : "";
+  for (const id of ["agentReplace", "agentShrink", "agentRetry"]) $(id).hidden = !(failing && FIX[kind] === id);
+  $("agentInfo").hidden = !ended;
+  $("agentInfoText").textContent = ended ? line : "";
+  $("agentDeleteBox").hidden = !on;
+  method = r.method;
+  showChoice();
+  $("agentMsg").textContent = deleteFailure(r, state) || note;
+  // Focus stays with the agent's buttons: a button the answer hid hands it to the first one still shown,
+  // and one that was disabled during the request (Chrome drops focus from a disabled button) gets it back.
+  const focused = had || document.activeElement;
+  if (!agentButtons().includes(focused)) return;
+  if (!shown(focused)) agentButtons().find(shown)?.focus();
+  else if (document.activeElement !== focused) focused.focus();
+}
+
+// Connect your agent: the chips (one choice, remembered as agentChoice), the code to copy, the meta line.
+let choice = AGENTS[0].id;
+const chosen = () => AGENTS.find((a) => a.id === choice) || AGENTS[0];
+function showChoice() {
+  const a = chosen();
+  for (const c of kids("agentChips")) {
+    const on = c.dataset.id === a.id;
+    c.setAttribute("aria-checked", String(on));
+    c.tabIndex = on ? 0 : -1;
+  }
+  // Each word is kept whole, so a narrow window wraps the line between words, never inside "--scope".
+  $("agentCode").replaceChildren(...a.code.split(" ").flatMap((w, i) => {
+    const span = document.createElement("span");
+    span.textContent = w;
+    return i ? [" ", span] : [span];
+  }));
+  $("agentMeta").textContent = a.meta(method);
+}
+function choose(id, focus = false) {
+  choice = id;
+  showChoice();
+  if (focus) kids("agentChips").find((c) => c.dataset.id === id)?.focus();
+  chrome.storage.local.set({ agentChoice: id }).catch(() => {});
+}
+$("agentChips").replaceChildren(...AGENTS.map((a, i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.dataset.id = a.id; b.textContent = a.name;
+  b.setAttribute("role", "radio");
+  b.onclick = () => choose(a.id);
+  b.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    choose(AGENTS[(i + step + AGENTS.length) % AGENTS.length].id, true);
+  });
+  return b;
+}));
+showChoice();
+
+let copiedTimer = 0;
+$("agentCopy").onclick = () => navigator.clipboard.writeText(chosen().code).then(() => {
+  $("agentCopy").textContent = "Copied";
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => { $("agentCopy").textContent = "Copy"; }, 2000);
+}, () => { $("agentMsg").textContent = "Sieve couldn't copy. Select the line and copy it."; });
+
+const readAgent = () => agent({ do: "status" }).then(showAgent, () => showAgent({ on: false, state: "off" }));
+
+// One request at a time from this page: every agent button is disabled until it answers, and the
+// status line says what is happening.
+let acting = false;
+async function act(progress, fn) {
+  if (acting) return;
+  acting = true;
+  note = "";
+  $("agentMsg").textContent = progress;
+  const buttons = agentButtons();
+  const had = buttons.includes(document.activeElement) ? document.activeElement : null;
+  for (const b of buttons) b.disabled = true;
+  let r = null;
+  try {
+    r = await fn().catch(() => ({ error: "Sieve couldn't reach its background worker. Reload the extension and try again." }));
+  } finally {
+    for (const b of buttons) b.disabled = false;
+    acting = false;
+    if ($("agentMsg").textContent === progress) $("agentMsg").textContent = "";
+  }
+  // Drawn once the buttons are back, so focus can move to one that is enabled.
+  if (r) showAgent(r, had);
+  else had?.focus();
+}
+
+// The permission is asked first, from the click: Chrome only grants optional permissions during a
+// user gesture, so nothing is awaited before chrome.permissions.request.
+const turnOn = (provider) => act("Signing in…", async () => {
+  const granted = await chrome.permissions.request(OPTIONAL).catch(() => false);
+  if (!granted) {
+    note = words({ state: "no_permission" });
+    $("agentMsg").textContent = note;
+    return null;
+  }
+  return agent({ do: "on", provider });
+});
+$("agentOn").onclick = () => turnOn("google");
+$("agentEmail").onclick = () => turnOn("email");
+$("agentSend").onclick = () => act("Sending…", () => agent({ do: "send" }));
+$("agentRetry").onclick = () => act("Sending…", () => agent({ do: "send" }));
+$("agentReplace").onclick = () => act("Sending…", () => agent({ do: "send", replace: true }));
+$("agentShrink").onclick = () => act("Sending…", () => agent({ do: "send", allowShrink: true }));
+$("agentOffBtn").onclick = () => act("Turning off…", () => agent({ do: "off" }));
+$("agentDelete").onclick = () => {
+  if (!confirm("This deletes your Sieve account and everything your agent reads, from iPhone too. Delete it?")) return;
+  act("Deleting…", () => agent({ do: "delete" }));
+};
+chrome.storage.local.get("agentChoice").then(({ agentChoice }) => {
+  if (AGENTS.some((a) => a.id === agentChoice)) { choice = agentChoice; showChoice(); }
+}, () => {}).then(readAgent);
+// A send by the alarm, or a change in another tab, shows when this page is looked at again.
+window.onfocus = () => { if (!acting) readAgent(); };

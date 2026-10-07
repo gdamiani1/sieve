@@ -111,12 +111,12 @@ try {
   assert.equal(p.body.client_id, store.statsClientId);
   assert.equal(p.body.timestamp_micros, new Date("2026-10-03T12:00:00").getTime() * 1000);
   const ev = Object.fromEntries(p.body.events.map((e) => [e.name + "|" + (e.params.platform || e.params.where || ""), e.params]));
-  assert.deepEqual(ev["brief_made|x"], { platform: "x", count: 2, version: "1.4.1", install: st.installCode, session_id: 20261003, engagement_time_msec: 1 });
+  assert.deepEqual(ev["brief_made|x"], { platform: "x", count: 2, version: "1.4.1", install: st.installCode, agent_sync: "off", session_id: 20261003, engagement_time_msec: 1 });
   assert.equal(ev["posts_scored|linkedin"].scorer, "jev");
   assert.deepEqual(Object.keys(store.statsDays), ["2026-10-04"], "sent day removed, today kept");
 
   // Nothing in the body is a string outside the allowed values (plus version, install, ids).
-  const allowed = new Set(["x", "linkedin", "reddit", "youtube", "other", "jev", "fallback", "brief", "digest", "1.4.1", st.installCode,
+  const allowed = new Set(["x", "linkedin", "reddit", "youtube", "other", "jev", "fallback", "brief", "digest", "on", "off", "1.4.1", st.installCode,
     "brief_made", "posts_scored", "video_watched", "digest_made", "prompt_copied", "post_saved", "library_exported", store.statsClientId]);
   JSON.stringify(p.body, (_k, v) => { if (typeof v === "string") assert.ok(allowed.has(v), `unexpected string ${v}`); return v; });
 
@@ -253,6 +253,22 @@ try {
     assert.equal(posts.length, 0);
     await a.count("digest_made");
     assert.deepEqual(store.statsDays, { "2026-10-03": { digest_made: 1 } });
+  }
+
+  // agent_sync says whether sending to the agent is on, read from agentSync.on when the day is sent:
+  // on only for true; missing, off or rubbish all read as off. No other agent field is sent.
+  for (const [record, want] of [[undefined, "off"], [{ on: false, email: "a@b.c" }, "off"], [{ on: "yes" }, "off"], ["junk", "off"], [{ on: true, email: "a@b.c", access: "tok" }, "on"]]) {
+    reset();
+    a.setClockForTests(at("2026-10-03T10:00:00"));
+    await a.setConsent(true);
+    if (record !== undefined) store.agentSync = record;
+    await a.count("digest_made");
+    a.setClockForTests(at("2026-10-04T09:00:00"));
+    await a.sendDue();
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].body.events[0].params.agent_sync, want, JSON.stringify(record));
+    assert.deepEqual(Object.keys(posts[0].body.events[0].params).sort(), ["agent_sync", "count", "engagement_time_msec", "install", "session_id", "version"]);
+    assert.ok(!JSON.stringify(posts[0].body).includes("a@b.c") && !JSON.stringify(posts[0].body).includes("tok"));
   }
 
   // startStats leaves an existing alarm alone.

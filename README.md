@@ -76,7 +76,9 @@ you do the part that needs judgement.
 
 ## Make it yours
 
-Settings (right-click the icon → Options, or **Settings** in the popup):
+Settings (right-click the icon → Options, or **Settings** in the popup). Since 1.5.0 the page follows Sieve for
+iPhone's design: **Your agent** comes first, and every change saves as you make it (a field when you leave it,
+a switch or choice at once), with a short "Saved" note. Keys save only through **Check and save keys**:
 - **What you care about:** one line about who you are and up to 8 topics. Every post is scored against these,
   and the badge shows which of your topics a post is about.
 - **Kinds of posts** to show on LinkedIn and X (technique to try, built something, opinions, questions, news,
@@ -91,20 +93,20 @@ Settings (right-click the icon → Options, or **Settings** in the popup):
   never do (crypto, webinar, "we're hiring").
 - **Scores:** where highlighting starts, what counts as low, and whether low posts fade, hide or stay.
 - **Reddit:** only in the subreddits you list, and your own definition of "still fresh".
-- LinkedIn, X, Reddit and YouTube can each be switched off from the popup. Saving settings re-scores what's
-  on screen.
+- LinkedIn, X, Reddit and YouTube can each be switched off from the popup. A saved change re-scores what's
+  on screen in open tabs.
 
 ## Setup
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
    - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 5 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
-   - **Have a TypeSafe key? (optional)**, closed under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
+   - **TypeSafe key (optional)**, under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
    - **Your facts for Reddit.** Only true, first-hand things. The scorer uses them to judge whether you could answer a thread.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
 
 Keys live only in `chrome.storage.local` in your browser profile. Sieve sends data to two services at most and
-nowhere else. Scoring requests go to OpenRouter, which passes them to TypeSafe for Jev; when OpenRouter can't
+nowhere else, unless you turn on sending to your agent (see Your agent below). Scoring requests go to OpenRouter, which passes them to TypeSafe for Jev; when OpenRouter can't
 reach Jev, the same request goes through OpenRouter to a fixed general model (DeepSeek V4 Flash) instead; with
 only a TypeSafe key, they go straight to TypeSafe. Whoever receives a scoring request gets what is scored: a
 post's text (for YouTube, the title, channel and length, the text YouTube shows with the tile, and for a tile
@@ -128,12 +130,33 @@ request to the model you picked, except scoring, which goes to Jev (or, as the f
 - A digest of a day's posts: well under a cent.
 - A brief: $0.00004 to $0.0002 with DeepSeek V4 Flash (measured on invented posts).
 
+## Your agent (invite-only)
+
+Off by default, and for now only for people Sieve has invited. Settings > Your agent sends your Chrome library
+to Sieve's server, so a coding agent you connect there can read it next to your iPhone pins.
+
+- **What is sent:** your saved posts with their text, your briefs and your watched-video notes, the same items
+  as Export library, but without digests. Nothing else leaves your browser for this.
+- **When:** only after you turn it on. It sends at once on **Turn on** and **Send now**. After that, within 15
+  minutes of a change to your saved posts, briefs or watched videos, and only if something changed.
+- **Where:** Sieve's server at mcp.divergada.com, which runs on Cloudflare. You sign in through WorkOS (Google
+  or email), which gives Sieve your email address. The settings page shows it while sync is on.
+- **Turning it off:** **Turn off** stops sending, deletes the Chrome copy on the server, signs this Chrome out
+  and gives back the optional permissions. If the server can't be reached at that moment, the settings page
+  says the copy may still be there. **Delete my Sieve account** deletes the account and everything the server
+  keeps, your iPhone library included.
+- **Permissions:** the `identity` permission (for the sign-in window) and access to mcp.divergada.com are
+  optional. Chrome asks for them only when you click Turn on, and Sieve gives them back when you turn it off.
+
+If usage stats are on (see below), the daily counts also say whether sending to your agent is on, as "on" or
+"off". They never carry your email or anything from your library.
+
 ## Usage stats
 
 Off by default. The popup asks once, and Settings > Usage stats turns it on or off. Consent can only be
 changed from Sieve's own pages (the popup or settings), never from a script on a feed page. Only after a yes, once a day, the extension sends Google Analytics
 counts for each finished day you used it: posts scored, saved, briefed, copied as a prompt, watched, put
-in a digest and exported, per platform, with the extension version, which scorer answered, and a random
+in a digest and exported, per platform, with the extension version, which scorer answered, whether sending to your agent is on, and a random
 install ID made in your browser. Never post text, links, names, titles, facts, keys or anything you type.
 Turning it off deletes the ID and any unsent counts. All of it is in `analytics.js`, with a comment at the
 top saying exactly this.
@@ -168,6 +191,10 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
     node test/watch_drawer_test.mjs # the "watched for you" drawer, built line by line like youtube.js used to (offline)
     node test/video_platform_test.mjs # Watch it for me on a platform other than YouTube (offline)
+    node test/agent_sync_test.mjs       # sending the library to your agent: sign-in URL and answers, the body, the hash, the words (offline)
+    node test/agent_sync_worker_test.mjs # the worker's sign-in, sends, retries, turning off and deleting, against a fake server (offline)
+    node test/agent_sync_options_test.mjs # the settings page's Your agent section (offline)
+    node test/options_autosave_test.mjs # the settings page saves each change as it's made, and on closing the tab (offline)
     node test/analytics_test.mjs        # opt-in usage stats: counting, consent, the daily send (offline)
     node test/analytics_worker_test.mjs # the worker counts actions only after a yes (offline)
     node test/store_zip_test.mjs    # the store package: leaves out tests and tools, refuses forbidden words and missing loads (offline)
@@ -222,6 +249,7 @@ instead of high).
   `brief-panel.js`: shows a brief on LinkedIn, X and YouTube. `export.js`: the Export library file.
 - `youtube-text.js`: what a YouTube tile says beyond its title (description lines, chapters, YouTube's summary),
   and the start of a video's description from YouTube's player endpoint when the tile shows none.
+- `agent-sync.js`: sending the library to your agent, the pure part (sign-in URL, the library body and its hash, the words). `agent-sync-run.js`: the worker's part (sign-in, tokens, sends, turning off).
 - `watch-drawer.js`: the "watched for you" drawer for Watch it for me, shared by every page that offers it.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page. All three follow Chrome's light or dark setting: their colours are tokens on `:root`, with dark values under `prefers-color-scheme: dark`.
 
