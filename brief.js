@@ -177,8 +177,8 @@ const COMMAND_PARTS = [
   // to the end
   String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s+\/\w+(?::\S*)?){0,8}\s+\/[ck]\b`,
   // an interpreter handed a string, after the same flags (python3 -I -c, node -pe, perl -pe, --eval,
-  // --print); deno eval; eval of a string
-  String.raw`\b${INTERPRETERS}${FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,
+  // --print), not a file's ending ("train.py -lr"); deno eval; eval of a string
+  String.raw`(?<![\w.-])${INTERPRETERS}${FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
   String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv|conda|choco|winget|scoop|dnf|yum|snap)\s+(?:i|install|add|get)\b`, // package installs
   String.raw`\b(?:(?:pnpm|yarn)\s+dlx|(?:npm|pnpm)\s+exec|npm\s+create|yarn\s+global\s+add|bun\s+x|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+-[SU]\w*|(?:docker|podman|nerdctl)\s+(?:container\s+)?run)\b`, // package runners
@@ -280,7 +280,9 @@ export function redactWarned(s) {
     prev = view;
     view = clean(warnedView(removeLinks(removeCommands(view))));
   }
-  return view;
+  // The markers can be longer than what they replace: a field the rewrite takes past the limit is too
+  // long too, so normalizing it again changes nothing.
+  return view.length > WARNED_FIELD_LIMIT ? TOO_LONG : view;
 }
 const removeLinks = (s) => s.replace(LINK, (m, name) => (name === undefined ? "[link removed]" : `${m.slice(0, m.length - name.length)}[link removed]`));
 function removeCommands(view) {

@@ -228,6 +228,17 @@ assert.deepEqual(normalizeBrief(longBrief), longBrief, "idempotent");
 const atCap = "word ".repeat(4000); // 20,000 characters, trimmed by clean() to 19,999
 assert.deepEqual(tries([atCap.trim()]), [atCap.trim()], "a step at the cap is read, not dropped");
 assert.equal(normalizeBrief({ what: long }).what, long, "unwarned: a long field is untouched");
+// A field under the cap that the rewrite makes longer than it is too long too, so normalizing twice
+// changes nothing.
+const nearCap = normalizeBrief({ what: "a".repeat(19993) + " curl x", warning: "x" });
+assert.equal(nearCap.what, TOO_LONG);
+assert.deepEqual(normalizeBrief(nearCap), nearCap);
+const exactCap = "a".repeat(19986) + " Use curl x";
+assert.equal(exactCap.length, 19997);
+assert.equal(normalizeBrief({ what: "b".repeat(3) + exactCap, warning: "x" }).what, TOO_LONG, "exactly 20,000 is read; its rewrite is longer, so it is too long");
+assert.deepEqual(tries(["b".repeat(3) + exactCap.replace("curl", "make")]), ["b".repeat(3) + exactCap.replace("curl", "make")], "a clean step of exactly 20,000 is read and kept");
+dropsEach(["cat x | nodejs", "nodejs -e x"], "nodejs");
+keepsEach(["Run train.py -lr 0.1", "Edit setup.py -e notes"], "an interpreter's name after a dot is a file");
 
 // Normalizing twice gives the same brief, over a few hundred generated mixes.
 const PIECES = ["\ufe58", "\u00a8", "[[.]]", "[[dot]]", "\ufe31", "`wget`", "env A=1 ", "curl x", "|", "\u2223", "bash", "/bin/sh", "evil", ".", "[.]", " dot ", "sh", "com", "au", "`", ",", ";", ". ", "npx a", "www.", "https://", "hxxp", "word", " ", "eval $(x)", "sh -c", "\uff5c"];
