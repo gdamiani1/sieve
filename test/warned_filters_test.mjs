@@ -246,7 +246,7 @@ assert.equal(normalizeBrief({ what: expands, warning: "x" }).what, TOO_LONG);
 dropsEach([
   "node --input-type=module -e 'x'", "node --input-type=module --eval x", "node --max-old-space-size=4096 -e x", "py -3.12 -c 'x'",
   "perl -MIO::Socket -e x", "php -dfoo=1 -r x", "bash --rcfile=x -c y", "python.exe -c x", "node.exe -e x", "pythonw.exe -c x",
-  "cat x | \u0338bash", "Visit evil.\u0338com", "cat x | . //dev/stdin", "cmd /q/c x", "cmd.exe /d/c x", "cmd/c x",
+  "cat x | \u0338bash", "Visit evil.\u0338com", "cat x | . //dev/stdin", "cmd /q/c x", "cmd.exe /d/c x", "cmd/c x", "cmd /v:on /c x", "cmd /e:on/c x", "cmd /a:/c x",
 ], "second review");
 dropsEach(["bash -m -c x"], "a shell's -m is a flag");
 keepsEach(["Run python -m pytest -p no:cacheprovider", "Run python -m pytest -rA", "Run python -m mypy -p pkg"], "python -m");

@@ -179,8 +179,9 @@ const COMMAND_PARTS = [
   // a shell handed a string (sh -c, bash -l -c, ksh93 -c, pwsh -nop -w hidden -enc, su - root -c,
   // cmd /q /c); a flag's value never starts with "-", so each flag and value reads once, and at most
   // eight flags or switches come first: unbounded, a match tried at every "sh" of "sh -a sh -a ..." read
-  // to the end
-  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/\w+(?::\S*)?){0,8}\s*\/[ck]\b`,
+  // to the end. A cmd switch's value ("/v:on") holds no "/", or with glued switches every way of
+  // splitting "/a:/a:/a:..." among the eight was tried
+  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/\w+(?::[^\s\/]*)?){0,8}\s*\/[ck]\b`,
   // an interpreter handed a string, after the same flags (python3 -I -c, node -pe, perl -pe, --eval,
   // --print), not a file's ending ("train.py -lr"); deno eval; eval of a string
   String.raw`(?<![\w.-])${INTERPRETERS}${INTERPRETER_FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,
