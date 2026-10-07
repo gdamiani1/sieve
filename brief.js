@@ -153,7 +153,8 @@ export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\
 // ("| /bin/bash", "| /usr/bin/env bash"), after any of sudo, doas, env, xargs, exec, command and nohup
 // and timeout, stdbuf, nice and busybox, with their flags, a flag's value, variable settings and counts
 // ("env -u X", "env FOO=1", "xargs -n 1"); the shell may be quoted or escaped ("| 'bash'", "| \bash"),
-// numbered ("ksh93") or named by $SHELL or $BASH, or standard input dot-sourced ("| . /dev/stdin"). Every part reads forward once: a path is a run of segments
+// numbered ("ksh93") or named by $SHELL or $BASH, or standard input dot-sourced ("| . /dev/stdin").
+// Every part reads forward once: a path is a run of segments
 // that each end in "/" and hold none, each runner is a fixed word, and each of its arguments starts with
 // "-", a word character and "=", or a digit, and holds no space and no "|", so one pipe's runners never
 // read on into the next pipe's. A flag's value starts with none of those, holds no "=" and is no runner's
@@ -161,13 +162,17 @@ export const BARE_DOMAIN = String.raw`(?<![\w-]|[\w-]\.)(?:-|\.(?=[\w-]))*?(\b[\
 // "| env -u env -u ... x" read both ways and the time doubled with each.
 const SHELLS = String.raw`(?:(?:ba|z|da|k|c|tc|fi|a)?sh|pwsh|powershell)`;
 // An interpreter, with a version or Windows' "w" after it ("python3.12", "pythonw", "node18").
-const INTERPRETERS = String.raw`(?:pythonw?|py|node|nodejs|perl|ruby|php|deno|bun|lua|osascript)[0-9.]*`;
+const INTERPRETERS = String.raw`(?:pythonw?|py|node|nodejs|perl|ruby|php|deno|bun|lua|osascript)[0-9.]*(?:\.exe)?`;
 const PATH_TO = String.raw`(?:[\w.~-]*\/)*`;
 const RUNNER_NAME = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup|timeout|stdbuf|nice|busybox)`;
 const RUNNER = String.raw`${RUNNER_NAME}(?:\s+(?:-[^\s|]*(?:\s+(?!${RUNNER_NAME}\b)[^\s|\-0-9=][^\s|=]*)?|\w+=[^\s|]*|\d+))*\s+`;
-const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*["'\\]?(?:${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?(?:SHELL|BASH)\b|\.\s+\/(?:dev\/(?:stdin|fd\/0)|proc\/self\/fd\/0)\b)`;
-// Up to eight flags, each with an optional value that never starts with "-".
-const FLAGS = String.raw`(?:\s+-[\w-]*(?:\s+[^\s-]\S*)?){0,8}`;
+const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*["'\\]?(?:${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?(?:SHELL|BASH)\b|\.\s+\/+(?:dev\/+(?:stdin|fd\/+0)|proc\/+self\/+fd\/+0)\b)`;
+// Up to eight flags of any spelling ("--input-type=module", "-MIO::Socket", "-3.12"), each with an
+// optional value that never starts with "-", so each flag and value reads one way.
+const FLAGS = String.raw`(?:\s+-\S*(?:\s+[^\s-]\S*)?){0,8}`;
+// The same for an interpreter, without Python's "-m": what follows it is a module and its own flags
+// ("python -m pytest -rA"), never a string to run.
+const INTERPRETER_FLAGS = String.raw`(?:\s+-(?!m\b)\S*(?:\s+[^\s-]\S*)?){0,8}`;
 // Everything LINKISH finds that is a command rather than an address.
 const COMMAND_PARTS = [
   String.raw`${PIPE_RUN}|[<>]\(`,                                                       // a pipe into a shell, process substitution
@@ -175,10 +180,10 @@ const COMMAND_PARTS = [
   // cmd /q /c); a flag's value never starts with "-", so each flag and value reads once, and at most
   // eight flags or switches come first: unbounded, a match tried at every "sh" of "sh -a sh -a ..." read
   // to the end
-  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s+\/\w+(?::\S*)?){0,8}\s+\/[ck]\b`,
+  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/\w+(?::\S*)?){0,8}\s*\/[ck]\b`,
   // an interpreter handed a string, after the same flags (python3 -I -c, node -pe, perl -pe, --eval,
   // --print), not a file's ending ("train.py -lr"); deno eval; eval of a string
-  String.raw`(?<![\w.-])${INTERPRETERS}${FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,
+  String.raw`(?<![\w.-])${INTERPRETERS}${INTERPRETER_FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
   String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv|conda|choco|winget|scoop|dnf|yum|snap)\s+(?:i|install|add|get)\b`, // package installs
   String.raw`\b(?:(?:pnpm|yarn)\s+dlx|(?:npm|pnpm)\s+exec|npm\s+create|yarn\s+global\s+add|bun\s+x|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+-[SU]\w*|(?:docker|podman|nerdctl)\s+(?:container\s+)?run)\b`, // package runners
@@ -212,9 +217,10 @@ const PIPE_MARKS = /\|\p{M}+/gu;
 const DEFANGED_SCHEME = /\bh(?:xx|\*\*)p(s|\[s\])?(?=\s*(?:[[(]|:))/gi;
 // The ideographic full stop, which browsers read as a dot in an address (NFKC makes the halfwidth one this).
 const IDEOGRAPHIC_STOP = /\u3002+/g;
-// Combining marks right after an ASCII letter or digit that NFKC could not join to it ("s\u0338udo"): the
-// check reads the letter alone. Marks on any other letter stay, so other scripts read as they are.
-const ASCII_MARKS = /(?<=[A-Za-z0-9])\p{M}+/gu;
+// Combining marks right after a printable ASCII character or a space that NFKC could not join to it
+// ("s\u0338udo", "| \u0338bash"): the check reads the character alone. Marks on any other letter stay,
+// so other scripts read as they are.
+const ASCII_MARKS = /(?<=[\x20-\x7e])\p{M}+/gu;
 // A run of brackets is tried only where it starts, one space allowed between two (the fields arrive
 // cleaned, with single spaces): tried at every bracket of a long run, it read the rest each time.
 const DEFANGED_COLON = /(?:(?<! ) )?(?<![[(]|[[(] )(?:[[(] ?)+:(\/\/)?(?: ?[\])])+ ?/g;
@@ -249,13 +255,18 @@ export const warnedView = (s) => {
 };
 // Whether a warned brief's step or need carries something it must never pass on: what LINKISH finds in
 // the check view.
-const carriesLink = (s) => s.length > WARNED_FIELD_LIMIT || LINKISH.test(warnedView(s));
+const carriesLink = (s) => {
+  if (s.length > WARNED_FIELD_LIMIT) return true;
+  const view = warnedView(s);
+  return view.length > WARNED_FIELD_LIMIT || LINKISH.test(view);
+};
 
-// A warned brief's field longer than this, after cleaning, is not read at all: it counts as carrying a
-// command, so a step or need with it goes and a field that describes the source becomes TOO_LONG. A
-// model's answer is capped at 4,000 tokens, so no real field comes near it; it is here so a check can
-// never give up on a hostile shape and read it as clean (the phone's regex engine gives up on some at
-// 100,000 characters). Counted in UTF-16 units, as the phone counts it too.
+// A warned brief's field longer than this, after cleaning, or whose check view is (NFKC can make one
+// character four: "\u33c2" is "a.m."), is not read at all: it counts as carrying a command, so a step or
+// need with it goes and a field that describes the source becomes TOO_LONG. A model's answer is capped
+// at 4,000 tokens, so no real field comes near it; it is here so a check is never run on text long
+// enough for the phone's regex engine to give up on and read as clean (it gives up on some hostile
+// shapes past about 50,000 characters). Counted in UTF-16 units, as the phone counts it too.
 const WARNED_FIELD_LIMIT = 20000;
 const TOO_LONG = "[removed: too long to check]";
 
@@ -272,6 +283,7 @@ export function redactWarned(s) {
   const field = String(s ?? "");
   if (field.length > WARNED_FIELD_LIMIT) return TOO_LONG;
   let view = clean(warnedView(field));
+  if (view.length > WARNED_FIELD_LIMIT) return TOO_LONG;
   if (!LINKISH.test(view)) return field;
   // Again until nothing changes: a link glued to a name ("www.evil.comhttps://x") or to a shell
   // ("x|shhttps://y") hides that name or shell until the link is gone. A pass that changes anything

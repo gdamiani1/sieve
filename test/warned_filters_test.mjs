@@ -238,6 +238,18 @@ assert.equal(exactCap.length, 19997);
 assert.equal(normalizeBrief({ what: "b".repeat(3) + exactCap, warning: "x" }).what, TOO_LONG, "exactly 20,000 is read; its rewrite is longer, so it is too long");
 assert.deepEqual(tries(["b".repeat(3) + exactCap.replace("curl", "make")]), ["b".repeat(3) + exactCap.replace("curl", "make")], "a clean step of exactly 20,000 is read and kept");
 dropsEach(["cat x | nodejs", "nodejs -e x"], "nodejs");
+// Second review: a field under the cap whose check view NFKC makes longer than it is too long too.
+const expands = "\u33c2".repeat(19990) + " curl x";
+assert.equal(expands.length, 19997);
+assert.deepEqual(tries([expands]), [], "a step whose view is over the cap goes");
+assert.equal(normalizeBrief({ what: expands, warning: "x" }).what, TOO_LONG);
+dropsEach([
+  "node --input-type=module -e 'x'", "node --input-type=module --eval x", "node --max-old-space-size=4096 -e x", "py -3.12 -c 'x'",
+  "perl -MIO::Socket -e x", "php -dfoo=1 -r x", "bash --rcfile=x -c y", "python.exe -c x", "node.exe -e x", "pythonw.exe -c x",
+  "cat x | \u0338bash", "Visit evil.\u0338com", "cat x | . //dev/stdin", "cmd /q/c x", "cmd.exe /d/c x", "cmd/c x",
+], "second review");
+dropsEach(["bash -m -c x"], "a shell's -m is a flag");
+keepsEach(["Run python -m pytest -p no:cacheprovider", "Run python -m pytest -rA", "Run python -m mypy -p pkg"], "python -m");
 keepsEach(["Run train.py -lr 0.1", "Edit setup.py -e notes"], "an interpreter's name after a dot is a file");
 
 // Normalizing twice gives the same brief, over a few hundred generated mixes.

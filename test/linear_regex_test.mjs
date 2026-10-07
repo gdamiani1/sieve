@@ -125,6 +125,8 @@ const warnedLong = [
 ];
 warnedLong.push(
   "| node18".repeat(size / 8), "python -I".repeat(size / 9), "node -x ".repeat(size / 8) + "-pe", "cmd /q".repeat(size / 6),
+  "node -a=b ".repeat(size / 10), "py -3.1 ".repeat(size / 8), "node -x=node ".repeat(size / 13), "python -m x ".repeat(size / 12) + "-c",
+  "\u33c2".repeat(size / 4), "cmd/q".repeat(size / 5), "| . //".repeat(size / 6),
   "\u3002".repeat(size), "a\u0338".repeat(size / 2), "| . /dev/x".repeat(size / 10), "| $BASH".repeat(size / 7),
 );
 // A warned field over 20,000 characters is not read at all ("too long to check"), so the rewrite and
