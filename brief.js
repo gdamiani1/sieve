@@ -179,10 +179,11 @@ const COMMAND_PARTS = [
   // a shell handed a string (sh -c, bash -l -c, ksh93 -c, pwsh -nop -w hidden -enc, su - root -c,
   // cmd /q /c); a flag's value never starts with "-", so each flag and value reads once, and at most
   // eight flags or switches come first: unbounded, a match tried at every "sh" of "sh -a sh -a ..." read
-  // to the end. A flag may start with "+" ("bash +x -c"). cmd takes any number of switches, each a run
+  // to the end. A flag may start with "+" ("bash +x -c"). cmd takes up to sixteen switches, each a run
   // of slashes and then anything but a space or a slash ("/v:on", "//q", "/:"), so they split one way:
-  // when a switch's value could hold "/", every way of splitting "/a:/a:/a:..." among them was tried
-  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/+[^\s\/]+)*\s*\/+[ck]\b`,
+  // when a switch's value could hold "/", every way of splitting "/a:/a:/a:..." was tried, and with no
+  // bound every "cmd" of "cmd/cmd/cmd/..." started a match that read to the end
+  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/+[^\s\/]+){0,16}\s*\/+[ck]\b`,
   // an interpreter handed a string, after the same flags (python3 -I -c, node -pe, perl -pe, --eval,
   // --print), not a file's ending ("train.py -lr"); deno eval; eval of a string
   String.raw`(?<![\w.-])${INTERPRETERS}${INTERPRETER_FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,

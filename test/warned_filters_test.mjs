@@ -254,7 +254,7 @@ keepsEach(["Run train.py -lr 0.1", "Edit setup.py -e notes"], "an interpreter's 
 
 // Second addendum, 7 Oct: the last command shapes.
 dropsEach([
-  "cmd /a /b /d /e /f /g /h /i /j /c x", "cmd //c x", "cmd /:/c x", "cmd /q //k x",
+  "cmd /a /b /d /e /f /g /h /i /j /c x", "cmd /q/d/s/a/u/e:on/f:on/v:on/t:0a/x/y/c x", "C:/Windows/System32/cmd.exe /c x", "cmd //c x", "cmd /:/c x", "cmd /q //k x",
   "bash +x -c y", "sh +e -c y", "bash -a +x -c y",
   "pacman --upgrade x", "pacman --sync x",
   "docker-compose run x", "docker compose run x", "podman-compose run x", "podman compose run x",

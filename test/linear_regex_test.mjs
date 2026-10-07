@@ -126,7 +126,7 @@ const warnedLong = [
 warnedLong.push(
   "| node18".repeat(size / 8), "python -I".repeat(size / 9), "node -x ".repeat(size / 8) + "-pe", "cmd /q".repeat(size / 6),
   "node -a=b ".repeat(size / 10), "py -3.1 ".repeat(size / 8), "node -x=node ".repeat(size / 13), "python -m x ".repeat(size / 12) + "-c",
-  "\u33c2".repeat(size / 4), "cmd/q".repeat(size / 5), "cmd /a:" + "/a:".repeat(size / 3), "cmd" + "//a".repeat(size / 3), "cmd" + " /a".repeat(size / 3) + " /", "cmd" + "/".repeat(size),
+  "\u33c2".repeat(size / 4), "cmd/q".repeat(size / 5), "cmd /a:" + "/a:".repeat(size / 3), "cmd" + "//a".repeat(size / 3), "cmd" + " /a".repeat(size / 3) + " /", "cmd" + "/".repeat(size), "cmd/".repeat(size / 4), "x.cmd/".repeat(size / 6), "cmd /".repeat(size / 5),
   "bash" + " +x -a".repeat(size / 6), "sh +a ".repeat(size / 6), "docker compose ".repeat(size / 15), "| . /proc/".repeat(size / 10) + "1/fd/0", "cmd" + "/a:x".repeat(size / 4), "| . //".repeat(size / 6),
   "\u3002".repeat(size), "a\u0338".repeat(size / 2), "| . /dev/x".repeat(size / 10), "| $BASH".repeat(size / 7),
 );
