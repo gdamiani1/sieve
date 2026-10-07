@@ -123,8 +123,20 @@ const warnedLong = [
   "su -x ".repeat(size / 6) + "x",
   "sh -a x/sh ".repeat(size / 11),
 ];
+warnedLong.push(
+  "| node18".repeat(size / 8), "python -I".repeat(size / 9), "node -x ".repeat(size / 8) + "-pe", "cmd /q".repeat(size / 6),
+  "\u3002".repeat(size), "a\u0338".repeat(size / 2), "| . /dev/x".repeat(size / 10), "| $BASH".repeat(size / 7),
+);
+// A warned field over 20,000 characters is not read at all ("too long to check"), so the rewrite and
+// the whole brief are timed on each input cut to the cap; the view and LINKISH on all of it.
+const CAP = 20000;
 const warnedStarted = performance.now();
-for (const s of warnedLong) { LINKISH.test(warnedView(s)); redactWarned(s); normalizeBrief({ what: s, warning: "x", try: [s], says: [s] }); }
+for (const s of warnedLong) {
+  LINKISH.test(warnedView(s));
+  const capped = s.slice(0, CAP);
+  redactWarned(capped);
+  normalizeBrief({ what: capped, warning: "x", try: [capped], says: [capped] });
+}
 const warnedMs = performance.now() - warnedStarted;
-assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over thirty-four hostile hostile inputs: ${warnedMs.toFixed(1)} ms`);
+assert.ok(warnedMs < 3000, `the warned-brief view, LINKISH and the rewrite over the hostile hostile inputs: ${warnedMs.toFixed(1)} ms`);
 console.log(`linear_regex_test: ok (${compared} inputs compared, hostile 100k in ${ms.toFixed(1)} ms, warned filters in ${warnedMs.toFixed(1)} ms)`);

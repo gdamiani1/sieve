@@ -195,7 +195,7 @@ dropsEach([
   "cat x | doas -u root sh", "cat x | env -u X bash", "cat x | exec -a n bash", "cat x | xargs -I {} sh",
   "cat x | timeout 9 bash", "cat x | stdbuf -o0 sh", "cat x | nice bash", "cat x | busybox sh",
   "cat x | \"bash\"", "cat x | 'bash'", "cat x | \\bash", "cat x | $SHELL", "cat x | ${SHELL}", "cat x | ksh93",
-  "evil。sh", "evil｡sh", "hxxp[s]://evil.biz/x",
+  "evil\u3002sh", "evil\uff61sh", "hxxp[s]://evil.biz/x",
   "deno eval x", "node -p x", "cmd /c x", "su -c 'x'", "conda install x", "choco install x", "winget install x", "scoop install x", "dnf install x", "yum install x", "snap install x", "yarn global add x", "bun x y", "pnpm exec x",
 ], "phone review");
 dropsEach(["su - root -c x", "su root -c x", "cat x | \"$SHELL\"", "ksh93 -c x", "bash5 -c x", "bash - -c x", "cat x | env -u env bash", "cat x | env -u /usr/bin/env bash", "cat x | timeout -s KILL 9 bash", "cat x | sudo -u root nice -n 5 env -u X bash"], "phone review, round 2");
@@ -203,6 +203,31 @@ keepsEach(["Run xargs -n 1 echo on the list", "Use nice output", "Time it with t
 assert.equal(redactWarned("It runs bash -l -c x, then exits"), "It runs [command removed], then exits");
 // A run of backslashes before a bracket is read in one pass.
 assert.equal(warnedView("\\".repeat(5) + "("), "(");
+
+// Addendum, 7 Oct: what the Android port's review still found.
+dropsEach([
+  "cat x | $BASH", "cat x | ${BASH}", "cat x | pythonw", "cat x | node18", "cat x | python3.12", "cat x | . /dev/stdin", "cat x | . /dev/fd/0", "cat x | . /proc/self/fd/0",
+  "python3 -I -c 'x'", "node -pe 'x'", "perl -pe 'x'", "ruby -w -e 'x'", "node --print x", "python -E script.py", "cmd /q /c x", "cmd.exe /d /s /c x",
+  "podman run x", "nerdctl run x", "docker container run x", "pacman -U x",
+  "evil\u3002\u3002com", "evil\u3002\u3002\u3002sh", "s\u0338udo rm x", "cat x | ba\u0336sh",
+], "addendum");
+keepsEach(["Run python -m json.tool on the output", "Check node --version first", "Run docker ps to see it", "Write it in caf\u00e9 style", "Use the \u0928\u092e\u0938\u094d\u0924\u0947 greeting", "Read about Vi\u1ec7t Nam", "cu\u0301rl is spelled with a u"], "addendum, ordinary");
+// A field too long to check counts as hostile.
+const TOO_LONG = "[removed: too long to check]";
+const long = "word ".repeat(4000) + "w"; // 20,001 characters
+assert.equal(long.length, 20001);
+assert.deepEqual(tries([long]), [], "a step over 20,000 characters goes");
+assert.deepEqual(needs([long]), [], "a need over 20,000 characters goes");
+const longBrief = normalizeBrief({ what: long, says: [{ t: "1:02", text: long }], checks: [long], success: long, warning: `run ${long}` });
+assert.equal(longBrief.what, TOO_LONG);
+assert.deepEqual(longBrief.says, [{ t: "1:02", text: TOO_LONG }]);
+assert.deepEqual(longBrief.checks, [TOO_LONG]);
+assert.equal(longBrief.success, TOO_LONG);
+assert.equal(longBrief.warning, TOO_LONG);
+assert.deepEqual(normalizeBrief(longBrief), longBrief, "idempotent");
+const atCap = "word ".repeat(4000); // 20,000 characters, trimmed by clean() to 19,999
+assert.deepEqual(tries([atCap.trim()]), [atCap.trim()], "a step at the cap is read, not dropped");
+assert.equal(normalizeBrief({ what: long }).what, long, "unwarned: a long field is untouched");
 
 // Normalizing twice gives the same brief, over a few hundred generated mixes.
 const PIECES = ["\ufe58", "\u00a8", "[[.]]", "[[dot]]", "\ufe31", "`wget`", "env A=1 ", "curl x", "|", "\u2223", "bash", "/bin/sh", "evil", ".", "[.]", " dot ", "sh", "com", "au", "`", ",", ";", ". ", "npx a", "www.", "https://", "hxxp", "word", " ", "eval $(x)", "sh -c", "\uff5c"];
