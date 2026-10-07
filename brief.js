@@ -166,10 +166,10 @@ const INTERPRETERS = String.raw`(?:pythonw?|py|node|nodejs|perl|ruby|php|deno|bu
 const PATH_TO = String.raw`(?:[\w.~-]*\/)*`;
 const RUNNER_NAME = String.raw`${PATH_TO}(?:sudo|doas|env|xargs|exec|command|nohup|timeout|stdbuf|nice|busybox)`;
 const RUNNER = String.raw`${RUNNER_NAME}(?:\s+(?:-[^\s|]*(?:\s+(?!${RUNNER_NAME}\b)[^\s|\-0-9=][^\s|=]*)?|\w+=[^\s|]*|\d+))*\s+`;
-const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*["'\\]?(?:${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?(?:SHELL|BASH)\b|\.\s+\/+(?:dev\/+(?:stdin|fd\/+0)|proc\/+self\/+fd\/+0)\b)`;
-// Up to eight flags of any spelling ("--input-type=module", "-MIO::Socket", "-3.12"), each with an
-// optional value that never starts with "-", so each flag and value reads one way.
-const FLAGS = String.raw`(?:\s+-\S*(?:\s+[^\s-]\S*)?){0,8}`;
+const PIPE_RUN = String.raw`\|&?\s*(?:${RUNNER})*["'\\]?(?:${PATH_TO}(?:${SHELLS}[0-9]*|${INTERPRETERS}|source)\b|\$\{?(?:SHELL|BASH)\b|\.\s+\/+(?:dev\/+(?:stdin|fd\/+0)|proc\/+(?:self|\d+)\/+fd\/+0)\b)`;
+// Up to eight flags of any spelling ("--input-type=module", "-MIO::Socket", "-3.12", a shell's "+x"),
+// each with an optional value that starts with neither "-" nor "+", so each flag and value reads one way.
+const FLAGS = String.raw`(?:\s+[-+]\S*(?:\s+[^\s+-]\S*)?){0,8}`;
 // The same for an interpreter, without Python's "-m": what follows it is a module and its own flags
 // ("python -m pytest -rA"), never a string to run.
 const INTERPRETER_FLAGS = String.raw`(?:\s+-(?!m\b)\S*(?:\s+[^\s-]\S*)?){0,8}`;
@@ -179,15 +179,16 @@ const COMMAND_PARTS = [
   // a shell handed a string (sh -c, bash -l -c, ksh93 -c, pwsh -nop -w hidden -enc, su - root -c,
   // cmd /q /c); a flag's value never starts with "-", so each flag and value reads once, and at most
   // eight flags or switches come first: unbounded, a match tried at every "sh" of "sh -a sh -a ..." read
-  // to the end. A cmd switch's value ("/v:on") holds no "/", or with glued switches every way of
-  // splitting "/a:/a:/a:..." among the eight was tried
-  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/\w+(?::[^\s\/]*)?){0,8}\s*\/[ck]\b`,
+  // to the end. A flag may start with "+" ("bash +x -c"). cmd takes any number of switches, each a run
+  // of slashes and then anything but a space or a slash ("/v:on", "//q", "/:"), so they split one way:
+  // when a switch's value could hold "/", every way of splitting "/a:/a:/a:..." among them was tried
+  String.raw`\b(?:${SHELLS}[0-9]*(?:\.exe)?|su(?:\s+-)?(?:\s+[^\s-]\S*)?)${FLAGS}\s+-(?:[a-z]*c[a-z]*|command|e|ec|enc|encodedcommand)\b|\bcmd(?:\.exe)?(?:\s*\/+[^\s\/]+)*\s*\/+[ck]\b`,
   // an interpreter handed a string, after the same flags (python3 -I -c, node -pe, perl -pe, --eval,
   // --print), not a file's ending ("train.py -lr"); deno eval; eval of a string
   String.raw`(?<![\w.-])${INTERPRETERS}${INTERPRETER_FLAGS}\s+-(?:[a-z]*[ecrp][a-z]*|-eval|-print)\b|\bdeno\s+eval\b|\beval\s+["'$\x60]`,
   String.raw`\b(?:curl|wget|iwr|iex|Invoke-WebRequest|Invoke-Expression|sudo|npx|bunx|pnpx|uvx|pipx|chmod\s+\+x)\b`, // fetch-and-run tools
   String.raw`\b(?:pip3?|npm|pnpm|yarn|bun|brew|gem|cargo|go|apt(?:-get)?|apk|poetry|uv|conda|choco|winget|scoop|dnf|yum|snap)\s+(?:i|install|add|get)\b`, // package installs
-  String.raw`\b(?:(?:pnpm|yarn)\s+dlx|(?:npm|pnpm)\s+exec|npm\s+create|yarn\s+global\s+add|bun\s+x|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+-[SU]\w*|(?:docker|podman|nerdctl)\s+(?:container\s+)?run)\b`, // package runners
+  String.raw`\b(?:(?:pnpm|yarn)\s+dlx|(?:npm|pnpm)\s+exec|npm\s+create|yarn\s+global\s+add|bun\s+x|uv\s+(?:tool|pip)\s+(?:install|run)|pacman\s+(?:-[SU]\w*|--(?:sync|upgrade))|(?:docker|podman|nerdctl)(?:-compose|\s+compose|\s+container)?\s+run)\b`, // package runners
 ];
 // A scheme, tried only where its run of letters, digits, "+", "." and "-" starts: tried at every word
 // boundary inside a long run, it read the rest of the run from each.

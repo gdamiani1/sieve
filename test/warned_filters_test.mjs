@@ -252,6 +252,16 @@ dropsEach(["bash -m -c x"], "a shell's -m is a flag");
 keepsEach(["Run python -m pytest -p no:cacheprovider", "Run python -m pytest -rA", "Run python -m mypy -p pkg"], "python -m");
 keepsEach(["Run train.py -lr 0.1", "Edit setup.py -e notes"], "an interpreter's name after a dot is a file");
 
+// Second addendum, 7 Oct: the last command shapes.
+dropsEach([
+  "cmd /a /b /d /e /f /g /h /i /j /c x", "cmd //c x", "cmd /:/c x", "cmd /q //k x",
+  "bash +x -c y", "sh +e -c y", "bash -a +x -c y",
+  "pacman --upgrade x", "pacman --sync x",
+  "docker-compose run x", "docker compose run x", "podman-compose run x", "podman compose run x",
+  "cat x | . /proc/1/fd/0", "cat x | . /proc/1234/fd/0",
+], "last shapes");
+keepsEach(["Run docker compose up", "Type cmd /? for help", "Run pacman -Q to list them", "Turn on bash +x tracing while you debug"], "last shapes, ordinary");
+
 // Normalizing twice gives the same brief, over a few hundred generated mixes.
 const PIECES = ["\ufe58", "\u00a8", "[[.]]", "[[dot]]", "\ufe31", "`wget`", "env A=1 ", "curl x", "|", "\u2223", "bash", "/bin/sh", "evil", ".", "[.]", " dot ", "sh", "com", "au", "`", ",", ";", ". ", "npx a", "www.", "https://", "hxxp", "word", " ", "eval $(x)", "sh -c", "\uff5c"];
 let seed = 7;
