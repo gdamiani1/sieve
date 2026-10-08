@@ -156,4 +156,28 @@ assert.match(sys, /"ai_directed": "",/);
 assert.doesNotMatch(sys, /"warning"/, "the model is never asked for a field called warning");
 assert.match(sys, /A notice aimed at people, such as a tool's own safety, permission or liability warning shown on screen, is not AI-directed unless it also tells a model, assistant or summariser what to do, what to output or what to tell the viewer\./);
 
+// Key points cover the whole video. On 8 Oct a 48:54 video's five points all came from its first five
+// minutes: asked for "at most 5", Flash-Lite lists what it hears first. The prompt now gives the length
+// and asks for points across the whole video; the model still crowds the start (asked for up to 8, it
+// sent these 15, the real timestamps), so the code keeps the one nearest the middle of each fifth.
+assert.match(sys, /- points: in time order, spread across the whole video from start to end, never only its first minutes\. Up to 12\./);
+assert.doesNotMatch(sys, /The video is .* long\./, "no length line when the page didn't give one");
+const sysLong = watchMessages({ url: "https://www.youtube.com/watch?v=x", title: "t", channel: "c", seconds: 2934 }, { role: "a developer", topics: ["Evals"] })[0].content;
+assert.match(sysLong, /The video is 48:54 long\./);
+assert.match(watchMessages({ url: "https://www.youtube.com/watch?v=x", title: "t", channel: "c", seconds: 3725 }, { role: "a developer", topics: ["Evals"] })[0].content, /The video is 1:02:05 long\./);
+const AUG = ["0:36", "1:25", "1:40", "2:25", "3:03", "3:49", "4:01", "4:43", "10:03", "11:14", "13:34", "15:56", "25:01", "35:07", "41:17"];
+const crowded = (stamps) => JSON.stringify({ ...good, points: stamps.map((t) => ({ t, text: `at ${t}` })) });
+const kept = (text, source) => parseWatch(text, source).points.map((p) => p.t);
+assert.deepEqual(kept(crowded(AUG), { seconds: 2934 }), ["4:43", "13:34", "25:01", "35:07", "41:17"], "one point from each fifth of the video");
+assert.deepEqual(kept(crowded(AUG), {}), ["4:01", "11:14", "25:01", "35:07", "41:17"], "no length from the page: the last point stands in for it");
+assert.deepEqual(kept(crowded([...AUG].reverse()), { seconds: 2934 }), ["4:43", "13:34", "25:01", "35:07", "41:17"], "kept in time order, whatever order they came in");
+assert.deepEqual(kept(crowded(["0:10", "0:20", "0:30", "1:02:03", "1:30:00", "1:59:00"]), { seconds: 7200 }), ["0:20", "0:30", "1:02:03", "1:30:00", "1:59:00"], "hours read as hours");
+assert.deepEqual(kept(crowded(["0:10", "0:20", "0:30"]), { seconds: 2934 }), ["0:10", "0:20", "0:30"], "five or fewer: all kept, as sent");
+// Without times to spread by (fewer than five readable stamps), the first five are kept, as before.
+assert.deepEqual(kept(JSON.stringify({ ...good, points: ["a", "b", "c", "d", "e", "f", { t: "9:00", text: "g" }] }), { seconds: 600 }), ["", "", "", "", ""]);
+assert.deepEqual(kept(crowded(["0:10", "about a minute in", "2:00", "", "4:00", "5:00", "6:00"]), { seconds: 600 }), ["0:10", "2:00", "4:00", "5:00", "6:00"], "a point without a readable time is the first to go");
+// The brief's "the author says" is the same spread points.
+const spreadBrief = parseWatch(JSON.stringify({ ...JSON.parse(crowded(AUG)), technique: true, brief: { what: "w", try: ["x"] } }), { seconds: 2934 });
+assert.deepEqual(spreadBrief.brief.says.map((s) => s.t), ["4:43", "13:34", "25:01", "35:07", "41:17"]);
+
 console.log("watch parser: all checks passed");

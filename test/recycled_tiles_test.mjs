@@ -1,5 +1,5 @@
-// Offline: YouTube and X reuse a page element for another video or post (YouTube when the feed refreshes,
-// X as its timeline recycles cells). What Sieve drew there for the old one has to go, and the new one has
+// Offline: YouTube and X reuse a page element for another video or post (YouTube when the feed refreshes
+// and on its watch page, X as its timeline recycles cells). What Sieve drew there for the old one has to go, and the new one has
 // to be scored: on 3 Oct a YouTube tile showed another video's 0.79 with the new video's length and price.
 // Runs the real youtube.js, and x.js with the scripts loaded before it, in node:vm against the fake DOM,
 // with the worker stubbed. youtube-text.js isn't loaded: without it no description is asked for.
@@ -77,6 +77,12 @@ Object.assign(Element.prototype, {
     node.parentNode = p;
     p.childNodes.splice(p.childNodes.indexOf(this), 0, node);
   },
+  after(node) {
+    const p = this.parentNode;
+    node.parentNode?.removeChild(node);
+    node.parentNode = p;
+    p.childNodes.splice(p.childNodes.indexOf(this) + 1, 0, node);
+  },
   dispatchEvent(e) { e.target = this; for (const fn of this.ownerDocument.captures[e.type] || []) fn(e); return true; },
   focus() {},
 });
@@ -98,6 +104,7 @@ function load({ scripts, origin, items, scores, hold = false }) {
   const els = items.map((make) => { const e = make(document); feed.append(e); return e; });
   const classified = [];
   const held = [];
+  const sent = []; // every other message to the worker; a watch request is never answered
   let seenCb = null;
   let scanCb = null;
   const sandbox = {
@@ -118,7 +125,7 @@ function load({ scripts, origin, items, scores, hold = false }) {
         id: "test",
         lastError: undefined,
         sendMessage: (msg, cb) => {
-          if (msg.type !== "classify") return cb?.({ ok: true });
+          if (msg.type !== "classify") { sent.push(msg); return msg.type === "watch" ? undefined : cb?.({ ok: true }); }
           const what = msg.state.title ?? msg.state.post;
           classified.push(what);
           const answer = () => cb(scores[what] || { error: "unexpected" });
@@ -132,7 +139,7 @@ function load({ scripts, origin, items, scores, hold = false }) {
   const ctx = vm.createContext(sandbox);
   for (const f of scripts) vm.runInContext(read(f), ctx, { filename: f });
   return {
-    document, els, classified, held,
+    document, els, classified, held, sent, location: sandbox.location,
     see: (el) => seenCb([{ isIntersecting: true, target: el }]), // on screen and stays (the dwell runs at once)
     leave: (el) => seenCb([{ isIntersecting: false, target: el }]),
     scan: () => scanCb(), // the page changed
@@ -426,6 +433,87 @@ const badge = (a) => { const w = a.previousElementSibling; return w?.classList.c
   assert.equal(a.previousElementSibling, wrap, "the same wrap, not redrawn");
   assert.ok(a.classList.contains("sieve-x-strong"));
   assert.deepEqual(p.classified, [TEXT_A]);
+}
+
+// ======== YouTube's watch page ========
+// 9. The watch page after moving to another video inside the page (8 Oct: the drawer for a 49-minute
+// video showed the title, channel and length of the video watched before it). YouTube changes the address
+// first and the title, channel and video-id a moment later, and its duration meta tag keeps the first
+// video's length for good. The button waits until the page describes the video in the address, then reads
+// the title, channel and length from the player's JSON-LD, which names its own video.
+const SUPERBACKED = { id: "0rEqaUnWoD0", title: "Superbacked 2 is open source", channel: "Sun Knudsen", duration: "PT2934S" };
+const EVALS_PAGE = { id: EVALS.id, title: EVALS.title, channel: EVALS.channel, duration: "PT720S" };
+function watchPage(v) {
+  return (doc) => {
+    const page = doc.createElement("div");
+    const meta = doc.createElement("ytd-watch-metadata");
+    const host = doc.createElement("div");
+    host.id = "title";
+    host.append(doc.createElement("h1"));
+    const chan = doc.createElement("ytd-channel-name");
+    chan.append(doc.createElement("a"));
+    meta.append(host, chan);
+    const micro = doc.createElement("player-microformat-renderer");
+    const ld = doc.createElement("script");
+    ld.setAttribute("type", "application/ld+json");
+    micro.append(ld);
+    const tag = doc.createElement("meta"); // what YouTube served with the first page: never updated
+    tag.setAttribute("itemprop", "duration");
+    tag.setAttribute("content", "PT12M0S");
+    tag.content = "PT12M0S"; // the DOM's own property for the attribute
+    page.append(meta, micro, tag);
+    describe(page, v);
+    return page;
+  };
+}
+// YouTube fills the page in for another video: video-id, title, channel and the player's JSON-LD.
+function describe(page, v, { ld = true } = {}) {
+  page.querySelector("ytd-watch-metadata").setAttribute("video-id", v.id);
+  page.querySelector("h1").textContent = v.title;
+  page.querySelector("ytd-channel-name a").textContent = v.channel;
+  page.querySelector("script").textContent = ld
+    ? JSON.stringify({ "@context": "https://schema.org", "@type": "VideoObject", "@id": `https://www.youtube.com/watch?v=${v.id}`, embedUrl: `https://www.youtube.com/embed/${v.id}`, name: v.title, author: v.channel, duration: v.duration })
+    : "";
+}
+const bars = (p) => p.document.querySelectorAll(".sieve-yt-bar");
+const go = (p, id) => { p.location.href = `https://www.youtube.com/watch?v=${id}`; };
+{
+  const p = load({ ...YT, items: [watchPage(EVALS_PAGE)] });
+  go(p, EVALS.id);
+  p.scan();
+  assert.deepEqual(bars(p).map((b) => [b.dataset.id, b.textContent]), [[EVALS.id, "SieveWatch it for me · ~3¢"]], "a page loaded on its own video");
+
+  // Moved to another video: the address changed, the page still describes the old one.
+  go(p, SUPERBACKED.id);
+  p.scan();
+  assert.equal(bars(p).length, 0, "no button while the page still describes the previous video");
+
+  describe(p.els[0], SUPERBACKED);
+  p.scan();
+  assert.deepEqual(bars(p).map((b) => [b.dataset.id, b.textContent]), [[SUPERBACKED.id, "SieveWatch it for me · ~11¢"]], "the new video's own length, not the meta tag's 12 minutes");
+  bars(p)[0].querySelector("button").click();
+  const [w] = p.sent.filter((m) => m.type === "watch");
+  assert.deepEqual([w.id, w.title, w.channel, w.seconds], [SUPERBACKED.id, SUPERBACKED.title, SUPERBACKED.channel, 2934]);
+}
+// The JSON-LD alone moved on first: still another video's page, so still no button.
+{
+  const p = load({ ...YT, items: [watchPage(EVALS_PAGE)] });
+  go(p, SUPERBACKED.id);
+  p.els[0].querySelector("script").textContent = JSON.stringify({ "@id": `https://www.youtube.com/watch?v=${SUPERBACKED.id}`, embedUrl: `https://www.youtube.com/embed/${SUPERBACKED.id}`, name: SUPERBACKED.title, author: SUPERBACKED.channel, duration: SUPERBACKED.duration });
+  p.scan();
+  assert.equal(bars(p).length, 0, "the title and channel shown are still the old video's");
+}
+// Without the player's JSON-LD (YouTube could drop it), the button reads the title and channel shown once
+// video-id names the video, and offers no price rather than the stale meta tag's.
+{
+  const p = load({ ...YT, items: [watchPage(EVALS_PAGE)] });
+  describe(p.els[0], SUPERBACKED, { ld: false });
+  go(p, SUPERBACKED.id);
+  p.scan();
+  assert.deepEqual(bars(p).map((b) => b.textContent), ["SieveWatch it for me"]);
+  bars(p)[0].querySelector("button").click();
+  const [w] = p.sent.filter((m) => m.type === "watch");
+  assert.deepEqual([w.title, w.channel, w.seconds], [SUPERBACKED.title, SUPERBACKED.channel, 0]);
 }
 
 console.log("recycled tiles: all checks passed");

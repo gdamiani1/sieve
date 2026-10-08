@@ -222,18 +222,36 @@
   }
 
   // ---- watch page button ----
+  // Moving to another video inside the page, YouTube changes the address first and what the page shows a
+  // moment later (on 8 Oct the drawer for a 49-minute video showed the previous video's title, channel
+  // and 20 minutes). Its duration meta tag keeps the first video's length for good, so it isn't read.
+  // The page describes the video in the address once ytd-watch-metadata's video-id names it and the
+  // player's JSON-LD, which names its own video too, names no other one; until then there's no button.
+  // The title, channel and length come from that JSON-LD; without it, the title and channel shown, and no
+  // length. null while the page still describes another video.
+  function described(id) {
+    const shownId = document.querySelector("ytd-watch-metadata")?.getAttribute("video-id");
+    let ld = null;
+    try { ld = JSON.parse(document.querySelector('player-microformat-renderer script[type="application/ld+json"]')?.textContent || "null"); } catch {}
+    const ldId = ld && typeof ld === "object" && typeof ld["@id"] === "string" ? videoId(ld["@id"]) : null;
+    if ((shownId && shownId !== id) || (ldId && ldId !== id)) return null;
+    const own = ldId === id ? ld : {};
+    const text = (s) => (typeof s === "string" ? s.trim() : "");
+    return {
+      title: text(own.name) || document.querySelector("ytd-watch-metadata h1")?.innerText.trim() || "",
+      channel: text(own.author) || text(own.author?.name) || document.querySelector("ytd-watch-metadata ytd-channel-name a")?.innerText.trim() || "",
+      seconds: isoSeconds(text(own.duration)),
+    };
+  }
+
   function watchPage() {
     const id = videoId(location.href);
     const host = document.querySelector("ytd-watch-metadata #title");
     document.querySelectorAll(".sieve-yt-bar").forEach((b) => { if (b.dataset.id !== id) b.remove(); });
     if (!enabled || !id || !host || host.parentElement.querySelector(`.sieve-yt-bar[data-id="${id}"]`)) return;
-    const title = document.querySelector("ytd-watch-metadata h1")?.innerText.trim();
-    if (!title) return;
-    const v = {
-      id, url: `https://www.youtube.com/watch?v=${id}`, title,
-      channel: document.querySelector("ytd-watch-metadata ytd-channel-name a")?.innerText.trim() || "",
-      seconds: isoSeconds(document.querySelector('meta[itemprop="duration"]')?.content) || toSeconds(document.querySelector(".ytp-time-duration")?.textContent || "0"),
-    };
+    const shown = described(id);
+    if (!shown?.title) return;
+    const v = { id, url: `https://www.youtube.com/watch?v=${id}`, ...shown };
     const bar = el("div", "sieve-yt-bar");
     bar.dataset.id = id;
     bar.append(el("span", "sieve-yt-bar-label", "Sieve"), watchButton(v));

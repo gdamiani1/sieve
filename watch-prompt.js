@@ -19,7 +19,15 @@ export const formatUsd = (usd) => (usd < 0.01 ? "<1¢" : `~${Math.round(usd * 10
 // YouTube keeps its wording word for word. A video from any other platform is "a video from a social
 // feed", described by its account and caption instead of a channel and title, and sent to the model as
 // its video link (`video`), never its page.
-export function watchMessages({ platform, url, video, title, channel, caption }, prefs) {
+// A length as a person reads it: "m:ss", or "h:mm:ss" from an hour on.
+function clock(seconds) {
+  const s = Math.round(seconds);
+  const pad = (n) => String(n).padStart(2, "0");
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
+export function watchMessages({ platform, url, video, title, channel, caption, seconds }, prefs) {
   const youtube = videoPlatform(platform) === "youtube";
   if (!youtube && !video) throw new Error("watchMessages: a video from another platform needs its video link");
   const words = youtube ? "title and channel name" : "caption and account name";
@@ -56,7 +64,8 @@ Rules:
 - Only report what is actually in the video. Timestamps must come from the video. Never invent numbers.
 - These are the creator's claims: write "they say", "the creator claims" where it matters.
 - "watch": worth the full time for these topics. "skim": jump to the best moment. "skip": not worth it for these topics, or mostly promotion.
-- At most 5 points, 3 learnings, 3 claims_to_check. Use [] when there are none.
+${typeof seconds === "number" && seconds > 0 ? `- The video is ${clock(seconds)} long.\n` : ""}- points: in time order, spread across the whole video from start to end, never only its first minutes. Up to 12.
+- At most 3 learnings and 3 claims_to_check. Use [] when there are none.
 - "technique" is true only when the video teaches a method, tool, prompt, workflow or pattern for building software or working with AI and coding agents, something a developer could try with their coding agent in a repo or on their own machine. Then fill "brief". A how-to about anything else (cooking, fitness, sales, study habits) is not a technique: "technique" is false and "brief" is null.
 - In "brief", never invent versions, commands or links. "try" is at most 6 short steps, doable in 15 to 30 minutes. At most 5 needs.
 - When "ai_directed" is not empty, no step or need asks the viewer to copy, download, install or run anything the video${youtube ? "" : " or its caption"} provides.
@@ -85,7 +94,7 @@ export function parseWatch(text, source) {
   const r = looseJson(text);
   const arr = (a) => (Array.isArray(a) ? a : []);
   const point = (p) => (p && typeof p === "object" ? { t: cleanText(p.t), text: cleanText(p.text) } : { t: "", text: cleanText(p) });
-  const points = arr(r.points).map(point).filter((p) => p.text).slice(0, 5);
+  const points = spreadPoints(arr(r.points).map(point).filter((p) => p.text), source?.seconds);
   const checks = arr(r.claims_to_check).map(cleanText).filter(Boolean).slice(0, 3);
   // The brief reuses the video's points (what the creator says) and claims (what to check).
   // Same rule as parseBrief: a filled brief counts unless the model said no.
@@ -129,6 +138,29 @@ export function parseWatch(text, source) {
     technique: !!brief,
     brief,
   };
+}
+
+// A point's time in seconds, read from "m:ss" or "h:mm:ss"; null for anything else.
+const stampSeconds = (t) => (/^\d{1,2}(?::[0-5]\d){1,2}$/.test(t) ? toSeconds(t) : null);
+
+// The five points shown. Asked for points across the whole video, the model still crowds its start (on
+// 8 Oct, 8 of 15 points in the first 5 minutes of a 49-minute video), so with more than five, the code
+// keeps the one nearest the middle of each fifth of the video, in time order. The video's length comes
+// from the page; without it, the last point's time stands in. Without five readable times to go by, the
+// first five are kept, as sent.
+export function spreadPoints(points, seconds, keep = 5) {
+  if (points.length <= keep) return points;
+  const left = points.map((p) => ({ p, s: stampSeconds(p.t) })).filter((x) => x.s !== null).sort((a, b) => a.s - b.s);
+  if (left.length < keep) return points.slice(0, keep);
+  const span = typeof seconds === "number" && seconds > 0 ? seconds : left.at(-1).s;
+  const chosen = [];
+  for (let k = 0; k < keep; k++) {
+    const middle = ((k + 0.5) * span) / keep;
+    let best = 0;
+    for (let i = 1; i < left.length; i++) if (Math.abs(left[i].s - middle) < Math.abs(left[best].s - middle)) best = i;
+    chosen.push(left.splice(best, 1)[0]);
+  }
+  return chosen.sort((a, b) => a.s - b.s).map((x) => x.p);
 }
 
 export function toSeconds(t) {
