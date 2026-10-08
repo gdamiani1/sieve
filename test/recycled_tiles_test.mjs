@@ -514,6 +514,14 @@ const go = (p, id) => { p.location.href = `https://www.youtube.com/watch?v=${id}
   bars(p)[0].querySelector("button").click();
   const [w] = p.sent.filter((m) => m.type === "watch");
   assert.deepEqual([w.title, w.channel, w.seconds], [SUPERBACKED.title, SUPERBACKED.channel, 0]);
+
+  // The JSON-LD arrives after the button was built: the button is built again, with the length.
+  describe(p.els[0], SUPERBACKED);
+  p.scan();
+  assert.deepEqual(bars(p).map((b) => b.textContent), ["SieveWatch it for me · ~11¢"]);
+  const again = bars(p)[0];
+  p.scan();
+  assert.equal(bars(p)[0], again, "nothing changed: the same button, not rebuilt");
 }
 
 console.log("recycled tiles: all checks passed");

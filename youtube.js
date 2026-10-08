@@ -248,12 +248,19 @@
     const id = videoId(location.href);
     const host = document.querySelector("ytd-watch-metadata #title");
     document.querySelectorAll(".sieve-yt-bar").forEach((b) => { if (b.dataset.id !== id) b.remove(); });
-    if (!enabled || !id || !host || host.parentElement.querySelector(`.sieve-yt-bar[data-id="${id}"]`)) return;
+    if (!enabled || !id || !host) return;
     const shown = described(id);
     if (!shown?.title) return;
+    // Built again whenever what the page says about the video changes, as when the player's JSON-LD, and
+    // with it the length, arrives after the title: a button without a length has no price and no "too long".
+    const says = JSON.stringify(shown);
+    const built = host.parentElement.querySelector(`.sieve-yt-bar[data-id="${id}"]`);
+    if (built?.dataset.says === says) return;
+    built?.remove();
     const v = { id, url: `https://www.youtube.com/watch?v=${id}`, ...shown };
     const bar = el("div", "sieve-yt-bar");
     bar.dataset.id = id;
+    bar.dataset.says = says;
     bar.append(el("span", "sieve-yt-bar-label", "Sieve"), watchButton(v));
     host.after(bar);
   }
