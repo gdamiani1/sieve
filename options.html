@@ -69,7 +69,7 @@ input[type=number].field{width:64px;text-align:right}
 .start .btns{margin-top:8px}.start #startDone p{margin:0}.start #startDone #startDoneNext{margin-top:12px}.start .btn.secondary{background:var(--card)}.start .status{margin:8px 0 0}
 .status{font-size:13px;margin:8px 16px 0}
 .status:empty{display:none}.status.alert{color:var(--alert)}
-.sentence{margin:0 0 12px}
+.sentence{margin:0 0 12px}.sentence a,.info a{font-weight:600;display:inline-block;padding:10px 0}
 /* The paper note: Connect your agent. */
 .note{position:relative;background:var(--note);color:var(--ink);border-radius:4px 14px 14px 14px;padding:18px 16px 16px;margin:22px 4px 4px;transform:rotate(-1deg)}
 .note .tape{position:absolute;top:-8px;left:44%;width:52px;height:15px;background:var(--note-tape);opacity:.7;transform:rotate(2deg);border-radius:2px}
@@ -127,6 +127,7 @@ output{font-weight:600}
 <div class="group" id="agentOff">
 <div class="row stack">
 <p class="sentence" id="agentLine" aria-live="polite"></p>
+<p class="sentence" id="agentAskP" hidden><a id="agentAsk" href="https://divergada.com/sieve?ref=chrome-agent" target="_blank" rel="noopener noreferrer">Ask for an invite</a></p>
 <div class="btns"><button type="button" class="btn secondary" id="agentOn">Continue with Google</button><button type="button" class="btn secondary" id="agentEmail">Continue with email</button></div>
 </div>
 </div>
@@ -140,7 +141,7 @@ output{font-weight:600}
 <p id="agentFailText"></p>
 <div class="btns"><button type="button" class="btn secondary" id="agentReplace">Use this Chrome's library instead</button><button type="button" class="btn secondary" id="agentShrink">Send anyway</button><button type="button" class="btn secondary" id="agentRetry">Try again</button></div>
 </div>
-<div class="info" id="agentInfo" hidden><p id="agentInfoText"></p></div>
+<div class="info" id="agentInfo" hidden><p id="agentInfoText"></p><p><a id="agentJoin" href="https://divergada.com/sieve?ref=chrome-ended" target="_blank" rel="noopener noreferrer">Join the waitlist</a></p></div>
 <p class="status" id="agentMsg" role="status"></p>
 <p class="foot" id="agentFootOff">Chrome asks first for a sign-in window and access to mcp.divergada.com. Sieve works as before without it.</p>
 <p class="foot" id="agentFootOn" hidden>Sieve sends within 15 minutes of a change, only if something changed. Turn off deletes this Chrome's copy from Sieve's server.</p>
@@ -236,7 +237,7 @@ output{font-weight:600}
 <h2>About Sieve</h2>
 <div class="group">
 <div class="row stack"><p>Made by Grgur Damiani (di vergada) in Zagreb. Open source, MIT.</p></div>
-<a class="row action" href="https://divergada.com/sieve/privacy" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+<a class="row action" href="https://divergada.com/sieve/privacy?ref=extension" target="_blank" rel="noopener noreferrer">Privacy policy</a>
 <a class="row action" href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Join the waitlist for a Sieve account</a>
 <div class="row kv"><span>Version</span><span class="v num" id="version"></span></div>
 </div>

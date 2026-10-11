@@ -26,6 +26,34 @@ const shows = ($, id) => visible($(id));
   assert.equal($("sub").textContent, "Sieve works in your browser with your own key.");
 }
 
+// The links: Ask for an invite where the invite-only words show, tagged chrome-agent; never when on.
+const link = ($, id, href, text) => {
+  assert.equal($(id).attrs.href, href);
+  assert.equal($(id).attrs.target, "_blank");
+  assert.equal($(id).attrs.rel, "noopener noreferrer");
+  assert.equal($(id).textContent, text);
+};
+{
+  const ASK = "https://divergada.com/sieve?ref=chrome-agent";
+  for (const record of [{ on: false, state: "off" }, {}, { on: false, state: "not_invited" }]) {
+    const { $ } = await page({ record });
+    assert.ok(shows($, "agentAskP"), `ask shown for ${JSON.stringify(record)}`);
+    link($, "agentAsk", ASK, "Ask for an invite");
+  }
+  const { $: off } = await page({ record: { on: false, state: "off", detail: { reason: "offline" } } });
+  assert.ok(!shows(off, "agentAskP"), "not on the 'copy may remain' line");
+  const { $: sentOn } = await page({ record: on });
+  assert.ok(!shows(sentOn, "agentAskP"), "not when on");
+  const { $: ended } = await page({ record: { ...on, state: "ended", detail: { endedOn: "10 November" } } });
+  assert.ok(!shows(ended, "agentAskP"));
+  assert.ok(shows(ended, "agentInfo"));
+  link(ended, "agentJoin", "https://divergada.com/sieve?ref=chrome-ended", "Join the waitlist");
+  const { $: notEnded } = await page({ record: on });
+  assert.ok(!shows(notEnded, "agentInfo"), "waitlist link hidden with its note");
+  const { $: set } = await page({ record: { on: false, state: "off" } });
+  link(set, "agentAsk", ASK, "Ask for an invite");
+}
+
 // No record yet (a fresh install): the same off sentence.
 {
   const { $ } = await page({ record: {} });

@@ -148,6 +148,20 @@ assert.ok(!/:focus-within/.test(html) && /\.row:has\(\.sw:focus-visible\)/.test(
 // The waitlist link keeps its address.
 assert.match(html, /<a href="https:\/\/divergada\.com\/sieve\?ref=extension"[^>]*>Join the waitlist<\/a>/);
 assert.match(html, /A Sieve account is coming\./);
+// The popup shows no invite line (the agent line only shows while on), so its one waitlist link is the only one.
+assert.equal((html.match(/divergada\.com\/sieve/g) || []).length, 1);
+
+// Every divergada.com link the extension ships carries its ref (mcp.divergada.com is the API, not a link).
+{
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const root = new URL("../", import.meta.url);
+  const found = [];
+  for (const f of readdirSync(root).filter((n) => /\.(html|js|json)$/.test(n))) {
+    for (const m of readFileSync(new URL(f, root), "utf8").matchAll(/https:\/\/(?:www\.)?divergada\.com[^\s"'<>)`]*/g)) found.push([f, m[0]]);
+  }
+  assert.ok(found.length >= 5, "found the links");
+  for (const [f, u] of found) assert.match(u, /^https:\/\/divergada\.com\/sieve(\/privacy)?\?ref=(extension|chrome-agent|chrome-ended)$/, `${f}: ${u}`);
+}
 
 // The Your agent line: hidden when off, or no record, or the worker can't say; shown when on.
 {
