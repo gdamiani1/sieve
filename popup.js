@@ -3,11 +3,19 @@ const $ = (id) => document.getElementById(id);
 
 // Without a key (OpenRouter or TypeSafe) nothing can be scored, so the popup says so and offers the fix.
 async function load() {
-  const k = await chrome.storage.local.get(["orKey", "apiKey"]);
-  const noKey = !(k.orKey || k.apiKey);
+  // Both parts start hidden in the page; if the key check fails, show the normal popup rather than a blank one.
+  let noKey = false;
+  try {
+    const k = await chrome.storage.local.get(["orKey", "apiKey"]);
+    noKey = !(k.orKey || k.apiKey);
+  } catch {
+    // Storage can't be read, so there is nothing to draw into the counters either.
+    $("main").hidden = false;
+    return;
+  }
   $("main").hidden = noKey;
   $("nokey").hidden = !noKey;
-  if (noKey) return;
+  if (noKey) { $("addKey").focus?.(); return; }
   const p = await loadPrefs();
   const { stats = {} } = await chrome.storage.local.get("stats");
   $("linkedinOn").checked = p.linkedinOn;

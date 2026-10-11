@@ -40,6 +40,7 @@ const visible = (el) => { for (let e = el; e; e = e.parentNode) if (e.hidden) re
 
 async function popup({ store = {}, stats = { available: false, consent: null }, agent = { on: false, state: "off" }, confirmed = true, noKey = false } = {}) {
   // Every case but the no-key ones runs with a key saved (a dummy value).
+  store = { ...store };
   if (!noKey && !store.orKey && !store.apiKey) store.orKey = "test-key";
   const doc = build();
   const sent = [];
@@ -253,6 +254,39 @@ for (const store of [{ orKey: "k" }, { apiKey: "k" }]) {
   assert.ok(!visible($("nokey")));
   assert.ok(visible($("main")) && visible($("digest")) && visible($("wait")));
   assert.equal($("posts").textContent, "508");
+}
+
+// Both parts start hidden in the page, so neither flashes before the key check answers.
+assert.match(html, /<div id="main" hidden>/);
+assert.match(html, /<div id="nokey" hidden>/);
+// A failing storage read shows the normal popup, never a blank one.
+{
+  const doc = build();
+  globalThis.document = doc;
+  globalThis.chrome = {
+    storage: { local: { get: async () => { throw new Error("boom"); }, set: async () => {}, remove: async () => {} } },
+    runtime: { openOptionsPage() {}, getURL: (p) => p, sendMessage: async () => null },
+    tabs: { create() {} },
+  };
+  await import(`../popup.js?page=${++loads}`);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.ok(visible(doc.getElementById("main")) && !visible(doc.getElementById("nokey")));
+}
+// No key: the button has focus.
+{
+  const doc = build();
+  let focused = 0;
+  const orig = doc.getElementById.bind(doc);
+  doc.getElementById = (id) => { const e = orig(id); if (id === "addKey" && e) e.focus = () => { focused++; }; return e; };
+  globalThis.document = doc;
+  globalThis.chrome = {
+    storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } },
+    runtime: { openOptionsPage() {}, getURL: (p) => p, sendMessage: async () => null },
+    tabs: { create() {} },
+  };
+  await import(`../popup.js?page=${++loads}`);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(focused, 1);
 }
 
 console.log("popup_test: ok");
