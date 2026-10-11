@@ -42,6 +42,14 @@ const link = ($, id, href, text) => {
   }
   const { $: off } = await page({ record: { on: false, state: "off", detail: { reason: "offline" } } });
   assert.ok(!shows(off, "agentAskP"), "not on the 'copy may remain' line");
+  const { $: err } = await page({ record: { on: false, state: "off", detail: { reason: "error" } } });
+  assert.equal(err("agentLine").textContent, "Something went wrong. Try again.");
+  assert.ok(!shows(err, "agentAskP"), "not on the error line");
+  const { $: errInv } = await page({ record: { on: false, state: "not_invited", detail: { reason: "error" } } });
+  assert.ok(!shows(errInv, "agentAskP"));
+  // The link rule is scoped to the two links: a bare ".info a" would reach Start here's buttons.
+  assert.match(html, /#agentAsk,#agentJoin\{[^}]*min-height:44px/);
+  assert.ok(!/\.info a|\.sentence a/.test(html), "no broad link rule");
   const { $: sentOn } = await page({ record: on });
   assert.ok(!shows(sentOn, "agentAskP"), "not when on");
   const { $: ended } = await page({ record: { ...on, state: "ended", detail: { endedOn: "10 November" } } });

@@ -524,8 +524,8 @@ function showAgent(r, had = null) {
   $("agentOff").hidden = on;
   $("agentFootOff").hidden = on;
   $("agentLine").textContent = on ? "" : line;
-  // Invite-only (signed out, or refused): the way to ask. Not for the "turned off, copy may remain" line.
-  $("agentAskP").hidden = on || !(state === "not_invited" || (state === "off" && !["offline", "server"].includes(r.detail?.reason)));
+  // Invite-only: only when the line shown is one of the invite-only lines (not the error or "copy may remain" lines).
+  $("agentAskP").hidden = on || ![words({ state: "off" }), words({ state: "not_invited" })].includes(line);
   $("agentOnBox").hidden = !on;
   $("agentFootOn").hidden = !on;
   $("agentWho").textContent = r.email || "";
