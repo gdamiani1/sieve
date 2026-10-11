@@ -22,6 +22,10 @@ const chip = ($, container, key) => $(container).children.find((c) => c.dataset.
 
 // No Save settings bar, no saveAll, no saveMsg.
 assert.doesNotMatch(html, /id="saveAll"|id="saveMsg"|Save settings/);
+// The example text is written for developers (placeholders, not stored defaults).
+assert.match(html, /id="role"[^>]*placeholder="e\.g\. a developer who ships with Claude Code"/);
+assert.match(html, /id="topics"[^>]*placeholder="e\.g\. Coding agents&#10;Evals&#10;Local models"/);
+assert.match(html, /id="subreddits"[^>]*placeholder="e\.g\. r\/ClaudeAI&#10;r\/LocalLLaMA"/);
 // The key fields point to their footnotes.
 assert.match(html, /id="orkey"[^>]*aria-describedby="keysFoot"/);
 assert.match(html, /id="key"[^>]*aria-describedby="tsFoot"/);

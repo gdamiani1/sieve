@@ -165,8 +165,8 @@ output{font-weight:600}
 
 <h2>What you care about</h2>
 <div class="group">
-<div class="row stack"><label class="lbl" for="role">I am…</label><input class="field" id="role" type="text" placeholder="e.g. a product manager at a fintech startup"></div>
-<div class="row stack"><label class="lbl" for="topics">Topics I want to see (one per line, up to 8)</label><textarea class="field" id="topics" rows="5" placeholder="e.g. Payments and fraud&#10;Product analytics&#10;Hiring engineers"></textarea></div>
+<div class="row stack"><label class="lbl" for="role">I am…</label><input class="field" id="role" type="text" placeholder="e.g. a developer who ships with Claude Code"></div>
+<div class="row stack"><label class="lbl" for="topics">Topics I want to see (one per line, up to 8)</label><textarea class="field" id="topics" rows="5" placeholder="e.g. Coding agents&#10;Evals&#10;Local models"></textarea></div>
 </div>
 <p class="foot">Sieve scores each post against this to decide what's worth your time. Be specific. The rules further down always win.</p>
 
@@ -180,7 +180,7 @@ output{font-weight:600}
 <h2>Reddit</h2>
 <div class="group">
 <label class="row"><span>Score Reddit posts</span><input class="sw" id="redditOn" type="checkbox" role="switch"></label>
-<div class="row stack"><label class="lbl" for="subreddits">Only in these subreddits <span class="q">(one per line, empty means everywhere)</span></label><textarea class="field" id="subreddits" rows="3" placeholder="e.g. r/smallbusiness&#10;r/automation"></textarea></div>
+<div class="row stack"><label class="lbl" for="subreddits">Only in these subreddits <span class="q">(one per line, empty means everywhere)</span></label><textarea class="field" id="subreddits" rows="3" placeholder="e.g. r/ClaudeAI&#10;r/LocalLLaMA"></textarea></div>
 <div class="row stack"><p class="lbl" id="redditKindsL">Kinds of posts to show</p><div class="chips" id="redditKinds" role="group" aria-labelledby="redditKindsL"></div></div>
 <div class="row kv"><span id="freshL">Call a thread "still fresh" when it's at most</span><span class="pair"><input class="field compact" id="freshHours" type="number" min="1" max="168" aria-label="Hours old"> hours old, <input class="field compact" id="freshComments" type="number" min="0" max="1000" aria-label="Comments"> comments</span></div>
 <div class="row stack"><label class="lbl" for="redditAbout">My facts for Reddit <span class="q">(no business names or links)</span></label><textarea class="field" id="redditAbout" rows="6"></textarea></div>
