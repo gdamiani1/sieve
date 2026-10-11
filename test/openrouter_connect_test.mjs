@@ -171,6 +171,8 @@ function assertDone($, why = "Start here shows its done state") {
   assert.ok(visible($("startDone")) && !visible($("startSteps")), "the steps give way to the feeds");
   assert.match($("startDone").textContent, /^Key saved\. Open a feed: posts get a small Sieve tag as you scroll\./);
   assert.ok(!$("startDone").textContent.includes("\u2014"), "no em dash");
+  assert.equal($("startDone").querySelectorAll("div")[0].getAttribute("role"), "group");
+  assert.equal($("startDone").querySelectorAll("div")[0].getAttribute("aria-labelledby"), "startDoneH");
   for (const [id, [label, url]] of Object.entries(FEEDS)) {
     assert.equal($(id).textContent, label);
     assert.equal($(id).getAttribute("href"), url);
@@ -379,6 +381,30 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   await settle();
   assert.equal(store.orKey, undefined);
   assert.ok(visible($("start")) && visible($("startSteps")) && !visible($("startDone")), "no feed buttons after a failed check");
+}
+// Mixed: TypeSafe works, OpenRouter says no. The TypeSafe key is kept, but the steps stay and focus doesn't move.
+{
+  const { $, store, doc } = await page({ record: {}, net: async (url) => res(url === CHECK_URL ? 401 : 200, {}) });
+  $("key").value = "ts-key";
+  $("orkey").value = "sk-or-v1-bad";
+  $("saveKeys").click();
+  await settle();
+  await settle();
+  assert.equal(store.apiKey, "ts-key");
+  assert.equal(store.orKey, undefined);
+  assert.equal($("keyMsg").textContent, "TypeSafe key saved. OpenRouter said 401, not saved");
+  assert.ok(visible($("start")) && visible($("startSteps")) && !visible($("startDone")), "the steps stay when any key failed");
+  assert.notEqual(doc.activeElement, $("feedLinkedin"));
+}
+// A write that throws lowers the flag: the steps stay.
+{
+  const { $, doc } = await page({ record: {}, net: async () => res(200, {}), setFails: "disk full" });
+  $("orkey").value = "sk-or-v1-pasted";
+  $("saveKeys").click();
+  await settle();
+  assert.ok(visible($("startSteps")) && !visible($("startDone")));
+  assert.notEqual(doc.activeElement, $("feedLinkedin"));
+  assert.equal($("keyMsg").textContent, "Sieve couldn't save the key in this browser. Try again.");
 }
 {
   const { $, store, doc } = await page({ record: {}, net: async () => res(200, {}) });
