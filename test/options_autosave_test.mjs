@@ -27,8 +27,9 @@ assert.match(html, /id="orkey"[^>]*aria-describedby="keysFoot"/);
 assert.match(html, /id="key"[^>]*aria-describedby="tsFoot"/);
 assert.match(html, /<p class="foot" id="keysFoot">Stored only in this browser/);
 assert.match(html, /<p class="foot" id="tsFoot">A TypeSafe key is only used/);
-// One filled blue button on the page: Check and save keys.
-assert.deepEqual([...html.matchAll(/class="btn primary"[^>]*id="(\w+)"/g)].map((m) => m[1]), ["saveKeys"]);
+// Two filled blue buttons in the HTML, never both showing: Connect OpenRouter in Start here (only without
+// a key; Check and save keys is secondary then, see openrouter_connect_test) and Check and save keys.
+assert.deepEqual([...html.matchAll(/class="btn primary"[^>]*id="(\w+)"/g)].map((m) => m[1]), ["connectOr", "saveKeys"]);
 
 // The page shows the defaults on a fresh install, and nothing is written just by opening it.
 {
@@ -404,7 +405,7 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn", "youtubeDescript
   await settle();
   assert.deepEqual(sets, [], "no key saved by changing the field");
   assert.equal($("start").hidden, false, "Start here shows with no key");
-  assert.equal($("saveKeys").classList.contains("primary"), true, "the page's one filled button");
+  assert.equal($("saveKeys").classList.contains("secondary"), true, "Connect OpenRouter is the one filled button while Start here shows");
   $("saveKeys").click();
   assert.equal($("saveKeys").disabled, true, "disabled while the keys are checked");
   await settle();
@@ -413,6 +414,7 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn", "youtubeDescript
   assert.equal($("keyMsg").textContent, "TypeSafe key saved. OpenRouter key saved");
   assert.equal($("orkey").value, "");
   assert.equal($("start").hidden, true, "Start here goes once a key is saved");
+  assert.equal($("saveKeys").classList.contains("primary"), true, "then Check and save keys is the page's one filled button");
   assert.equal($("scoreStatus").textContent, "Jev, through OpenRouter. The saved TypeSafe key isn't used.");
 }
 {

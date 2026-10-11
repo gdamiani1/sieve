@@ -101,6 +101,7 @@ a switch or choice at once), with a short "Saved" note. Keys save only through *
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 2. Click the extension icon:
    - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 5 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
+     Start here's **Connect OpenRouter** gets one through OpenRouter's sign-in window (OAuth with PKCE): OpenRouter makes a key labelled "Sieve for Chrome" in your account, and it's checked and saved exactly like a pasted one. **Paste a key instead** goes to the field.
    - **TypeSafe key (optional)**, under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
    - **Your facts for Reddit.** Only true, first-hand things. The scorer uses them to judge whether you could answer a thread.
 3. Reload LinkedIn, X, Reddit or YouTube and scroll.
@@ -147,6 +148,8 @@ to Sieve's server, so a coding agent you connect there can read it next to your 
   keeps, your iPhone library included.
 - **Permissions:** the `identity` permission (for the sign-in window) and access to mcp.divergada.com are
   optional. Chrome asks for them only when you click Turn on, and Sieve gives them back when you turn it off.
+  **Connect OpenRouter** asks for `identity` alone, for OpenRouter's sign-in window, and gives it back when
+  it's done unless sending to your agent is on.
 
 If usage stats are on (see below), the daily counts also say whether sending to your agent is on, as "on" or
 "off". They never carry your email or anything from your library.
@@ -194,6 +197,7 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/agent_sync_test.mjs       # sending the library to your agent: sign-in URL and answers, the body, the hash, the words (offline)
     node test/agent_sync_worker_test.mjs # the worker's sign-in, sends, retries, turning off and deleting, against a fake server (offline)
     node test/agent_sync_options_test.mjs # the settings page's Your agent section (offline)
+    node test/openrouter_connect_test.mjs # Connect OpenRouter: the sign-in URL, the callback, the code-for-key exchange, and Start here's button (offline)
     node test/options_autosave_test.mjs # the settings page saves each change as it's made, and on closing the tab (offline)
     node test/analytics_test.mjs        # opt-in usage stats: counting, consent, the daily send (offline)
     node test/analytics_worker_test.mjs # the worker counts actions only after a yes (offline)
@@ -250,6 +254,7 @@ instead of high).
 - `youtube-text.js`: what a YouTube tile says beyond its title (description lines, chapters, YouTube's summary),
   and the start of a video's description from YouTube's player endpoint when the tile shows none.
 - `agent-sync.js`: sending the library to your agent, the pure part (sign-in URL, the library body and its hash, the words). `agent-sync-run.js`: the worker's part (sign-in, tokens, sends, turning off).
+- `openrouter-connect.js`: Connect OpenRouter, OpenRouter's sign-in window that gives Sieve a key: the URL, the callback, the exchange, the check, the words.
 - `watch-drawer.js`: the "watched for you" drawer for Watch it for me, shared by every page that offers it.
 - `options.*`: settings page. `popup.*`: toolbar popup. `digest.*`: daily learnings page. All three follow Chrome's light or dark setting: their colours are tokens on `:root`, with dark values under `prefers-color-scheme: dark`.
 

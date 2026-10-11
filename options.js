@@ -3,6 +3,7 @@ import { DEFAULT_PREFS, KINDS, REDDIT_KINDS, YOUTUBE_KINDS, loadPrefs, DEFAULT_R
 import { DEFAULT_VIDEO_MODEL } from "./watch-prompt.js";
 import { scoringKey } from "./jev.js";
 import { AGENTS, SERVER, words } from "./agent-sync.js";
+import { checkKey, connectOpenRouter, connectWords } from "./openrouter-connect.js";
 
 // The settings page (extension settings pinboard spec): every setting saves as it changes, a toast says
 // so; keys save only through Check and save keys; Your agent asks the worker.
@@ -298,7 +299,11 @@ async function load() {
 function showKeys(s) {
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Not added";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
-  $("start").hidden = Boolean(s.orKey || s.apiKey);
+  const none = !(s.orKey || s.apiKey);
+  $("start").hidden = !none;
+  // One filled blue button at a time: Connect OpenRouter while Start here shows, then Check and save keys.
+  $("saveKeys").classList.toggle("primary", !none);
+  $("saveKeys").classList.toggle("secondary", none);
   const via = scoringKey(s)?.via;
   $("scoreStatus").textContent = via === "openrouter"
     ? `Jev, through OpenRouter${s.apiKey ? ". The saved TypeSafe key isn't used." : ""}`
@@ -322,15 +327,58 @@ async function checkKeys() {
     else { bad = true; msgs.push(r ? `TypeSafe said ${r.status}, not saved` : "TypeSafe unreachable, not saved"); }
   }
   if (or) {
-    const r = await fetch("https://openrouter.ai/api/v1/key", { headers: { Authorization: `Bearer ${or}` } }).catch(() => null);
-    if (r && r.ok) { await chrome.storage.local.set({ orKey: or }); $("orkey").value = ""; msgs.push("OpenRouter key saved"); }
-    else { bad = true; msgs.push(r ? `OpenRouter said ${r.status}, not saved` : "OpenRouter unreachable, not saved"); }
+    const c = await checkKey(or);
+    if (c.ok) { await chrome.storage.local.set({ orKey: or }); $("orkey").value = ""; msgs.push("OpenRouter key saved"); }
+    else { bad = true; msgs.push(c.unreachable ? "OpenRouter unreachable, not saved" : `OpenRouter said ${c.status}, not saved`); }
   }
   $("keyMsg").textContent = msgs.join(". ") || "Paste a key first.";
   $("keyMsg").classList.toggle("bad", bad);
   $("keyMsg").classList.toggle("good", msgs.length > 0 && !bad);
   await readKeys();
 }
+
+// ---- Connect OpenRouter (Start here): OpenRouter's sign-in window gives Sieve a key of the person's own,
+// checked and saved as orKey exactly like a pasted one (openrouter-connect.js). Runs here, not in the
+// worker: there's nothing to refresh later, and the window's answer comes back to this page.
+// Only `identity` is asked for, from the click (nothing awaited first: Chrome's user gesture rule), and
+// given back afterwards unless Your agent is on, which needs it too.
+const IDENTITY = { permissions: ["identity"] };
+const connectMsg = (text, bad = false) => { $("connectMsg").textContent = text; $("connectMsg").classList.toggle("alert", bad); };
+async function giveBackIdentity() {
+  try { if (!(await chrome.storage.local.get("agentSync")).agentSync?.on) await chrome.permissions.remove(IDENTITY); } catch {}
+}
+$("connectOr").onclick = async () => {
+  const btn = $("connectOr");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const granted = await chrome.permissions.request(IDENTITY).catch(() => false);
+    if (!granted) return connectMsg(connectWords({ error: "no_permission" }), true);
+    if (!chrome.identity?.launchWebAuthFlow) { await giveBackIdentity(); return connectMsg(connectWords({ error: "no_window" }), true); }
+    connectMsg("Waiting for OpenRouter…");
+    const r = await connectOpenRouter({
+      redirect: chrome.identity.getRedirectURL(),
+      launch: (url) => chrome.identity.launchWebAuthFlow({ url, interactive: true }),
+      save: (key) => chrome.storage.local.set({ orKey: key }),
+      onStep: () => connectMsg("Checking the new key…"),
+    }).catch(() => ({ error: "other" }));
+    await giveBackIdentity();
+    if (!r.ok) return connectMsg(connectWords(r), r.error !== "closed");
+    // Start here goes once the key is saved, so the outcome is said where a pasted key's is.
+    connectMsg("");
+    $("keyMsg").textContent = connectWords(r);
+    $("keyMsg").classList.remove("bad");
+    $("keyMsg").classList.add("good");
+    await readKeys();
+    $("keyMsg").scrollIntoView?.({ block: "center" });
+  } finally {
+    btn.disabled = false;
+  }
+};
+$("pasteKey").onclick = () => {
+  $("orkey").scrollIntoView?.({ block: "center" });
+  $("orkey").focus();
+};
 
 load();
 $("version").textContent = chrome.runtime.getManifest?.()?.version || "";

@@ -7,6 +7,7 @@ import { fakeDocument } from "./fake-dom.mjs";
 export const html = readFileSync(new URL("../options.html", import.meta.url), "utf8");
 export const tick = () => new Promise((r) => setTimeout(r, 0));
 let loads = 0;
+export const REDIRECT = "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/";
 
 const VOID = new Set(["input", "br", "meta", "img", "hr", "link", "source"]);
 
@@ -24,9 +25,10 @@ export function fire(el, type, extra = {}) {
  * function of the message). store: chrome.storage.local's contents (kept and changed). setFails: the
  * error chrome.storage.local.set throws, or a function of what is written that returns one (or nothing).
  * stats: what a stats message answers. fetchOk: whether the key
- * checks succeed.
+ * checks succeed. net: a fetch of its own (url, init), instead of fetchOk. launch: chrome.identity's
+ * launchWebAuthFlow ({ url, interactive }); without it chrome.identity isn't there.
  */
-export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null, saveDelay = 0 } = {}) {
+export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null, net = null, launch = null, saveDelay = 0 } = {}) {
   const doc = fakeDocument();
   const body = html.slice(html.indexOf("<main>"), html.indexOf("</main>") + 7);
   const stack = [doc.body];
@@ -68,6 +70,8 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   const asked = [];
   const sets = [];
   const copied = [];
+  const removed = [];
+  const launched = [];
   globalThis.document = doc;
   const win = { listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); } };
   globalThis.window = win;
@@ -80,7 +84,10 @@ export async function page({ record, granted = true, confirmed = true, answer, s
     setTimeout(() => { for (const fn of changedListeners) fn(changes, "local"); }, 0);
   };
   globalThis.confirm = () => confirmed;
-  globalThis.fetch = async () => {
+  const fetched = [];
+  globalThis.fetch = async (url, init) => {
+    fetched.push({ url, init });
+    if (net) return net(url, init);
     if (fetchOk === null) throw new Error("no network in this test");
     return { ok: fetchOk, status: fetchOk ? 200 : 401 };
   };
@@ -104,7 +111,11 @@ export async function page({ record, granted = true, confirmed = true, answer, s
       },
       onChanged: { addListener: (fn) => changedListeners.push(fn) },
     },
-    permissions: { request: async (p) => { asked.push({ p, before: sent.length }); return granted; } },
+    permissions: {
+      request: async (p) => { asked.push({ p, before: sent.length }); return granted; },
+      remove: async (p) => { removed.push(p); return true; },
+    },
+    ...(launch ? { identity: { getRedirectURL: () => REDIRECT, launchWebAuthFlow: async (o) => { launched.push(o); return launch(o); } } } : {}),
     runtime: {
       getManifest: () => ({ version: "1.5.0" }),
       sendMessage: async (msg) => {
@@ -121,7 +132,7 @@ export async function page({ record, granted = true, confirmed = true, answer, s
   const $ = (id) => doc.getElementById(id);
   // Another page (the popup) writes to storage: Chrome tells this one.
   const elsewhere = (obj) => { Object.assign(store, structuredClone(obj)); tell(obj); };
-  return { $, doc, sent, asked, sets, store, copied, elsewhere, hang, window: win };
+  return { $, doc, sent, asked, sets, store, copied, elsewhere, hang, window: win, fetched, removed, launched };
 }
 
 /** Whether an element shows: neither it nor anything it is in is hidden. */
