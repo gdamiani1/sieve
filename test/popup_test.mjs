@@ -38,7 +38,9 @@ function build() {
 
 const visible = (el) => { for (let e = el; e; e = e.parentNode) if (e.hidden) return false; return true; };
 
-async function popup({ store = {}, stats = { available: false, consent: null }, agent = { on: false, state: "off" }, confirmed = true } = {}) {
+async function popup({ store = {}, stats = { available: false, consent: null }, agent = { on: false, state: "off" }, confirmed = true, noKey = false } = {}) {
+  // Every case but the no-key ones runs with a key saved (a dummy value).
+  if (!noKey && !store.orKey && !store.apiKey) store.orKey = "test-key";
   const doc = build();
   const sent = [];
   const opened = [];
@@ -226,6 +228,31 @@ for (const stats of [{ available: false, consent: null }, { available: true, con
   const { $ } = await popup({ stats: (m) => (m.action === "consent" ? null : { available: true, consent: null }) });
   await $("askNo").onclick();
   assert.equal($("askErr").textContent, "Sieve couldn't change usage stats. Reload the extension and try again.");
+}
+
+// No key at all: one sentence and one button; counts, cost, switches, Daily learnings, the waitlist line
+// and the stats question stay out of the way.
+{
+  const { $, opened } = await popup({ noKey: true, store: { stats: { ...STATS } }, stats: { available: true, consent: null } });
+  assert.ok(visible($("nokey")));
+  assert.ok(!visible($("main")));
+  for (const id of ["posts", "cost", "digest", "settings", "wait", "ask", "linkedinOn"]) assert.ok(!visible($(id)), `${id} hidden`);
+  assert.match(html, /Sieve needs an OpenRouter key to read posts\. It takes two minutes\./);
+  assert.equal($("addKey").textContent, "Add your key");
+  $("addKey").click();
+  assert.deepEqual(opened, ["options"]);
+}
+// Empty strings count as no key.
+{
+  const { $ } = await popup({ noKey: true, store: { orKey: "", apiKey: "" } });
+  assert.ok(visible($("nokey")) && !visible($("main")));
+}
+// Either key brings the normal popup back.
+for (const store of [{ orKey: "k" }, { apiKey: "k" }]) {
+  const { $ } = await popup({ noKey: true, store: { ...store, stats: { ...STATS } } });
+  assert.ok(!visible($("nokey")));
+  assert.ok(visible($("main")) && visible($("digest")) && visible($("wait")));
+  assert.equal($("posts").textContent, "508");
 }
 
 console.log("popup_test: ok");

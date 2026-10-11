@@ -1,7 +1,13 @@
 import { loadPrefs } from "./prefs.js";
 const $ = (id) => document.getElementById(id);
 
+// Without a key (OpenRouter or TypeSafe) nothing can be scored, so the popup says so and offers the fix.
 async function load() {
+  const k = await chrome.storage.local.get(["orKey", "apiKey"]);
+  const noKey = !(k.orKey || k.apiKey);
+  $("main").hidden = noKey;
+  $("nokey").hidden = !noKey;
+  if (noKey) return;
   const p = await loadPrefs();
   const { stats = {} } = await chrome.storage.local.get("stats");
   $("linkedinOn").checked = p.linkedinOn;
@@ -21,6 +27,8 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn"]) {
     await chrome.storage.local.set({ prefs: { ...prefs, [id]: $(id).checked } });
   };
 }
+// Settings opens with Start here showing (the page shows it whenever no key is saved), then the popup closes.
+$("addKey").onclick = () => { chrome.runtime.openOptionsPage(); globalThis.close?.(); };
 $("settings").onclick = () => chrome.runtime.openOptionsPage();
 $("digest").onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL("digest.html") });
 $("reset").onclick = async () => {

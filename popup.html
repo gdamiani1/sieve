@@ -49,11 +49,14 @@ body.asking .agent,body.asking .wait{display:none}
 .ask .btn.secondary{background:var(--card)}
 .fail{background:var(--alert-tint);color:var(--alert);border-radius:14px;padding:8px 14px;margin:0 0 8px;font-size:13px}
 .thanks{margin:0 2px 8px}
+.nokey{margin:2px 2px 12px}
+.btn.block{width:100%}
 /* Live lines stay in the page so screen readers announce them; visually hidden while empty. */
 .fail:empty,.thanks:empty{position:absolute;width:1px;height:1px;margin:0;padding:0;overflow:hidden;clip-path:inset(50%)}
 </style></head><body>
 <div class="head"><img src="icons/icon48.png" alt=""><h1>Sieve</h1></div>
 <svg class="nib" width="62" height="9" viewBox="0 0 62 9" aria-hidden="true"><path d="M1 5.6 C 12 3.8, 30 3.6, 61 3.2 C 61.6 3.7, 61.5 4.4, 61 4.7 C 40 5.6, 22 5.8, 2 7.0 C 0.8 6.8, 0.6 6.0, 1 5.6 Z"/></svg>
+<div id="main">
 <div class="ask" id="ask" hidden role="region" aria-labelledby="askTitle">
 <h2 id="askTitle">Send usage counts?</h2>
 <p>Once a day, counts with a random install ID, through Google Analytics. Never post text, links, names or keys.</p>
@@ -81,5 +84,10 @@ body.asking .agent,body.asking .wait{display:none}
 <p class="agent" id="agent" hidden></p>
 <div class="btns"><button type="button" class="btn secondary" id="settings">Settings</button><button type="button" class="btn primary" id="digest">Daily learnings</button></div>
 <p class="wait" id="wait">A Sieve account is coming. <a href="https://divergada.com/sieve?ref=extension" target="_blank" rel="noopener noreferrer">Join the waitlist</a></p>
+</div>
+<div id="nokey" hidden>
+<p class="nokey">Sieve needs an OpenRouter key to read posts. It takes two minutes.</p>
+<button type="button" class="btn primary block" id="addKey">Add your key</button>
+</div>
 <script type="module" src="popup.js"></script>
 </body></html>
