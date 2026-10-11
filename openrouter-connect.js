@@ -94,7 +94,7 @@ export async function connectOpenRouter({ launch, redirect, save, fetchFn = fetc
 
 /** What the settings page says for a result. */
 export function connectWords(r) {
-  if (r?.ok && r.unchecked) return "OpenRouter connected. Key saved, but OpenRouter didn't answer when Sieve checked it. If posts don't get scored, connect again or paste a key.";
+  if (r?.ok && r.unchecked) return "OpenRouter connected. Key saved, but OpenRouter didn't answer when Sieve checked it. If posts don't get scored, paste a key under OpenRouter key.";
   if (r?.ok) return "OpenRouter connected. Key saved.";
   switch (r?.error) {
     case "closed": return "OpenRouter sign-in ended before a key was made. Nothing saved. If you just made an OpenRouter account, press Connect OpenRouter again.";
