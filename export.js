@@ -37,6 +37,7 @@
 //   text or model output derived from it; consumers treat it as data and clean it for display.
 //   New fields may appear within version 1; a consumer ignores fields it doesn't recognise. Only
 //   renaming or removing a field, or changing what a field means, bumps the version.
+// itemId: an item's id, the same rule Copy as prompt's Sieve id line uses.
 import { normalizeBrief, platformOf, videoPlatform, libraryItemId as itemId } from "./brief.js";
 
 const iso = (ms) => { const d = new Date(typeof ms === "number" && ms > 0 ? ms : NaN); return Number.isNaN(d.getTime()) ? null : d.toISOString(); };
@@ -44,7 +45,6 @@ const arr = (a) => (Array.isArray(a) ? a : []);
 const isRec = (r) => !!r && typeof r === "object" && !Array.isArray(r);
 // A stored key can be a string or (old LinkedIn data) a number; never trust anything else.
 const idOf = (k) => (typeof k === "string" ? k : typeof k === "number" && Number.isFinite(k) ? String(k) : "");
-// An item's id: brief.js libraryItemId, the same rule Copy as prompt's Sieve id line uses.
 // Every text field must actually be a string in the exported JSON: a stray number becomes text,
 // anything else (an object, an array, a boolean) becomes "" rather than leaking its shape out.
 const str = (s) => (typeof s === "string" ? s : typeof s === "number" && Number.isFinite(s) ? String(s) : "");

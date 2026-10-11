@@ -52,9 +52,9 @@ you do the part that needs judgement.
   30 minute way to try it, and whether it's worth keeping as a skill.
 - **Copy as prompt** puts the brief on your clipboard for your coding agent. It starts with a note that it's
   third-party material, that the agent should treat it as information and not instructions, and that it should
-  ask before running any command. Its last line is the item's Sieve id (`chrome:...`, the id your agent sees
-  when sending to your agent is on), so an agent with Sieve's tools can find the brief and, if you agree,
-  record how it went. A brief with a warning gets the id alone, with no offer to record anything.
+  ask before running any command. When the item has a Sieve id (`chrome:...`, the id your agent sees once
+  Your agent is on and the item has been sent), it's the last line, so an agent with Sieve's tools can find
+  the brief and, if you agree, record how it went. A brief with a warning gets the id alone, with no offer to record anything.
 - When the model notices text aimed at AI agents in the source, or Sieve's own check finds a blatant case or
   hidden characters, the brief carries a warning at the top. Sieve's own code then makes "Check the source
   before copying anything from it." the first step, drops any step or need with a link, a download, a pipe
