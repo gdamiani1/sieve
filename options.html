@@ -109,7 +109,7 @@ output{font-weight:600}
 <li><p>Connect OpenRouter. Sieve gets a key of its own, which you can see or delete at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>.</p>
 <div class="btns"><button type="button" class="btn primary" id="connectOr">Connect OpenRouter</button><button type="button" class="btn text" id="pasteKey">Paste a key instead</button></div>
 <p class="status" id="connectMsg" role="status"></p></li>
-<li>If your OpenRouter account is new, add a few dollars of credit there first: scoring won't work without it. Scoring costs about 3 to 5 US cents per 1,000 posts.</li>
+<li>If your OpenRouter account is new, add a few dollars of credit there: scoring won't work without it. Scoring costs about 3 to 5 US cents per 1,000 posts.</li>
 <li>Open LinkedIn, X, Reddit or YouTube. Posts get a small Sieve tag as you scroll.</li>
 </ol>
 </section>
@@ -150,7 +150,7 @@ output{font-weight:600}
 <div class="row stack"><label class="lbl" for="orkey">OpenRouter key <span class="q">(scores posts with Jev, writes briefs and digests, and runs Watch it for me)</span></label><input class="field" id="orkey" type="password" autocomplete="off" aria-describedby="keysFoot"></div>
 <div class="row kv"><span>Scoring</span><span class="v" id="scoreStatus" aria-live="polite"></span></div>
 <div class="row stack"><label class="lbl" for="key">TypeSafe key <span class="q">(only without an OpenRouter key)</span></label><input class="field" id="key" type="password" autocomplete="off" aria-describedby="tsFoot"></div>
-<div class="row keys"><button type="button" class="btn primary" id="saveKeys">Check and save keys</button><span class="v" id="keyMsg" aria-live="polite"></span></div>
+<div class="row keys"><button type="button" class="btn primary" id="saveKeys">Check and save keys</button><span class="v" id="keyMsg" aria-live="polite" tabindex="-1"></span></div>
 </div>
 <p class="foot" id="keysFoot">Stored only in this browser. Each key is checked before it's saved. Scoring runs on Jev, TypeSafe's decision model, reached through your OpenRouter key: about 3 to 5 US cents per 1,000 posts. Sieve is independent and not made by TypeSafe.</p>
 <p class="foot" id="tsFoot">A TypeSafe key is only used when no OpenRouter key is saved: then Sieve scores with Jev directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key.</p>

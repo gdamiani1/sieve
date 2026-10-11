@@ -149,7 +149,7 @@ to Sieve's server, so a coding agent you connect there can read it next to your 
 - **Permissions:** the `identity` permission (for the sign-in window) and access to mcp.divergada.com are
   optional. Chrome asks for them only when you click Turn on, and Sieve gives them back when you turn it off.
   **Connect OpenRouter** asks for `identity` alone, for OpenRouter's sign-in window, and gives it back when
-  it's done unless sending to your agent is on.
+  it's done unless sending to your agent is on or signing in.
 
 If usage stats are on (see below), the daily counts also say whether sending to your agent is on, as "on" or
 "off". They never carry your email or anything from your library.

@@ -26,9 +26,10 @@ export function fire(el, type, extra = {}) {
  * error chrome.storage.local.set throws, or a function of what is written that returns one (or nothing).
  * stats: what a stats message answers. fetchOk: whether the key
  * checks succeed. net: a fetch of its own (url, init), instead of fetchOk. launch: chrome.identity's
- * launchWebAuthFlow ({ url, interactive }); without it chrome.identity isn't there.
+ * launchWebAuthFlow ({ url, interactive }); without it chrome.identity isn't there. originsHeld: the
+ * origin patterns chrome.permissions.contains says are granted.
  */
-export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null, net = null, launch = null, saveDelay = 0 } = {}) {
+export async function page({ record, granted = true, confirmed = true, answer, store = {}, setFails = null, stats = null, fetchOk = null, net = null, launch = null, originsHeld = [], saveDelay = 0 } = {}) {
   const doc = fakeDocument();
   const body = html.slice(html.indexOf("<main>"), html.indexOf("</main>") + 7);
   const stack = [doc.body];
@@ -114,6 +115,7 @@ export async function page({ record, granted = true, confirmed = true, answer, s
     permissions: {
       request: async (p) => { asked.push({ p, before: sent.length }); return granted; },
       remove: async (p) => { removed.push(p); return true; },
+      contains: async (p) => (p.origins || []).every((o) => originsHeld.includes(o)) && !(p.permissions || []).length,
     },
     ...(launch ? { identity: { getRedirectURL: () => REDIRECT, launchWebAuthFlow: async (o) => { launched.push(o); return launch(o); } } } : {}),
     runtime: {

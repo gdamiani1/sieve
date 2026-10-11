@@ -79,7 +79,7 @@ const flow = async ({ window, net, saveFails = false } = {}) => {
   const urls = [];
   const pair = await pkcePair("w".repeat(50));
   const r = await connectOpenRouter({
-    redirect, pair, state: "S",
+    redirect, pair, state: "S", retryMs: 0,
     launch: async (url) => { urls.push(url); return window(url); },
     fetchFn: net,
     save: async (k) => { if (saveFails) throw new Error("quota"); saved.push(k); },
@@ -101,7 +101,12 @@ const goodNet = async (url) => (url === EXCHANGE_URL ? res(200, { key: "sk-or-v1
   const { r, saved } = await flow({ window: () => { throw new Error("The user did not approve access."); }, net: goodNet });
   assert.deepEqual(r, { error: "closed" });
   assert.deepEqual(saved, []);
-  assert.equal(connectWords(r), "OpenRouter sign-in closed. Nothing saved.");
+  assert.equal(connectWords(r), "OpenRouter sign-in ended before a key was made. Nothing saved. If you just made an OpenRouter account, press Connect OpenRouter again.");
+}
+{
+  // Any rejection reads the same: Chrome's messages aren't stable enough to tell apart.
+  const { r } = await flow({ window: () => { throw new Error("Authorization page could not be loaded."); }, net: goodNet });
+  assert.deepEqual(r, { error: "closed" });
 }
 {
   const { r, saved, steps } = await flow({ window: () => `${redirect}?code=C&state=other`, net: async () => { throw new Error("no call expected"); } });
@@ -120,13 +125,28 @@ const goodNet = async (url) => (url === EXCHANGE_URL ? res(200, { key: "sk-or-v1
   assert.equal(connectWords(r), "OpenRouter said 403, so no key was made. Try again.");
 }
 {
-  const { r, saved } = await flow({ window: () => `${redirect}?code=C&state=S`, net: async (url) => (url === EXCHANGE_URL ? res(200, { key: "sk-or-v1-x" }) : res(401, {})) });
+  let checks = 0;
+  const { r, saved } = await flow({ window: () => `${redirect}?code=C&state=S`, net: async (url) => { if (url === EXCHANGE_URL) return res(200, { key: "sk-or-v1-x" }); checks++; return res(401, {}); } });
   assert.deepEqual(r, { error: "key_refused", status: 401 });
+  assert.equal(checks, 2, "the check is tried twice");
   assert.deepEqual(saved, [], "a key that fails the check isn't saved");
+  assert.equal(connectWords(r), 'OpenRouter said 401 to the new key, so it wasn\'t saved. A leftover "Sieve for Chrome" key may be at openrouter.ai/keys: you can delete it there. Try again.');
 }
 {
-  const { r } = await flow({ window: () => `${redirect}?code=C&state=S`, net: async (url) => { if (url === EXCHANGE_URL) return res(200, { key: "sk-or-v1-x" }); throw new Error("down"); } });
-  assert.deepEqual(r, { error: "key_unreachable" });
+  // The check fails once, then passes: saved and checked.
+  let checks = 0;
+  const { r, saved } = await flow({ window: () => `${redirect}?code=C&state=S`, net: async (url) => { if (url === EXCHANGE_URL) return res(200, { key: "sk-or-v1-x" }); return ++checks === 1 ? res(502, {}) : res(200, {}); } });
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(saved, ["sk-or-v1-x"]);
+}
+{
+  // OpenRouter doesn't answer the check twice: the just-made key is saved anyway, and the words say so.
+  let checks = 0;
+  const { r, saved } = await flow({ window: () => `${redirect}?code=C&state=S`, net: async (url) => { if (url === EXCHANGE_URL) return res(200, { key: "sk-or-v1-x" }); checks++; throw new Error("down"); } });
+  assert.deepEqual(r, { ok: true, unchecked: true });
+  assert.equal(checks, 2);
+  assert.deepEqual(saved, ["sk-or-v1-x"]);
+  assert.match(connectWords(r), /^OpenRouter connected\. Key saved, but OpenRouter didn't answer/);
 }
 {
   const { r } = await flow({ window: () => `${redirect}?code=C&state=S`, net: goodNet, saveFails: true });
@@ -134,7 +154,7 @@ const goodNet = async (url) => (url === EXCHANGE_URL ? res(200, { key: "sk-or-v1
 }
 
 // Every word: plain, no em dash, and none says the key.
-for (const e of ["closed", "denied", "state", "refused", "unreachable", "no_key", "key_refused", "key_unreachable", "not_saved", "no_permission", "no_window", "other"]) {
+for (const e of ["closed", "denied", "state", "refused", "unreachable", "no_key", "key_refused", "not_saved", "no_permission", "no_window", "other"]) {
   const w = connectWords({ error: e, status: 403 });
   assert.ok(w && !w.includes("—"), `${e}: ${w}`);
   assert.ok(!/sk-or/.test(w));
@@ -156,7 +176,7 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   assert.equal($("connectOr").textContent, "Connect OpenRouter");
   assert.ok($("connectOr").classList.contains("primary"));
   assert.equal($("pasteKey").textContent, "Paste a key instead");
-  assert.match(steps[1].textContent, /few dollars of credit/);
+  assert.match(steps[1].textContent, /^If your OpenRouter account is new, add a few dollars of credit there: scoring won't work without it\. Scoring costs/);
   assert.match(steps[1].textContent, /3 to 5 US cents per 1,000 posts/);
   assert.equal($("connectMsg").getAttribute("role"), "status");
   assert.equal($("connectMsg").textContent, "");
@@ -184,7 +204,7 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   assert.deepEqual(asked.map((a) => a.p), [{ permissions: ["identity"] }], "only identity is asked for");
   assert.equal(launched.length, 0);
   assert.deepEqual(sets, []);
-  assert.equal($("connectMsg").textContent, "Chrome didn't allow the sign-in window. Nothing saved. Paste a key instead.");
+  assert.equal($("connectMsg").textContent, "Sign-in needs Chrome's permission, which wasn't given. Nothing saved. Paste a key instead.");
   assert.ok($("connectMsg").classList.contains("alert"));
   assert.equal($("connectOr").disabled, false);
   assert.ok(visible($("start")));
@@ -201,7 +221,7 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   assert.equal(new URL(launched[0].url).searchParams.get("callback_url"), REDIRECT);
   assert.deepEqual(sets, []);
   assert.deepEqual(fetched, []);
-  assert.equal($("connectMsg").textContent, "OpenRouter sign-in closed. Nothing saved.");
+  assert.equal($("connectMsg").textContent, "OpenRouter sign-in ended before a key was made. Nothing saved. If you just made an OpenRouter account, press Connect OpenRouter again.");
   assert.ok(!$("connectMsg").classList.contains("alert"));
   assert.deepEqual(removed, [{ permissions: ["identity"] }]);
   assert.ok(visible($("start")));
@@ -212,11 +232,12 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
 {
   let release;
   const gate = new Promise((r) => { release = r; });
-  const { $, store, launched, fetched, removed } = await page({
+  const { $, doc, store, launched, fetched, removed } = await page({
     record: {},
     launch: async ({ url }) => { await gate; return `${REDIRECT}?code=CODE1&state=${stateOf(url)}`; },
     net: async (url) => (url === EXCHANGE_URL ? res(200, { key: "sk-or-v1-made" }) : res(200, {})),
   });
+  $("orkey").value = "half-typed";
   $("connectOr").click();
   await settle();
   assert.equal($("connectOr").disabled, true);
@@ -234,8 +255,10 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   assert.equal($("keyMsg").textContent, "OpenRouter connected. Key saved.");
   assert.ok($("keyMsg").classList.contains("good"));
   assert.equal($("connectOr").disabled, false);
-  assert.equal($("orkey").value, "", "the key never shows in the field");
+  assert.equal($("orkey").value, "", "the field is emptied, and the key never shows in it");
   assert.deepEqual(removed, [{ permissions: ["identity"] }]);
+  assert.equal(doc.activeElement, $("keyMsg"), "focus goes to the keys line, not the page");
+  assert.equal($("keyMsg").getAttribute("tabindex"), "-1");
 }
 
 // Your agent on: the identity permission stays, since it needs it too.
@@ -249,6 +272,60 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   await settle();
   assert.equal($("keyMsg").textContent, "OpenRouter connected. Key saved.");
   assert.deepEqual(removed, []);
+}
+
+// Your agent signing in (its server's origin held, the record not on yet): identity stays.
+{
+  const { $, removed } = await page({
+    record: {}, originsHeld: ["https://mcp.divergada.com/*"],
+    launch: async ({ url }) => `${REDIRECT}?code=C&state=${stateOf(url)}`,
+    net: async (url) => (url === EXCHANGE_URL ? res(200, { key: "sk-or-v1-made" }) : res(200, {})),
+  });
+  $("connectOr").click();
+  await settle();
+  assert.equal($("keyMsg").textContent, "OpenRouter connected. Key saved.");
+  assert.deepEqual(removed, []);
+}
+
+// Any rejection of the window, closed or not, reads the same and isn't an alert.
+{
+  const { $, store } = await page({ record: {}, launch: async () => { throw new Error("Authorization page could not be loaded."); } });
+  $("connectOr").click();
+  await settle();
+  assert.equal(store.orKey, undefined);
+  assert.match($("connectMsg").textContent, /^OpenRouter sign-in ended before a key was made\./);
+  assert.ok(!$("connectMsg").classList.contains("alert"));
+}
+
+// getRedirectURL throwing: an outcome is said, not a stuck "Waiting", and identity goes back.
+{
+  const { $, removed, launched } = await page({ record: {}, launch: async () => "x" });
+  chrome.identity.getRedirectURL = () => { throw new Error("boom"); };
+  $("connectOr").click();
+  await settle();
+  assert.equal(launched.length, 0);
+  assert.equal($("connectMsg").textContent, "Something went wrong. Nothing saved. Try again.");
+  assert.deepEqual(removed, [{ permissions: ["identity"] }]);
+  assert.equal($("connectOr").disabled, false);
+}
+
+// OpenRouter doesn't answer the new key's check (twice, a second apart): saved anyway, said plainly.
+{
+  const { $, store, fetched, doc } = await page({
+    record: {},
+    launch: async ({ url }) => `${REDIRECT}?code=C&state=${stateOf(url)}`,
+    net: async (url) => { if (url === EXCHANGE_URL) return res(200, { key: "sk-or-v1-made" }); throw new Error("down"); },
+  });
+  $("connectOr").click();
+  await settle();
+  await new Promise((r) => setTimeout(r, 1100));
+  await settle();
+  assert.equal(fetched.filter((f) => f.url === CHECK_URL).length, 2);
+  assert.equal(store.orKey, "sk-or-v1-made");
+  assert.equal($("start").hidden, true);
+  assert.match($("keyMsg").textContent, /^OpenRouter connected\. Key saved, but OpenRouter didn't answer when Sieve checked it\./);
+  assert.ok(!$("keyMsg").classList.contains("good"));
+  assert.equal(doc.activeElement, $("keyMsg"));
 }
 
 // A refused exchange or a key that fails the check: said, nothing saved, Start here stays.

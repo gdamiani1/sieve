@@ -341,11 +341,16 @@ async function checkKeys() {
 // checked and saved as orKey exactly like a pasted one (openrouter-connect.js). Runs here, not in the
 // worker: there's nothing to refresh later, and the window's answer comes back to this page.
 // Only `identity` is asked for, from the click (nothing awaited first: Chrome's user gesture rule), and
-// given back afterwards unless Your agent is on, which needs it too.
+// given back afterwards unless Your agent needs it: when it's on, or while it holds its server's origin
+// (it asks for both together, so that origin is held from its own sign-in window onwards).
 const IDENTITY = { permissions: ["identity"] };
 const connectMsg = (text, bad = false) => { $("connectMsg").textContent = text; $("connectMsg").classList.toggle("alert", bad); };
 async function giveBackIdentity() {
-  try { if (!(await chrome.storage.local.get("agentSync")).agentSync?.on) await chrome.permissions.remove(IDENTITY); } catch {}
+  try {
+    if (await chrome.permissions.contains({ origins: [`${SERVER}/*`] })) return;
+    if ((await chrome.storage.local.get("agentSync")).agentSync?.on) return;
+    await chrome.permissions.remove(IDENTITY);
+  } catch {}
 }
 $("connectOr").onclick = async () => {
   const btn = $("connectOr");
@@ -354,23 +359,31 @@ $("connectOr").onclick = async () => {
   try {
     const granted = await chrome.permissions.request(IDENTITY).catch(() => false);
     if (!granted) return connectMsg(connectWords({ error: "no_permission" }), true);
-    if (!chrome.identity?.launchWebAuthFlow) { await giveBackIdentity(); return connectMsg(connectWords({ error: "no_window" }), true); }
-    connectMsg("Waiting for OpenRouter…");
-    const r = await connectOpenRouter({
-      redirect: chrome.identity.getRedirectURL(),
-      launch: (url) => chrome.identity.launchWebAuthFlow({ url, interactive: true }),
-      save: (key) => chrome.storage.local.set({ orKey: key }),
-      onStep: () => connectMsg("Checking the new key…"),
-    }).catch(() => ({ error: "other" }));
+    let r;
+    if (!chrome.identity?.launchWebAuthFlow) r = { error: "no_window" };
+    else {
+      connectMsg("Waiting for OpenRouter…");
+      try {
+        r = await connectOpenRouter({
+          redirect: chrome.identity.getRedirectURL(),
+          launch: (url) => chrome.identity.launchWebAuthFlow({ url, interactive: true }),
+          save: (key) => chrome.storage.local.set({ orKey: key }),
+          onStep: () => connectMsg("Checking the new key…"),
+        });
+      } catch { r = { error: "other" }; }
+    }
     await giveBackIdentity();
     if (!r.ok) return connectMsg(connectWords(r), r.error !== "closed");
-    // Start here goes once the key is saved, so the outcome is said where a pasted key's is.
+    // Start here goes once the key is saved, so the outcome is said, and focus goes, where a pasted
+    // key's is. Text typed in the field before is cleared, so it can't replace this key later.
     connectMsg("");
+    $("orkey").value = "";
     $("keyMsg").textContent = connectWords(r);
     $("keyMsg").classList.remove("bad");
-    $("keyMsg").classList.add("good");
+    $("keyMsg").classList.toggle("good", !r.unchecked);
     await readKeys();
     $("keyMsg").scrollIntoView?.({ block: "center" });
+    $("keyMsg").focus();
   } finally {
     btn.disabled = false;
   }
