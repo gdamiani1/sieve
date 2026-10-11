@@ -3,6 +3,7 @@
 // touches chrome.* or the network, so it is tested offline (test/agent_sync_test.mjs). The Chrome
 // part is agent-sync-run.js.
 import { buildExport } from "./export.js";
+import { CHROME_ID, chromeId } from "./brief.js";
 
 export const SERVER = "https://mcp.divergada.com";
 export const CLIENT_ID = `${SERVER}/clients/chrome.json`;
@@ -26,8 +27,8 @@ export const AGENTS = [
     meta: () => "Any agent that adds remote MCP servers with sign-in, running on your computer." },
 ];
 export const CLAUDE_LINE = AGENTS[0].code;
-// The server's rule for a Chrome id (mcp-server src/core.js CHROME_ID).
-export const CHROME_ID = /^chrome:[A-Za-z0-9_:.-]{1,200}$/;
+// The server's rule for a Chrome id lives in brief.js, beside the item id rule Copy as prompt uses too.
+export { CHROME_ID };
 export const SEND_EVERY_MIN = 15;
 // The server's cap on one upload (bytes of JSON).
 export const MAX_BODY = 8 * 1024 * 1024;
@@ -84,8 +85,8 @@ export function libraryBody(data, now = Date.now()) {
   const items = [];
   let left = 0;
   for (const it of ex.items) {
-    const id = `chrome:${it.id}`;
-    if (CHROME_ID.test(id)) items.push({ ...it, id }); else left++;
+    const id = chromeId(it.id);
+    if (id) items.push({ ...it, id }); else left++;
   }
   const body = { format: ex.format, version: ex.version, exportedAt: ex.exportedAt, items };
   const json = JSON.stringify(body);

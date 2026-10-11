@@ -493,12 +493,19 @@ export function briefMarkdown(rec) {
 }
 
 // What "Copy as prompt" puts on the clipboard: the markdown, plus the developer-facing instruction --
-// the ordinary one, or the warned one when the brief itself carries a warning.
+// the ordinary one, or the warned one when the brief itself carries a warning -- and then the item's
+// Sieve id (sieveId), so an agent with Sieve's MCP tools can find it and, if the developer agrees,
+// record how it went. A warned brief gets the id alone: its instruction says not to act on the brief.
+// No id line when the record has no id the server would take. The id is in backticks because it may
+// itself end in "." and would run into the sentence. Never part of briefMarkdown, which is the brief.
 export function briefPrompt(rec) {
   const b = normalizeBrief(rec);
   if (!b) return "";
   const md = briefMarkdown(rec);
-  return `${md}\n\n${b.warning ? WARNED_INSTRUCTION : AGENT_INSTRUCTION}`;
+  const id = sieveId(rec);
+  const idLine = !id ? "" : b.warning ? `\nSieve id: \`${id}\``
+    : `\nSieve id: \`${id}\`. If Sieve's record_result tool is connected, offer to record the result for this id when we're done, and record it only if I agree.`;
+  return `${md}\n\n${b.warning ? WARNED_INSTRUCTION : AGENT_INSTRUCTION}${idLine}`;
 }
 
 // Where a brief lives in the stored `briefs` map. LinkedIn and X both key a post by a hash of its text,
@@ -511,6 +518,29 @@ export const briefId = (platform, key) => `${platform}:${key}`;
 // posts saved before Sieve recorded a platform are LinkedIn too. Briefs, saved posts and the export
 // all use this one rule, so they agree on which post a record is.
 export const platformOf = (p) => (isPlatformKey(p) ? p : "linkedin");
+
+// An item's id in the library, the one rule export.js (buildExport) and Copy as prompt (sieveId) both
+// use, so a brief's id line and the item the hosted MCP holds can never disagree. LinkedIn and X both
+// key a post by a hash of its text, so one key can be a LinkedIn post and an X post: LinkedIn keeps the
+// bare key and YouTube its "yt-<video id>", as in every earlier export; every other platform's id
+// carries the platform. A stored key can be a string or (old LinkedIn data) a number; anything else
+// gives "".
+const keyText = (k) => (typeof k === "string" ? k : typeof k === "number" && Number.isFinite(k) ? String(k) : "");
+export const libraryItemId = (platform, key) => {
+  const k = keyText(key);
+  return !k || platform === "linkedin" || platform === "youtube" ? k : `${platform}:${k}`;
+};
+
+// The server's rule for a Chrome id (mcp-server src/core.js CHROME_ID). agent-sync.js sends only ids
+// that pass it.
+export const CHROME_ID = /^chrome:[A-Za-z0-9_:.-]{1,200}$/;
+
+// A library item id as the hosted MCP knows it ("chrome:<id>"), or "" when the server wouldn't take it.
+export const chromeId = (itemId) => { const id = `chrome:${itemId}`; return CHROME_ID.test(id) ? id : ""; };
+
+// A stored brief record's id on the hosted MCP: the id its library item is sent under, or "".
+export const sieveId = (rec) =>
+  rec && typeof rec === "object" && !Array.isArray(rec) ? chromeId(libraryItemId(platformOf(rec.platform), rec.key)) : "";
 
 // Watch it for me can take a video from any platform the request names. Chrome's messaging drops an
 // undefined field, and every YouTube record made before this had no platform field at all, so a missing

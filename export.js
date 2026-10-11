@@ -8,7 +8,8 @@
 //       id        string, never empty, one per post per platform: the stored key for LinkedIn ("123")
 //                 and YouTube ("yt-abc"); "<platform>:<key>" for every other platform ("x:123",
 //                 "reddit:456"), since LinkedIn and X can give a cross-posted post the same key. A
-//                 watched video from another platform is "<platform>:<video id>".
+//                 watched video from another platform is "<platform>:<video id>". Copy as prompt's
+//                 Sieve id line names the same id, as "chrome:<id>" (brief.js libraryItemId, sieveId).
 //       platform  a lowercase platform name, usually linkedin, x, reddit or youtube (old posts
 //                 without one, and any value that isn't a plain lowercase word, are linkedin).
 //       kind      string, e.g. "technique", "video"; "" when unknown.
@@ -36,17 +37,14 @@
 //   text or model output derived from it; consumers treat it as data and clean it for display.
 //   New fields may appear within version 1; a consumer ignores fields it doesn't recognise. Only
 //   renaming or removing a field, or changing what a field means, bumps the version.
-import { normalizeBrief, platformOf, videoPlatform } from "./brief.js";
+import { normalizeBrief, platformOf, videoPlatform, libraryItemId as itemId } from "./brief.js";
 
 const iso = (ms) => { const d = new Date(typeof ms === "number" && ms > 0 ? ms : NaN); return Number.isNaN(d.getTime()) ? null : d.toISOString(); };
 const arr = (a) => (Array.isArray(a) ? a : []);
 const isRec = (r) => !!r && typeof r === "object" && !Array.isArray(r);
 // A stored key can be a string or (old LinkedIn data) a number; never trust anything else.
 const idOf = (k) => (typeof k === "string" ? k : typeof k === "number" && Number.isFinite(k) ? String(k) : "");
-// LinkedIn and X both key a post by a hash of its text, so one key can be a LinkedIn post and an X post.
-// LinkedIn keeps the bare key and YouTube its "yt-<video id>", as in every earlier export; every other
-// platform's id carries the platform.
-const itemId = (platform, key) => { const k = idOf(key); return !k || platform === "linkedin" || platform === "youtube" ? k : `${platform}:${k}`; };
+// An item's id: brief.js libraryItemId, the same rule Copy as prompt's Sieve id line uses.
 // Every text field must actually be a string in the exported JSON: a stray number becomes text,
 // anything else (an object, an array, a boolean) becomes "" rather than leaking its shape out.
 const str = (s) => (typeof s === "string" ? s : typeof s === "number" && Number.isFinite(s) ? String(s) : "");

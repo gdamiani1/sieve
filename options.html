@@ -66,7 +66,7 @@ input[type=number].field{width:64px;text-align:right}
 .info{background:var(--tint);color:var(--ink);border-radius:14px;padding:14px 16px;margin:12px 0 0}
 .start{margin-top:20px}.info h2{font-size:15px;margin:0 0 4px}
 .info ol{margin:8px 0 0;padding-left:20px}.info li{margin:6px 0}
-.start .btns{margin-top:8px}.start #startDone p{margin:0}.start .btn.secondary{background:var(--card)}.start .status{margin:8px 0 0}
+.start .btns{margin-top:8px}.start #startDone p{margin:0}.start #startDone #startDoneNext{margin-top:12px}.start .btn.secondary{background:var(--card)}.start .status{margin:8px 0 0}
 .status{font-size:13px;margin:8px 16px 0}
 .status:empty{display:none}.status.alert{color:var(--alert)}
 .sentence{margin:0 0 12px}
@@ -112,11 +112,13 @@ output{font-weight:600}
 <p class="status" id="connectMsg" role="status"></p></li>
 <li>If your OpenRouter account is new, add a few dollars of credit there: scoring won't work without it. Scoring costs about 3 to 5 US cents per 1,000 posts.</li>
 <li>Open LinkedIn, X, Reddit or YouTube. Posts get a small Sieve tag as you scroll.</li>
+<li>When a post gets the technique badge, press Brief, then Copy as prompt and paste it into your coding agent.</li>
 </ol>
 </div>
 <div id="startDone" hidden>
 <p id="startDoneH">Key saved. Open a feed: posts get a small Sieve tag as you scroll.</p>
 <div class="btns" role="group" aria-labelledby="startDoneH"><a class="btn secondary" id="feedLinkedin" href="https://www.linkedin.com/feed/" target="_blank" rel="noopener noreferrer">LinkedIn</a><a class="btn secondary" id="feedX" href="https://x.com/home" target="_blank" rel="noopener noreferrer">X</a><a class="btn secondary" id="feedReddit" href="https://www.reddit.com/" target="_blank" rel="noopener noreferrer">Reddit</a><a class="btn secondary" id="feedYoutube" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer">YouTube</a></div>
+<p id="startDoneNext">When a post gets the technique badge, press Brief, then Copy as prompt and paste it into your coding agent.</p>
 </div>
 </section>
 

@@ -166,6 +166,7 @@ const { REDIRECT, page, tick, visible } = await import("./options-page.mjs");
 const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
 // Start here after a key is saved from it: the setup steps give way to a line and four feed links.
 const FEEDS = { feedLinkedin: ["LinkedIn", "https://www.linkedin.com/feed/"], feedX: ["X", "https://x.com/home"], feedReddit: ["Reddit", "https://www.reddit.com/"], feedYoutube: ["YouTube", "https://www.youtube.com/"] };
+const STEP_4 = "When a post gets the technique badge, press Brief, then Copy as prompt and paste it into your coding agent.";
 function assertDone($, why = "Start here shows its done state") {
   assert.ok(visible($("start")), why);
   assert.ok(visible($("startDone")) && !visible($("startSteps")), "the steps give way to the feeds");
@@ -173,6 +174,9 @@ function assertDone($, why = "Start here shows its done state") {
   assert.ok(!$("startDone").textContent.includes("\u2014"), "no em dash");
   assert.equal($("startDone").querySelectorAll("div")[0].getAttribute("role"), "group");
   assert.equal($("startDone").querySelectorAll("div")[0].getAttribute("aria-labelledby"), "startDoneH");
+  // What comes after a feed: step 4's sentence, after the buttons, since the steps are hidden now.
+  assert.equal($("startDoneNext").textContent, STEP_4);
+  assert.ok($("startDone").textContent.endsWith(STEP_4), "after the feed buttons");
   for (const [id, [label, url]] of Object.entries(FEEDS)) {
     assert.equal($(id).textContent, label);
     assert.equal($(id).getAttribute("href"), url);
@@ -188,7 +192,9 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   const { $ } = await page({ record: {} });
   assert.ok(visible($("start")));
   const steps = $("start").querySelectorAll("li");
-  assert.equal(steps.length, 3);
+  assert.equal(steps.length, 4);
+  assert.equal(steps[3].textContent, STEP_4, "step 4: from a badge to the agent");
+  assert.ok(!$("start").textContent.includes("\u2014"), "no em dash");
   assert.ok(steps[0].textContent.includes("Connect OpenRouter"));
   assert.equal($("connectOr").textContent, "Connect OpenRouter");
   assert.ok($("connectOr").classList.contains("primary"));

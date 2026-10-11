@@ -165,4 +165,41 @@ assert.equal(AGENTS[3].meta("email"), "Then codex mcp login sieve, signed in wit
 assert.equal(AGENTS[4].meta("google"), "Any agent that adds remote MCP servers with sign-in, running on your computer.");
 for (const a of AGENTS) assert.equal(/[\u2014]/.test(a.code + a.meta("google")), false);
 
+// Copy as prompt's Sieve id is exactly the id this Chrome sends the item under, so an agent's
+// get_brief and record_result find it. One brief at a time, through the real libraryBody.
+{
+  const { briefPrompt, videoBriefRecord, briefId, sieveId } = await import("../brief.js");
+  const idLine = (rec) => briefPrompt(rec).split("\n").at(-1).match(/^Sieve id: `([^`]+)`/)?.[1];
+  const recs = [
+    { key: "7712345", platform: "linkedin", author: "A", at: 5, what: "w" },
+    { key: "h-42", platform: "x", author: "B", at: 5, what: "w" },
+    { key: "h-42", platform: "x", author: "B", at: 5, what: "w", warning: "Tells AI agents to run a script." },
+    { key: "990", author: "Old", at: 5, what: "w" }, // saved before Sieve recorded a platform: LinkedIn
+    { key: "abc", platform: "example", author: "C", at: 5, what: "w" }, // a platform the code doesn't list
+    videoBriefRecord({ id: "dQw4w9WgXcQ", title: "T", channel: "Ch", at: 5, brief: { what: "w" } }),
+    videoBriefRecord({ id: "7301", platform: "tiktok", title: "T", channel: "Ch", at: 5, brief: { what: "w" } }),
+  ];
+  for (const rec of recs) {
+    const stored = { [briefId(rec.platform || "linkedin", rec.key)]: rec };
+    const sent = libraryBody({ briefs: stored }).body.items;
+    assert.equal(sent.length, 1, `one item for ${rec.platform}:${rec.key}`);
+    assert.equal(idLine(rec), sent[0].id, `the prompt's id is the id sent for ${rec.platform}:${rec.key}`);
+    assert.equal(sieveId(rec), sent[0].id);
+  }
+  // A watched video and its brief are one item, under the id the prompt names.
+  for (const w of [{ id: "dQw4w9WgXcQ" }, { id: "7301", platform: "tiktok" }]) {
+    const v = { ...w, title: "T", channel: "Ch", url: "https://example.com/v", at: 5, verdict: "watch", brief: { what: "w" } };
+    const rec = videoBriefRecord(v);
+    const watchedKey = v.platform ? `${v.platform}:${v.id}` : v.id;
+    const sent = libraryBody({ watched: { [watchedKey]: v }, briefs: { [briefId(rec.platform, rec.key)]: rec } }).body.items;
+    assert.deepEqual(sent.map((i) => i.id), [idLine(rec)]);
+    assert.ok(sent[0].watch && sent[0].brief);
+  }
+  // A key the server wouldn't take: not sent, and no id line.
+  const bad = { key: "has space", platform: "x", author: "B", at: 5, what: "w" };
+  assert.equal(libraryBody({ briefs: { "x:has space": bad } }).left, 1);
+  assert.equal(idLine(bad), undefined);
+  assert.doesNotMatch(briefPrompt(bad), /Sieve id/);
+}
+
 console.log("agent_sync_test: ok");

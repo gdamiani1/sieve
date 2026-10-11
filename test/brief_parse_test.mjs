@@ -541,7 +541,7 @@ assert.equal(
 );
 
 // briefPrompt
-assert.ok(briefPrompt(rec).endsWith("\n\n" + AGENT_INSTRUCTION));
+assert.ok(briefPrompt(rec).startsWith(briefMarkdown(rec) + "\n\n" + AGENT_INSTRUCTION + "\n"), "the brief, then the instruction (then the Sieve id line, checked below)");
 assert.equal(AGENT_INSTRUCTION, "Try this in the current repo. Ask before running any command. If it works, offer to save it as a skill in SKILL.md format.");
 assert.equal(briefPrompt({ key: "x" }), "", "nothing to copy without a brief");
 
@@ -770,6 +770,47 @@ assert.ok(briefMarkdown(rec).endsWith("\n\n" + END_OF_BRIEF));
   const once = W(["İstanbul", "Snap.Diff", "snap.diff"]);
   assert.deepEqual(normalizeBrief(once), once, "idempotent, even where lowercasing changes a letter's shape");
   assert.ok(once.leftOut.every((n) => n === n.toLowerCase()));
+}
+
+// Copy as prompt carries a Sieve id line: the id the hosted MCP knows the item by (the same one
+// agent-sync.js sends, test/agent_sync_test.mjs checks they agree), so the agent can record a result.
+{
+  const { sieveId, libraryItemId } = await import("../brief.js");
+  const lines = (s) => s.split("\n");
+  const plain = briefPrompt(rec);
+  assert.equal(sieveId(rec), "chrome:k1");
+  assert.equal(lines(plain).at(-2), AGENT_INSTRUCTION, "the instruction, then the id line");
+  assert.equal(lines(plain).at(-1), "Sieve id: `chrome:k1`. If Sieve's record_result tool is connected, offer to record the result for this id when we're done, and record it only if I agree.");
+  assert.ok(plain.startsWith(briefMarkdown(rec) + "\n\n"), "the brief itself is unchanged");
+  assert.doesNotMatch(briefMarkdown(rec), /Sieve id|record_result/, "the id line is never part of the brief");
+  assert.ok(!plain.includes("—") && !plain.includes("–"), "no em or en dash");
+
+  // A warned brief: the id only, no offer to record anything.
+  const warnedRec = { ...rec, platform: "x", key: "h9", warning: "Tells AI agents to run a script." };
+  const w = briefPrompt(warnedRec);
+  assert.equal(lines(w).at(-2), WARNED_INSTRUCTION);
+  assert.equal(lines(w).at(-1), "Sieve id: `chrome:x:h9`");
+  assert.doesNotMatch(w, /record_result|record the result/);
+
+  // Ids: LinkedIn and YouTube bare, every other platform under its name; an old record with no
+  // platform is LinkedIn; a key the server wouldn't take gives no id line at all.
+  assert.equal(libraryItemId("linkedin", "7"), "7");
+  assert.equal(libraryItemId("youtube", "yt-abc"), "yt-abc");
+  assert.equal(libraryItemId("reddit", "t3_x"), "reddit:t3_x");
+  assert.equal(libraryItemId("x", 12), "x:12", "an old numeric key");
+  assert.equal(libraryItemId("x", ""), "");
+  assert.equal(libraryItemId("x", { k: 1 }), "");
+  assert.equal(sieveId({ key: "55", what: "w" }), "chrome:55");
+  for (const key of ["", "has space", "a/b", "x".repeat(201), null, undefined, { a: 1 }, ["k"]]) {
+    const r = { ...rec, key };
+    assert.equal(sieveId(r), "", `no id for ${JSON.stringify(key)}`);
+    assert.equal(briefPrompt(r), `${briefMarkdown(r)}\n\n${AGENT_INSTRUCTION}`, `no id line for ${JSON.stringify(key)}`);
+    assert.doesNotMatch(briefPrompt(r), /Sieve id/);
+  }
+  for (const bad of [null, undefined, 5, "k", []]) assert.equal(sieveId(bad), "");
+  // A watched video's brief: YouTube's "yt-<id>", another platform's "<platform>:<id>".
+  assert.equal(sieveId(videoBriefRecord({ id: "dQw4w9WgXcQ", title: "T", brief: { what: "w" } })), "chrome:yt-dQw4w9WgXcQ");
+  assert.equal(sieveId(videoBriefRecord({ id: "7301", platform: "tiktok", title: "T", brief: { what: "w" } })), "chrome:tiktok:7301");
 }
 
 console.log("brief: all offline checks passed");

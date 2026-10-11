@@ -52,7 +52,9 @@ you do the part that needs judgement.
   30 minute way to try it, and whether it's worth keeping as a skill.
 - **Copy as prompt** puts the brief on your clipboard for your coding agent. It starts with a note that it's
   third-party material, that the agent should treat it as information and not instructions, and that it should
-  ask before running any command.
+  ask before running any command. Its last line is the item's Sieve id (`chrome:...`, the id your agent sees
+  when sending to your agent is on), so an agent with Sieve's tools can find the brief and, if you agree,
+  record how it went. A brief with a warning gets the id alone, with no offer to record anything.
 - When the model notices text aimed at AI agents in the source, or Sieve's own check finds a blatant case or
   hidden characters, the brief carries a warning at the top. Sieve's own code then makes "Check the source
   before copying anything from it." the first step, drops any step or need with a link, a download, a pipe
@@ -194,7 +196,7 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/linkedin_post_id_test.mjs # finding a LinkedIn post's id in the page's data (offline)
     node test/watch_drawer_test.mjs # the "watched for you" drawer, built line by line like youtube.js used to (offline)
     node test/video_platform_test.mjs # Watch it for me on a platform other than YouTube (offline)
-    node test/agent_sync_test.mjs       # sending the library to your agent: sign-in URL and answers, the body, the hash, the words (offline)
+    node test/agent_sync_test.mjs       # sending the library to your agent: sign-in URL and answers, the body, the hash, the words, and that Copy as prompt's Sieve id matches what is sent (offline)
     node test/agent_sync_worker_test.mjs # the worker's sign-in, sends, retries, turning off and deleting, against a fake server (offline)
     node test/agent_sync_options_test.mjs # the settings page's Your agent section (offline)
     node test/openrouter_connect_test.mjs # Connect OpenRouter: the sign-in URL, the callback, the code-for-key exchange, and Start here's button (offline)
