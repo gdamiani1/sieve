@@ -1,8 +1,8 @@
 # Sieve
 
-A Chrome extension that tells you which LinkedIn, X, Reddit and YouTube posts are worth your attention. For
-developers, it turns techniques worth trying into briefs your coding agent (Claude Code,
-Codex, Cursor and others) can try in your repo. It never clicks, comments or posts for you, and never installs
+A Chrome extension for developers who build with coding agents. It turns techniques worth trying, from
+LinkedIn, X, Reddit and YouTube posts, into briefs your coding agent (Claude Code, Codex, Cursor and others) can
+try in your repo, and it scores those feeds so you see which posts are worth your attention. It never clicks, comments or posts for you, and never installs
 or runs anything: a brief is text you copy.
 
 A paid Sieve account is coming: no API keys to manage, and one library across Chrome and iPhone (Sieve for iPhone is
@@ -101,7 +101,10 @@ a switch or choice at once), with a short "Saved" note. Keys save only through *
 ## Setup
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
-2. Click the extension icon:
+2. Add a key. Settings open on install with **Start here** (Connect OpenRouter, or paste a key), and the popup
+   shows **Add your key** until a key is saved. Once a key is saved from Start here, it shows four feed buttons
+   (LinkedIn, X, Reddit, YouTube) and step 4: when a post gets the "technique to try" badge, press Brief, then
+   Copy as prompt and paste it into your coding agent. The keys:
    - **OpenRouter API key** (scoring posts with Jev, briefs, digests and Watch it for me). Jev scores through this key, about 3 to 5 US cents per 1,000 posts; briefs and digests use `deepseek/deepseek-v4-flash` by default. Checked against the API before it's saved.
      Start here's **Connect OpenRouter** gets one through OpenRouter's sign-in window (OAuth with PKCE): OpenRouter makes a key labelled "Sieve for Chrome" in your account, and it's checked and saved exactly like a pasted one. **Paste a key instead** goes to the field.
    - **TypeSafe key (optional)**, under the OpenRouter key: a **TypeSafe API key** is only used when no OpenRouter key is saved, and then Jev scores directly at TypeSafe. Briefs, digests and Watch it for me still need an OpenRouter key. The old "Score posts with Jev" switch is gone (since 1.4.1): with an OpenRouter key saved, Jev scores through it whatever the switch was set to. The settings page says which key scores.
@@ -211,6 +214,8 @@ extension does, so they need only the OpenRouter key; `score_latency` also times
     node test/x_page_test.mjs       # x.js on a fake X page: threads, pictures, Watch it for me (offline)
     node test/recycled_tiles_test.mjs # a YouTube tile or X post element reused for another video or post: the old verdict goes, the new one is scored (offline)
     node test/theme_contrast_test.mjs # the popup, settings and daily learnings pages' light and dark colours and their contrast (offline)
+    node test/popup_test.mjs        # the popup: Add your key until a key is saved, and the rest of its states (offline)
+    node test/digest_page_test.mjs  # the Daily learnings page (offline)
     node test/welcome_test.mjs      # a fresh install opens settings, where Start here shows until a key is saved (offline)
     node test/brief_test.mjs        # briefs for invented and hostile posts, checked (set RUNS=3 to repeat each post, at most 4), under 1 US cent
     node test/run_triage.mjs        # LinkedIn scoring with Jev through OpenRouter (PREFS=file.json to score as someone else)

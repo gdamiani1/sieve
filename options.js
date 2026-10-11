@@ -305,6 +305,8 @@ function showKeys(s) {
   $("start").hidden = !(none || startKept);
   $("startSteps").hidden = keySavedHere;
   $("startDone").hidden = !keySavedHere;
+  // Briefs need OpenRouter: a TypeSafe-only key scores but can't brief, so the brief sentence waits for one.
+  $("startDoneNext").hidden = !s.orKey;
   // One filled blue button at a time: Connect OpenRouter while Start here shows, then Check and save keys.
   $("saveKeys").classList.toggle("primary", !none);
   $("saveKeys").classList.toggle("secondary", none);

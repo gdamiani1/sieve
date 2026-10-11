@@ -166,8 +166,8 @@ const { REDIRECT, page, tick, visible } = await import("./options-page.mjs");
 const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
 // Start here after a key is saved from it: the setup steps give way to a line and four feed links.
 const FEEDS = { feedLinkedin: ["LinkedIn", "https://www.linkedin.com/feed/"], feedX: ["X", "https://x.com/home"], feedReddit: ["Reddit", "https://www.reddit.com/"], feedYoutube: ["YouTube", "https://www.youtube.com/"] };
-const STEP_4 = "When a post gets the technique badge, press Brief, then Copy as prompt and paste it into your coding agent.";
-function assertDone($, why = "Start here shows its done state") {
+const STEP_4 = "When a post gets the \"technique to try\" badge, press Brief, then Copy as prompt and paste it into your coding agent.";
+function assertDone($, why = "Start here shows its done state", brief = true) {
   assert.ok(visible($("start")), why);
   assert.ok(visible($("startDone")) && !visible($("startSteps")), "the steps give way to the feeds");
   assert.match($("startDone").textContent, /^Key saved\. Open a feed: posts get a small Sieve tag as you scroll\./);
@@ -176,7 +176,10 @@ function assertDone($, why = "Start here shows its done state") {
   assert.equal($("startDone").querySelectorAll("div")[0].getAttribute("aria-labelledby"), "startDoneH");
   // What comes after a feed: step 4's sentence, after the buttons, since the steps are hidden now.
   assert.equal($("startDoneNext").textContent, STEP_4);
-  assert.ok($("startDone").textContent.endsWith(STEP_4), "after the feed buttons");
+  if (brief) {
+    assert.ok(visible($("startDoneNext")), "an OpenRouter key can brief");
+    assert.ok($("startDone").textContent.endsWith(STEP_4), "after the feed buttons");
+  } else assert.ok(!visible($("startDoneNext")), "a TypeSafe-only key scores but can't brief");
   for (const [id, [label, url]] of Object.entries(FEEDS)) {
     assert.equal($(id).textContent, label);
     assert.equal($(id).getAttribute("href"), url);
@@ -418,7 +421,7 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   $("saveKeys").click();
   await settle();
   assert.equal(store.apiKey, "ts-key");
-  assertDone($, "a TypeSafe key scores, so it opens the feeds");
+  assertDone($, "a TypeSafe key scores, so it opens the feeds", false);
   assert.equal(doc.activeElement, $("feedLinkedin"));
 }
 
