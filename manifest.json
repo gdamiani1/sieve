@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sieve: posts worth your time",
-  "version": "1.5.0",
-  "description": "Sieve scores the LinkedIn, X, Reddit and YouTube posts you scroll past and writes briefs on techniques your coding agent can try.",
+  "name": "Sieve: briefs your coding agent can try",
+  "version": "1.6.0",
+  "description": "Turns coding-agent tips from LinkedIn, X, Reddit and YouTube into briefs your coding agent can try. Free with your own key.",
   "permissions": [
     "storage",
     "alarms",
