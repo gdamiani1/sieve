@@ -164,6 +164,21 @@ assert.match(connectWords({ error: "no_permission" }), /Paste a key instead/);
 // ---- The settings page: Start here's Connect OpenRouter button, through the options-page harness.
 const { REDIRECT, page, tick, visible } = await import("./options-page.mjs");
 const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+// Start here after a key is saved from it: the setup steps give way to a line and four feed links.
+const FEEDS = { feedLinkedin: ["LinkedIn", "https://www.linkedin.com/feed/"], feedX: ["X", "https://x.com/home"], feedReddit: ["Reddit", "https://www.reddit.com/"], feedYoutube: ["YouTube", "https://www.youtube.com/"] };
+function assertDone($, why = "Start here shows its done state") {
+  assert.ok(visible($("start")), why);
+  assert.ok(visible($("startDone")) && !visible($("startSteps")), "the steps give way to the feeds");
+  assert.match($("startDone").textContent, /^Key saved\. Open a feed: posts get a small Sieve tag as you scroll\./);
+  assert.ok(!$("startDone").textContent.includes("\u2014"), "no em dash");
+  for (const [id, [label, url]] of Object.entries(FEEDS)) {
+    assert.equal($(id).textContent, label);
+    assert.equal($(id).getAttribute("href"), url);
+    assert.equal($(id).getAttribute("target"), "_blank");
+    assert.equal($(id).getAttribute("rel"), "noopener noreferrer");
+    assert.ok($(id).classList.contains("secondary") && !$(id).classList.contains("primary"));
+  }
+}
 const stateOf = (url) => new URL(url).searchParams.get("state");
 
 // With no key: Start here shows the button as step 1, the paste fallback, and the credit and cost sentence.
@@ -251,14 +266,14 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   assert.deepEqual(JSON.parse(fetched[0].init.body).code, "CODE1");
   assert.equal(fetched[1].init.headers.Authorization, "Bearer sk-or-v1-made");
   assert.equal(store.orKey, "sk-or-v1-made");
-  assert.equal($("start").hidden, true, "Start here goes once the key is saved");
+  assertDone($, "Start here stays, as the four feeds");
   assert.equal($("keyMsg").textContent, "OpenRouter connected. Key saved.");
   assert.ok($("keyMsg").classList.contains("good"));
   assert.equal($("connectOr").disabled, false);
   assert.equal($("orkey").value, "", "the field is emptied, and the key never shows in it");
   assert.deepEqual(removed, [{ permissions: ["identity"] }]);
-  assert.equal(doc.activeElement, $("keyMsg"), "focus goes to the keys line, not the page");
-  assert.equal($("keyMsg").getAttribute("tabindex"), "-1");
+  assert.equal(doc.activeElement, $("feedLinkedin"), "focus goes to the first feed; the keys line is a live region");
+  assert.equal($("keyMsg").getAttribute("aria-live"), "polite");
 }
 
 // Your agent on: the identity permission stays, since it needs it too.
@@ -322,10 +337,10 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
   await settle();
   assert.equal(fetched.filter((f) => f.url === CHECK_URL).length, 2);
   assert.equal(store.orKey, "sk-or-v1-made");
-  assert.equal($("start").hidden, true);
+  assertDone($);
   assert.match($("keyMsg").textContent, /^OpenRouter connected\. Key saved, but OpenRouter didn't answer when Sieve checked it\./);
   assert.ok(!$("keyMsg").classList.contains("good"));
-  assert.equal(doc.activeElement, $("keyMsg"));
+  assert.equal(doc.activeElement, $("feedLinkedin"));
 }
 
 // A refused exchange or a key that fails the check: said, nothing saved, Start here stays.
@@ -345,13 +360,50 @@ const stateOf = (url) => new URL(url).searchParams.get("state");
 
 // A pasted key still goes through the same check.
 {
-  const { $, store, fetched } = await page({ record: {}, net: async () => res(200, {}) });
+  const { $, store, fetched, doc } = await page({ record: {}, net: async () => res(200, {}) });
   $("orkey").value = "sk-or-v1-pasted";
   $("saveKeys").click();
   await settle();
   assert.equal(fetched[0].url, CHECK_URL);
   assert.equal(store.orKey, "sk-or-v1-pasted");
   assert.equal($("keyMsg").textContent, "OpenRouter key saved");
+  assertDone($, "a pasted key opens the feeds too");
+  assert.equal(doc.activeElement, $("feedLinkedin"));
+}
+
+// A pasted key that fails the check: no feeds, setup steps stay. A TypeSafe-only key scores too: feeds.
+{
+  const { $, store } = await page({ record: {}, net: async () => res(401, {}) });
+  $("orkey").value = "sk-or-v1-bad";
+  $("saveKeys").click();
+  await settle();
+  assert.equal(store.orKey, undefined);
+  assert.ok(visible($("start")) && visible($("startSteps")) && !visible($("startDone")), "no feed buttons after a failed check");
+}
+{
+  const { $, store, doc } = await page({ record: {}, net: async () => res(200, {}) });
+  $("key").value = "ts-key";
+  $("saveKeys").click();
+  await settle();
+  assert.equal(store.apiKey, "ts-key");
+  assertDone($, "a TypeSafe key scores, so it opens the feeds");
+  assert.equal(doc.activeElement, $("feedLinkedin"));
+}
+
+// The storage change a save fires redraws the keys but doesn't take the feeds away; a later visit with a key hides Start here.
+{
+  const { $, store } = await page({ record: {}, net: async () => res(200, {}) });
+  $("orkey").value = "sk-or-v1-pasted";
+  $("saveKeys").click();
+  await settle();
+  await settle();
+  await settle(); // the harness fires storage.onChanged after each write, which re-reads the keys
+  assertDone($);
+  assert.equal(store.orKey, "sk-or-v1-pasted");
+}
+{
+  const { $ } = await page({ record: {}, store: { orKey: "sk-or-v1-saved" } });
+  assert.ok(!visible($("start")), "a later visit with a key finds Start here hidden");
 }
 
 console.log("openrouter_connect_test: ok");

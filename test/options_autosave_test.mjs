@@ -413,7 +413,9 @@ for (const id of ["linkedinOn", "xOn", "redditOn", "youtubeOn", "youtubeDescript
   assert.deepEqual(sets.flatMap((s) => Object.keys(s)).sort(), ["apiKey", "orKey"]);
   assert.equal($("keyMsg").textContent, "TypeSafe key saved. OpenRouter key saved");
   assert.equal($("orkey").value, "");
-  assert.equal($("start").hidden, true, "Start here goes once a key is saved");
+  assert.equal($("start").hidden, false, "Start here stays for this visit, as the feeds");
+  assert.equal($("startSteps").hidden, true);
+  assert.equal($("startDone").hidden, false);
   assert.equal($("saveKeys").classList.contains("primary"), true, "then Check and save keys is the page's one filled button");
   assert.equal($("scoreStatus").textContent, "Jev, through OpenRouter. The saved TypeSafe key isn't used.");
 }

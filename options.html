@@ -66,7 +66,7 @@ input[type=number].field{width:64px;text-align:right}
 .info{background:var(--tint);color:var(--ink);border-radius:14px;padding:14px 16px;margin:12px 0 0}
 .start{margin-top:20px}.info h2{font-size:15px;margin:0 0 4px}
 .info ol{margin:8px 0 0;padding-left:20px}.info li{margin:6px 0}
-.start .btns{margin-top:8px}.start .status{margin:8px 0 0}
+.start .btns{margin-top:8px}.start #startDone p{margin:0}.btn{text-decoration:none}.start .status{margin:8px 0 0}
 .status{font-size:13px;margin:8px 16px 0}
 .status:empty{display:none}.status.alert{color:var(--alert)}
 .sentence{margin:0 0 12px}
@@ -104,6 +104,7 @@ output{font-weight:600}
 
 <section id="start" hidden class="info start" aria-labelledby="startH">
 <h2 id="startH">Start here</h2>
+<div id="startSteps">
 <p>Sieve needs one key before it can score anything. It takes about two minutes.</p>
 <ol>
 <li><p>Connect OpenRouter. Sieve gets a key of its own, which you can see or delete at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>.</p>
@@ -112,6 +113,11 @@ output{font-weight:600}
 <li>If your OpenRouter account is new, add a few dollars of credit there: scoring won't work without it. Scoring costs about 3 to 5 US cents per 1,000 posts.</li>
 <li>Open LinkedIn, X, Reddit or YouTube. Posts get a small Sieve tag as you scroll.</li>
 </ol>
+</div>
+<div id="startDone" hidden>
+<p>Key saved. Open a feed: posts get a small Sieve tag as you scroll.</p>
+<div class="btns"><a class="btn secondary" id="feedLinkedin" href="https://www.linkedin.com/feed/" target="_blank" rel="noopener noreferrer">LinkedIn</a><a class="btn secondary" id="feedX" href="https://x.com/home" target="_blank" rel="noopener noreferrer">X</a><a class="btn secondary" id="feedReddit" href="https://www.reddit.com/" target="_blank" rel="noopener noreferrer">Reddit</a><a class="btn secondary" id="feedYoutube" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer">YouTube</a></div>
+</div>
 </section>
 
 <section id="agentSection" aria-labelledby="agentH">

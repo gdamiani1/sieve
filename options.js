@@ -296,11 +296,15 @@ async function load() {
 
 // ---- Keys: checked before they're saved, only by Check and save keys.
 // Says which key scores (jev.js scoringKey() decides, as the worker does).
+// The flag is raised before the write, which fires storage.onChanged, so that redraw doesn't hide it.
+let keySavedHere = false;
 function showKeys(s) {
   $("key").placeholder = s.apiKey ? "Key saved. Paste a new one to replace it." : "Not added";
   $("orkey").placeholder = s.orKey ? "Key saved. Paste a new one to replace it." : "Paste your OpenRouter key";
   const none = !(s.orKey || s.apiKey);
-  $("start").hidden = !none;
+  $("start").hidden = !(none || keySavedHere);
+  $("startSteps").hidden = keySavedHere;
+  $("startDone").hidden = !keySavedHere;
   // One filled blue button at a time: Connect OpenRouter while Start here shows, then Check and save keys.
   $("saveKeys").classList.toggle("primary", !none);
   $("saveKeys").classList.toggle("secondary", none);
@@ -321,20 +325,24 @@ async function checkKeys() {
   const msgs = [];
   let bad = false;
   const ts = $("key").value.trim(), or = $("orkey").value.trim();
+  const setup = !$("start").hidden;
+  let saved = false;
   if (ts) {
     const r = await fetch("https://api.typesafe.ai/v1/models", { headers: { Authorization: `Bearer ${ts}` } }).catch(() => null);
-    if (r && r.ok) { await chrome.storage.local.set({ apiKey: ts }); $("key").value = ""; msgs.push("TypeSafe key saved"); }
+    if (r && r.ok) { if (setup) keySavedHere = true; await chrome.storage.local.set({ apiKey: ts }); saved = true; $("key").value = ""; msgs.push("TypeSafe key saved"); }
     else { bad = true; msgs.push(r ? `TypeSafe said ${r.status}, not saved` : "TypeSafe unreachable, not saved"); }
   }
   if (or) {
     const c = await checkKey(or);
-    if (c.ok) { await chrome.storage.local.set({ orKey: or }); $("orkey").value = ""; msgs.push("OpenRouter key saved"); }
+    if (c.ok) { if (setup) keySavedHere = true; await chrome.storage.local.set({ orKey: or }); saved = true; $("orkey").value = ""; msgs.push("OpenRouter key saved"); }
     else { bad = true; msgs.push(c.unreachable ? "OpenRouter unreachable, not saved" : `OpenRouter said ${c.status}, not saved`); }
   }
   $("keyMsg").textContent = msgs.join(". ") || "Paste a key first.";
   $("keyMsg").classList.toggle("bad", bad);
   $("keyMsg").classList.toggle("good", msgs.length > 0 && !bad);
   await readKeys();
+  // A TypeSafe key scores too, so it opens the feeds the same way. Focus moves only when all went well.
+  if (saved && !bad && keySavedHere) $("feedLinkedin").focus();
 }
 
 // ---- Connect OpenRouter (Start here): OpenRouter's sign-in window gives Sieve a key of the person's own,
@@ -367,7 +375,11 @@ $("connectOr").onclick = async () => {
         r = await connectOpenRouter({
           redirect: chrome.identity.getRedirectURL(),
           launch: (url) => chrome.identity.launchWebAuthFlow({ url, interactive: true }),
-          save: (key) => chrome.storage.local.set({ orKey: key }),
+          save: async (key) => {
+            const setup = !$("start").hidden;
+            if (setup) keySavedHere = true;
+            try { await chrome.storage.local.set({ orKey: key }); } catch (e) { if (setup) keySavedHere = false; throw e; }
+          },
           onStep: () => connectMsg("Checking the new key…"),
         });
       } catch { r = { error: "other" }; }
@@ -382,8 +394,11 @@ $("connectOr").onclick = async () => {
     $("keyMsg").classList.remove("bad");
     $("keyMsg").classList.toggle("good", !r.unchecked);
     await readKeys();
-    $("keyMsg").scrollIntoView?.({ block: "center" });
-    $("keyMsg").focus();
+    if (keySavedHere) $("feedLinkedin").focus();
+    else {
+      $("keyMsg").scrollIntoView?.({ block: "center" });
+      $("keyMsg").focus();
+    }
   } finally {
     btn.disabled = false;
   }
